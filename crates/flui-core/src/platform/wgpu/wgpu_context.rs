@@ -115,12 +115,13 @@ impl WgpuContext {
     async fn create_device(
         adapter: &wgpu::Adapter,
     ) -> anyhow::Result<(wgpu::Device, wgpu::Queue, bool)> {
-        let dual_source_blending = adapter
-            .features()
-            .contains(wgpu::Features::DUAL_SOURCE_BLENDING);
+        // Dual-source blending is disabled for now because naga (wgpu's shader
+        // validator) does not yet support the `enable dual_source_blending;` WGSL
+        // directive. See https://github.com/gfx-rs/wgpu/issues/6402
+        let dual_source_blending = false;
 
         let mut required_features = wgpu::Features::empty();
-        if dual_source_blending {
+        if false {
             required_features |= wgpu::Features::DUAL_SOURCE_BLENDING;
         } else {
             log::warn!(
