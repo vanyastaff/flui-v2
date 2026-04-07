@@ -1,3 +1,4 @@
+extern crate flui_core as gpui;
 use std::{ops::Range, rc::Rc, time::Duration};
 
 use gpui::{

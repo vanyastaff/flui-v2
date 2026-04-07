@@ -1,3 +1,4 @@
+extern crate flui_core as gpui;
 //! Example Prelude
 //!
 //! Common helpers for GPUI examples. Import with:

@@ -1,3 +1,4 @@
+extern crate flui_core as gpui;
 //! Async Tasks Example
 //!
 //! This example demonstrates different async patterns in GPUI:

@@ -1,3 +1,4 @@
+extern crate flui_core as gpui;
 //! Interactive Elements Example
 //!
 //! This example demonstrates interactive patterns in GPUI:

@@ -1,3 +1,4 @@
+extern crate flui_core as gpui;
 use std::fs;
 use std::path::PathBuf;
 

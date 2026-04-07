@@ -1,3 +1,4 @@
+extern crate flui_core as gpui;
 use gpui::{
     App, Application, Bounds, ColorSpace, Context, Half, Render, Window, WindowOptions, canvas,
     div, linear_color_stop, linear_gradient, point, prelude::*, px, size,

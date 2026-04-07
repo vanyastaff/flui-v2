@@ -1,3 +1,4 @@
+extern crate flui_core as gpui;
 use std::{path::Path, sync::Arc, time::Duration};
 
 use gpui::{

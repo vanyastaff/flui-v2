@@ -1,3 +1,4 @@
+extern crate flui_core as gpui;
 fn main() {
     #[cfg(all(target_os = "linux", feature = "wayland"))]
     example::main();

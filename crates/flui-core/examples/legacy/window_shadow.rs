@@ -1,3 +1,4 @@
+extern crate flui_core as gpui;
 use gpui::{
     App, Application, Bounds, Context, CursorStyle, Decorations, HitboxBehavior, Hsla, MouseButton,
     Pixels, Point, ResizeEdge, Size, Window, WindowBackgroundAppearance, WindowBounds,

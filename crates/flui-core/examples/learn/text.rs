@@ -1,3 +1,4 @@
+extern crate flui_core as gpui;
 //! Text Example
 //!
 //! This example demonstrates text capabilities in GPUI:

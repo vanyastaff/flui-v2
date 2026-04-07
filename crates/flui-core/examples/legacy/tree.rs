@@ -1,3 +1,4 @@
+extern crate flui_core as gpui;
 //! Renders a div with deep children hierarchy. This example is useful to exemplify that Zed can
 //! handle deep hierarchies (even though it cannot just yet!).
 use std::sync::LazyLock;

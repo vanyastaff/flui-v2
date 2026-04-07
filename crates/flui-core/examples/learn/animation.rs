@@ -1,3 +1,4 @@
+extern crate flui_core as gpui;
 //! Animation Example
 //!
 //! This example demonstrates animation capabilities in GPUI:

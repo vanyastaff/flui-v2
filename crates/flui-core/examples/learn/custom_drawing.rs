@@ -1,3 +1,4 @@
+extern crate flui_core as gpui;
 //! Custom Drawing Example
 //!
 //! This example demonstrates custom drawing in GPUI using:

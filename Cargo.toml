@@ -6,6 +6,7 @@ members = [
     "crates/flui-animate",
     "crates/flui-navigator",
     "crates/flui-a11y",
+    "examples/nav_demo",
 ]
 resolver = "3"
 

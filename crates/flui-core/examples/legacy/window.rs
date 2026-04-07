@@ -1,3 +1,4 @@
+extern crate flui_core as gpui;
 use gpui::{
     App, Application, Bounds, Context, KeyBinding, PromptButton, PromptLevel, Window, WindowBounds,
     WindowKind, WindowOptions, actions, div, prelude::*, px, rgb, size,

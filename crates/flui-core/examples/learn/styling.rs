@@ -1,3 +1,4 @@
+extern crate flui_core as gpui;
 //! Styling Patterns Example
 //!
 //! This example demonstrates different styling approaches in GPUI:

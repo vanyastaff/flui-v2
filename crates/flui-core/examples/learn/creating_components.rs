@@ -1,3 +1,4 @@
+extern crate flui_core as gpui;
 //! Creating Components Example
 //!
 //! This example demonstrates three different approaches to creating interactive

@@ -1,3 +1,4 @@
+extern crate flui_core as gpui;
 //! Layout Patterns Example
 //!
 //! This example demonstrates different layout approaches in GPUI:

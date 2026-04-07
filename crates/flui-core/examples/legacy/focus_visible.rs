@@ -1,3 +1,4 @@
+extern crate flui_core as gpui;
 use gpui::{
     App, Application, Bounds, Context, Div, ElementId, FocusHandle, KeyBinding, SharedString,
     Stateful, Window, WindowBounds, WindowOptions, actions, div, prelude::*, px, size,

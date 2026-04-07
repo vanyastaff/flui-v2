@@ -1,3 +1,4 @@
+extern crate flui_core as gpui;
 use gpui::{App, Application, Context, Render, Window, WindowOptions, div, img, prelude::*};
 use std::path::PathBuf;
 
