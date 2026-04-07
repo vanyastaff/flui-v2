@@ -1,78 +1,113 @@
-# gpui - Community Edition
+# flui-v2
 
-A community fork of [GPUI](https://gpui.rs), Zed's GPU-accelerated UI framework.
+A Flutter-inspired GPU-accelerated UI framework for Rust, built on the foundation of [gpui-ce](https://github.com/gpui-ce/gpui-ce) (the community edition of Zed's GPUI).
 
-## Usage
+## Vision
+
+flui-v2 takes GPUI's proven GPU rendering foundation and evolves it toward a Flutter-like developer experience in Rust: composable widgets, declarative routing, animations, and accessibility — all with native performance.
+
+## Architecture (5 layers)
+
+```
++-------------------------------------------------------+
+|  Layer 5: Application                                  |
+|  Your app code, examples, demos                        |
++-------------------------------------------------------+
+|  Layer 4: flui-navigator                               |
+|  Type-safe routing, transitions, guards, middleware     |
++-------------------------------------------------------+
+|  Layer 3: flui-widgets / flui-animate / flui-a11y      |
+|  Widget library, animation system, accessibility        |
++-------------------------------------------------------+
+|  Layer 2: flui-core                                    |
+|  Entity system, views, elements, layout (Taffy),       |
+|  styling, input, async executor                        |
++-------------------------------------------------------+
+|  Layer 1: Platform backends                            |
+|  Metal (macOS), DirectX (Windows), wgpu (Linux),       |
+|  Wayland, X11                                          |
++-------------------------------------------------------+
+```
+
+## Workspace structure
+
+```
+flui-v2/
+  crates/
+    flui-core/       # GPU rendering, element system, layout, platform backends
+    flui-macros/     # Procedural macros (derive Render, IntoElement, etc.)
+    flui-navigator/  # Routing: nested routes, transitions, guards, middleware
+    flui-widgets/    # Widget library (planned: Button, Input, Modal, Theme)
+    flui-animate/    # Extended animation system (planned)
+    flui-a11y/       # Accessibility / semantic tree (planned)
+  examples/
+    nav_demo/        # Navigation routing demo
+```
+
+## Quick start
 
 ```toml
 [dependencies]
-gpui = { package = "gpui-ce", version = "0.3" }
-
-# for test support...
-[dev-dependencies]
-gpui = { package = "gpui-ce", version = "0.3", features = ["test-support"] }
+flui-core = { git = "https://github.com/vanyastaff/flui-v2" }
+flui-navigator = { git = "https://github.com/vanyastaff/flui-v2" }
 ```
 
-Then use `gpui::{import}` as normal.
+```rust
+extern crate flui_core as gpui;
+use gpui::*;
+use flui_navigator::*;
 
----
+fn main() {
+    Application::new().run(|cx: &mut App| {
+        init_router(cx, |router| {
+            router.add_route(Route::new("/", home_page).transition(Transition::fade(200)));
+        });
+        // ...
+    });
+}
+```
 
-todo: rewrite below...
+## Platform support
 
-# Welcome to GPUI!
+| Platform | Backend | Status |
+|----------|---------|--------|
+| macOS    | Metal   | Supported |
+| Linux    | wgpu (Wayland + X11) | Supported |
+| Windows  | DirectX | Supported |
+| iOS/Android | - | Planned (Phase 3) |
+| WASM     | Canvas  | Draft |
 
-GPUI is a hybrid immediate and retained mode, GPU accelerated, UI framework
-for Rust, designed to support a wide variety of applications.
-
-Everything in GPUI starts with an `Application`. You can create one with `Application::new()`, and kick off your application by passing a callback to `Application::run()`. Inside this callback, you can create a new window with `App::open_window()`, and register your first root view. See [gpui.rs](https://www.gpui.rs/) for a complete example.
+## Building
 
 ### Dependencies
 
-GPUI has various system dependencies that it needs in order to work.
+**Linux (Fedora/RHEL):**
+```sh
+sudo dnf install wayland-devel libxkbcommon-devel fontconfig-devel \
+    mesa-libEGL-devel libX11-devel vulkan-loader-devel
+```
 
-#### macOS
+**Linux (Ubuntu/Debian):**
+```sh
+sudo apt install libwayland-dev libxkbcommon-dev libfontconfig-dev \
+    libegl-dev libx11-dev libvulkan-dev
+```
 
-On macOS, GPUI uses Metal for rendering. In order to use Metal, you need to do the following:
+**macOS:** Xcode command line tools (`xcode-select --install`)
 
-- Install [Xcode](https://apps.apple.com/us/app/xcode/id497799835?mt=12) from the macOS App Store, or from the [Apple Developer](https://developer.apple.com/download/all/) website. Note this requires a developer account.
+### Build & run
 
-> Ensure you launch Xcode after installing, and install the macOS components, which is the default option.
+```sh
+cargo build --workspace
+cargo run -p nav_demo              # navigation demo
+cargo run -p flui-core --example hello_world  # hello world
+```
 
-- Install [Xcode command line tools](https://developer.apple.com/xcode/resources/)
+## Based on
 
-  ```sh
-  xcode-select --install
-  ```
+- [gpui-ce](https://github.com/gpui-ce/gpui-ce) - Community edition of Zed's GPUI
+- [gpui-navigator](https://github.com/vanyastaff/gpui-navigator) - Type-safe routing for GPUI
 
-- Ensure that the Xcode command line tools are using your newly installed copy of Xcode:
+## License
 
-  ```sh
-  sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
-  ```
-
-## The Big Picture
-
-GPUI offers three different [registers](<https://en.wikipedia.org/wiki/Register_(sociolinguistics)>) depending on your needs:
-
-- State management and communication with `Entity`'s. Whenever you need to store application state that communicates between different parts of your application, you'll want to use GPUI's entities. Entities are owned by GPUI and are only accessible through an owned smart pointer similar to an `Rc`. See the `app::context` module for more information.
-
-- High level, declarative UI with views. All UI in GPUI starts with a view. A view is simply an `Entity` that can be rendered, by implementing the `Render` trait. At the start of each frame, GPUI will call this render method on the root view of a given window. Views build a tree of `elements`, lay them out and style them with a tailwind-style API, and then give them to GPUI to turn into pixels. See the `div` element for an all purpose swiss-army knife of rendering.
-
-- Low level, imperative UI with Elements. Elements are the building blocks of UI in GPUI, and they provide a nice wrapper around an imperative API that provides as much flexibility and control as you need. Elements have total control over how they and their child elements are rendered and can be used for making efficient views into large lists, implement custom layouting for a code editor, and anything else you can think of. See the `element` module for more information.
-
-Each of these registers has one or more corresponding contexts that can be accessed from all GPUI services. This context is your main interface to GPUI, and is used extensively throughout the framework.
-
-## Other Resources
-
-In addition to the systems above, GPUI provides a range of smaller services that are useful for building complex applications:
-
-- Actions are user-defined structs that are used for converting keystrokes into logical operations in your UI. Use this for implementing keyboard shortcuts, such as cmd-q. See the `action` module for more information.
-
-- Platform services, such as `quit the app` or `open a URL` are available as methods on the `app::App`.
-
-- An async executor that is integrated with the platform's event loop. See the `executor` module for more information.,
-
-- The `[gpui::test]` macro provides a convenient way to write tests for your GPUI applications. Tests also have their own kind of context, a `TestAppContext` which provides ways of simulating common platform input. See `app::test_context` and `test` modules for more details.
-
-Currently, the best way to learn about these APIs is to read the Zed source code or drop a question in the [Zed Discord](https://zed.dev/community-links). We're working on improving the documentation, creating more examples, and will be publishing more guides to GPUI on our [blog](https://zed.dev/blog).
-
+Apache-2.0
