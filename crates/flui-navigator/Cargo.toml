@@ -5,10 +5,28 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Type-safe routing and navigation for flui"
+description = "Type-safe routing and navigation for flui with transitions, nested routing, guards, and middleware"
 
 [dependencies]
 flui-core = { path = "../flui-core" }
+
+# Optional dependencies
+lru = { version = "0.16", optional = true }
+log = { version = "0.4", optional = true }
+tracing = { version = "0.1", optional = true }
+
+[features]
+default = ["log", "guard", "middleware", "cache", "transition"]
+guard = []
+middleware = []
+transition = []
+cache = ["dep:lru"]
+log = ["dep:log"]
+tracing = ["dep:tracing"]
+
+[dev-dependencies]
+flui-core = { path = "../flui-core", features = ["test-support"] }
+env_logger = "0.11"
 
 [lints]
 workspace = true
