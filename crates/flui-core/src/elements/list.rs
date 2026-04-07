@@ -1252,23 +1252,23 @@ impl sum_tree::SeekTarget<'_, ListItemSummary, ListItemSummary> for Height {
 #[cfg(test)]
 mod test {
 
-    use gpui::{ScrollDelta, ScrollWheelEvent};
+    use flui_core::{ScrollDelta, ScrollWheelEvent};
     use std::cell::Cell;
     use std::rc::Rc;
 
     use crate::{
-        self as gpui, AppContext, Context, Element, IntoElement, ListState, Render, Styled,
+        self as flui_core, AppContext, Context, Element, IntoElement, ListState, Render, Styled,
         TestAppContext, Window, div, list, point, px, size,
     };
 
-    #[gpui::test]
+    #[flui_core::test]
     fn test_reset_after_paint_before_scroll(cx: &mut TestAppContext) {
         let cx = cx.add_empty_window();
 
         let state = ListState::new(5, crate::ListAlignment::Top, px(10.));
 
         // Ensure that the list is scrolled to the top
-        state.scroll_to(gpui::ListOffset {
+        state.scroll_to(flui_core::ListOffset {
             item_ix: 0,
             offset_in_item: px(0.0),
         });
@@ -1304,7 +1304,7 @@ mod test {
         assert_eq!(state.logical_scroll_top().offset_in_item, px(0.));
     }
 
-    #[gpui::test]
+    #[flui_core::test]
     fn test_scroll_by_positive_and_negative_distance(cx: &mut TestAppContext) {
         let cx = cx.add_empty_window();
 
@@ -1349,7 +1349,7 @@ mod test {
         assert_eq!(offset.offset_in_item, px(0.));
     }
 
-    #[gpui::test]
+    #[flui_core::test]
     fn test_measure_all_after_width_change(cx: &mut TestAppContext) {
         let cx = cx.add_empty_window();
 
@@ -1384,7 +1384,7 @@ mod test {
         assert_eq!(state.max_offset_for_scrollbar().y, px(300.));
     }
 
-    #[gpui::test]
+    #[flui_core::test]
     fn test_remeasure(cx: &mut TestAppContext) {
         let cx = cx.add_empty_window();
 
@@ -1421,7 +1421,7 @@ mod test {
 
         // Simulate scrolling 40px inside the element with index 2. Since the
         // original item height is 100px, this equates to 40% inside the item.
-        state.scroll_to(gpui::ListOffset {
+        state.scroll_to(flui_core::ListOffset {
             item_ix: 2,
             offset_in_item: px(40.),
         });

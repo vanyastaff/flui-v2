@@ -22,14 +22,14 @@ use util::ResultExt as _;
 use xkbcommon::xkb::{self, Keycode, Keysym, State};
 
 use crate::platform::linux::{LinuxDispatcher, PriorityQueueCalloopReceiver};
-use gpui::{
+use flui_core::{
     Action, AnyWindowHandle, BackgroundExecutor, ClipboardItem, CursorStyle, DisplayId,
     ForegroundExecutor, Keymap, Menu, MenuItem, OwnedMenu, PathPromptOptions, Platform,
     PlatformDisplay, PlatformKeyboardLayout, PlatformKeyboardMapper, PlatformTextSystem,
     PlatformWindow, Result, RunnableVariant, Task, ThermalState, WindowAppearance, WindowParams,
 };
 #[cfg(any(feature = "wayland", feature = "x11"))]
-use gpui::{Pixels, Point, px};
+use flui_core::{Pixels, Point, px};
 
 #[cfg(any(feature = "wayland", feature = "x11"))]
 pub(crate) const SCROLL_LINES: f32 = 3.0;
@@ -63,11 +63,11 @@ pub(crate) trait LinuxClient {
     #[cfg(feature = "screen-capture")]
     fn screen_capture_sources(
         &self,
-    ) -> oneshot::Receiver<Result<Vec<Rc<dyn gpui::ScreenCaptureSource>>>> {
+    ) -> oneshot::Receiver<Result<Vec<Rc<dyn flui_core::ScreenCaptureSource>>>> {
         let (sources_tx, sources_rx) = oneshot::channel();
         sources_tx
             .send(Err(anyhow::anyhow!(
-                "gpui_linux was compiled without the screen-capture feature"
+                "flui_linux was compiled without the screen-capture feature"
             )))
             .ok();
         sources_rx
@@ -128,7 +128,7 @@ impl LinuxCommon {
             "IBM Plex Sans",
         ));
         #[cfg(not(any(feature = "wayland", feature = "x11")))]
-        let text_system = Arc::new(gpui::NoopTextSystem::new());
+        let text_system = Arc::new(flui_core::NoopTextSystem::new());
 
         let callbacks = PlatformHandlers::default();
 
@@ -175,7 +175,7 @@ impl<P: LinuxClient + 'static> Platform for LinuxPlatform<P> {
     }
 
     fn keyboard_mapper(&self) -> Rc<dyn PlatformKeyboardMapper> {
-        Rc::new(gpui::DummyKeyboardMapper)
+        Rc::new(flui_core::DummyKeyboardMapper)
     }
 
     fn on_keyboard_layout_change(&self, callback: Box<dyn FnMut()>) {
@@ -291,7 +291,7 @@ impl<P: LinuxClient + 'static> Platform for LinuxPlatform<P> {
     #[cfg(feature = "screen-capture")]
     fn screen_capture_sources(
         &self,
-    ) -> oneshot::Receiver<Result<Vec<Rc<dyn gpui::ScreenCaptureSource>>>> {
+    ) -> oneshot::Receiver<Result<Vec<Rc<dyn flui_core::ScreenCaptureSource>>>> {
         self.inner.screen_capture_sources()
     }
 
@@ -345,7 +345,7 @@ impl<P: LinuxClient + 'static> Platform for LinuxPlatform<P> {
                     .identifier(identifier.await)
                     .modal(true)
                     .title(title)
-                    .accept_label(options.prompt.as_ref().map(gpui::SharedString::as_str))
+                    .accept_label(options.prompt.as_ref().map(flui_core::SharedString::as_str))
                     .multiple(options.multiple)
                     .directory(options.directories)
                     .send()
@@ -849,9 +849,9 @@ fn guess_ascii(keycode: Keycode, shift: bool) -> Option<char> {
 #[cfg(any(feature = "wayland", feature = "x11"))]
 pub(super) fn keystroke_from_xkb(
     state: &State,
-    mut modifiers: gpui::Modifiers,
+    mut modifiers: flui_core::Modifiers,
     keycode: Keycode,
-) -> gpui::Keystroke {
+) -> flui_core::Keystroke {
     let key_utf32 = state.key_get_utf32(keycode);
     let key_utf8 = state.key_get_utf8(keycode);
     let key_sym = state.key_get_one_sym(keycode);
@@ -964,7 +964,7 @@ pub(super) fn keystroke_from_xkb(
     let key_char =
         (key_utf32 >= 32 && key_utf32 != 127 && !key_utf8.is_empty()).then_some(key_utf8);
 
-    gpui::Keystroke {
+    flui_core::Keystroke {
         modifiers,
         key,
         key_char,
@@ -1031,12 +1031,12 @@ pub fn keystroke_underlying_dead_key(keysym: Keysym) -> Option<String> {
     }
 }
 #[cfg(any(feature = "wayland", feature = "x11"))]
-pub(super) fn modifiers_from_xkb(keymap_state: &State) -> gpui::Modifiers {
+pub(super) fn modifiers_from_xkb(keymap_state: &State) -> flui_core::Modifiers {
     let shift = keymap_state.mod_name_is_active(xkb::MOD_NAME_SHIFT, xkb::STATE_MODS_EFFECTIVE);
     let alt = keymap_state.mod_name_is_active(xkb::MOD_NAME_ALT, xkb::STATE_MODS_EFFECTIVE);
     let control = keymap_state.mod_name_is_active(xkb::MOD_NAME_CTRL, xkb::STATE_MODS_EFFECTIVE);
     let platform = keymap_state.mod_name_is_active(xkb::MOD_NAME_LOGO, xkb::STATE_MODS_EFFECTIVE);
-    gpui::Modifiers {
+    flui_core::Modifiers {
         shift,
         alt,
         control,
@@ -1046,9 +1046,9 @@ pub(super) fn modifiers_from_xkb(keymap_state: &State) -> gpui::Modifiers {
 }
 
 #[cfg(any(feature = "wayland", feature = "x11"))]
-pub(super) fn capslock_from_xkb(keymap_state: &State) -> gpui::Capslock {
+pub(super) fn capslock_from_xkb(keymap_state: &State) -> flui_core::Capslock {
     let on = keymap_state.mod_name_is_active(xkb::MOD_NAME_CAPS, xkb::STATE_MODS_EFFECTIVE);
-    gpui::Capslock { on }
+    flui_core::Capslock { on }
 }
 
 /// Resolve a Linux `dev_t` to PCI vendor/device IDs via sysfs, returning a
@@ -1096,7 +1096,7 @@ pub(super) fn compositor_gpu_hint_from_dev_t(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gpui::{Point, px};
+    use flui_core::{Point, px};
 
     #[test]
     fn test_is_within_click_distance() {

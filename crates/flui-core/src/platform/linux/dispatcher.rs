@@ -11,7 +11,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use gpui::{
+use flui_core::{
     GLOBAL_THREAD_TIMINGS, PlatformDispatcher, Priority, PriorityQueueReceiver,
     PriorityQueueSender, RunnableVariant, THREAD_TIMINGS, TaskTiming, ThreadTaskTimings, profiler,
 };
@@ -129,12 +129,12 @@ impl LinuxDispatcher {
 }
 
 impl PlatformDispatcher for LinuxDispatcher {
-    fn get_all_timings(&self) -> Vec<gpui::ThreadTaskTimings> {
+    fn get_all_timings(&self) -> Vec<flui_core::ThreadTaskTimings> {
         let global_timings = GLOBAL_THREAD_TIMINGS.lock();
         ThreadTaskTimings::convert(&global_timings)
     }
 
-    fn get_current_thread_timings(&self) -> gpui::ThreadTaskTimings {
+    fn get_current_thread_timings(&self) -> flui_core::ThreadTaskTimings {
         THREAD_TIMINGS.with(|timings| {
             let timings = timings.lock();
             let thread_name = timings.thread_name.clone();
@@ -147,7 +147,7 @@ impl PlatformDispatcher for LinuxDispatcher {
             vec.extend_from_slice(s1);
             vec.extend_from_slice(s2);
 
-            gpui::ThreadTaskTimings {
+            flui_core::ThreadTaskTimings {
                 thread_name,
                 thread_id: std::thread::current().id(),
                 timings: vec,
@@ -221,7 +221,7 @@ impl<T> PriorityQueueCalloopSender<T> {
         Self { sender: tx, ping }
     }
 
-    fn send(&self, priority: Priority, item: T) -> Result<(), gpui::queue::SendError<T>> {
+    fn send(&self, priority: Priority, item: T) -> Result<(), flui_core::queue::SendError<T>> {
         let res = self.sender.send(priority, item);
         if res.is_ok() {
             self.ping.ping();

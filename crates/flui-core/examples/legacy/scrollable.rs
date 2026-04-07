@@ -1,5 +1,4 @@
-extern crate flui_core as gpui;
-use gpui::{
+use flui_core::{
     App, Application, Bounds, Context, Window, WindowBounds, WindowOptions, div, prelude::*, px,
     size,
 };
@@ -13,14 +12,14 @@ impl Render for Scrollable {
             .id("vertical")
             .p_4()
             .overflow_scroll()
-            .bg(gpui::white())
+            .bg(flui_core::white())
             .child("Example for test 2 way scroll in nested layout")
             .child(
                 div()
                     .h(px(5000.))
                     .border_1()
-                    .border_color(gpui::blue())
-                    .bg(gpui::blue().opacity(0.05))
+                    .border_color(flui_core::blue())
+                    .bg(flui_core::blue().opacity(0.05))
                     .p_4()
                     .child(
                         div()
@@ -32,10 +31,10 @@ impl Render for Scrollable {
                                 div()
                                     .w(px(2000.))
                                     .h(px(150.))
-                                    .bg(gpui::green().opacity(0.1))
-                                    .hover(|this| this.bg(gpui::green().opacity(0.2)))
+                                    .bg(flui_core::green().opacity(0.1))
+                                    .hover(|this| this.bg(flui_core::green().opacity(0.2)))
                                     .border_1()
-                                    .border_color(gpui::green())
+                                    .border_color(flui_core::green())
                                     .p_4()
                                     .child("Scroll Horizontal"),
                             ),

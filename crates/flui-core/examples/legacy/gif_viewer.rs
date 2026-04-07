@@ -1,5 +1,4 @@
-extern crate flui_core as gpui;
-use gpui::{App, Application, Context, Render, Window, WindowOptions, div, img, prelude::*};
+use flui_core::{App, Application, Context, Render, Window, WindowOptions, div, img, prelude::*};
 use std::path::PathBuf;
 
 struct GifViewer {
@@ -17,7 +16,7 @@ impl Render for GifViewer {
         div().size_full().child(
             img(self.gif_path.clone())
                 .size_full()
-                .object_fit(gpui::ObjectFit::Contain)
+                .object_fit(flui_core::ObjectFit::Contain)
                 .id("gif"),
         )
     }

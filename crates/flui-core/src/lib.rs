@@ -4,8 +4,8 @@
 #![allow(clippy::collapsible_else_if)] // False positives in platform specific code
 #![allow(unused_mut)] // False positives in platform specific code
 
-extern crate self as gpui;
-extern crate flui_macros as gpui_macros;
+extern crate self as flui_core;
+extern crate flui_macros;
 
 #[macro_use]
 mod action;
@@ -91,7 +91,7 @@ pub use elements::*;
 pub use executor::*;
 pub use geometry::*;
 pub use global::*;
-pub use gpui_macros::{
+pub use flui_macros::{
     AppContext, IntoElement, Render, VisualContext, derive_inspector_reflection, register_action,
     test,
 };

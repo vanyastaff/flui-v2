@@ -293,8 +293,8 @@ impl Keymap {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate as gpui;
-    use gpui::{NoAction, Unbind};
+    use crate as flui_core;
+    use flui_core::{NoAction, Unbind};
 
     actions!(
         test_only,

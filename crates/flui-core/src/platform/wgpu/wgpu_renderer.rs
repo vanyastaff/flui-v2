@@ -1,6 +1,6 @@
 use super::{CompositorGpuHint, WgpuAtlas, WgpuContext};
 use bytemuck::{Pod, Zeroable};
-use gpui::{
+use flui_core::{
     AtlasTextureId, Background, Bounds, DevicePixels, GpuSpecs, MonochromeSprite, Path, Point,
     PolychromeSprite, PrimitiveBatch, Quad, ScaledPixels, Scene, Shadow, Size, SubpixelSprite,
     Underline, get_gamma_correction_ratios,
@@ -607,7 +607,7 @@ impl WgpuRenderer {
     ) -> WgpuPipelines {
         let base_shader_source = include_str!("shaders.wgsl");
         let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("gpui_shaders"),
+            label: Some("flui_shaders"),
             source: wgpu::ShaderSource::Wgsl(std::borrow::Cow::Borrowed(base_shader_source)),
         });
 
@@ -617,7 +617,7 @@ impl WgpuRenderer {
                 "enable dual_source_blending;\n{base_shader_source}\n{subpixel_shader_source}"
             );
             Some(device.create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some("gpui_subpixel_shaders"),
+                label: Some("flui_subpixel_shaders"),
                 source: wgpu::ShaderSource::Wgsl(std::borrow::Cow::Owned(combined)),
             }))
         } else {
@@ -1677,9 +1677,9 @@ impl WgpuRenderer {
         };
 
         let config = WgpuSurfaceConfig {
-            size: gpui::Size {
-                width: gpui::DevicePixels(self.surface_config.width as i32),
-                height: gpui::DevicePixels(self.surface_config.height as i32),
+            size: flui_core::Size {
+                width: flui_core::DevicePixels(self.surface_config.width as i32),
+                height: flui_core::DevicePixels(self.surface_config.height as i32),
             },
             transparent: self.surface_config.alpha_mode != wgpu::CompositeAlphaMode::Opaque,
         };

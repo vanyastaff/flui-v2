@@ -9,7 +9,7 @@ use windows::Win32::Graphics::{
     Dxgi::Common::*,
 };
 
-use gpui::{
+use flui_core::{
     AtlasKey, AtlasTextureId, AtlasTextureKind, AtlasTextureList, AtlasTile, Bounds, DevicePixels,
     PlatformAtlas, Point, Size,
 };

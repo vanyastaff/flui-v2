@@ -1,7 +1,6 @@
-extern crate flui_core as gpui;
 use std::ops::Range;
 
-use gpui::{
+use flui_core::{
     App, Application, Bounds, ClipboardItem, Context, CursorStyle, ElementId, ElementInputHandler,
     Entity, EntityInputHandler, FocusHandle, Focusable, GlobalElementId, KeyBinding, Keystroke,
     LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad, Pixels, Point,
@@ -373,7 +372,7 @@ impl EntityInputHandler for TextInput {
 
     fn character_index_for_point(
         &mut self,
-        point: gpui::Point<Pixels>,
+        point: flui_core::Point<Pixels>,
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<usize> {
@@ -419,7 +418,7 @@ impl Element for TextElement {
     fn request_layout(
         &mut self,
         _id: Option<&GlobalElementId>,
-        _inspector_id: Option<&gpui::InspectorElementId>,
+        _inspector_id: Option<&flui_core::InspectorElementId>,
         window: &mut Window,
         cx: &mut App,
     ) -> (LayoutId, Self::RequestLayoutState) {
@@ -432,7 +431,7 @@ impl Element for TextElement {
     fn prepaint(
         &mut self,
         _id: Option<&GlobalElementId>,
-        _inspector_id: Option<&gpui::InspectorElementId>,
+        _inspector_id: Option<&flui_core::InspectorElementId>,
         bounds: Bounds<Pixels>,
         _request_layout: &mut Self::RequestLayoutState,
         window: &mut Window,
@@ -499,7 +498,7 @@ impl Element for TextElement {
                         point(bounds.left() + cursor_pos, bounds.top()),
                         size(px(2.), bounds.bottom() - bounds.top()),
                     ),
-                    gpui::blue(),
+                    flui_core::blue(),
                 )),
             )
         } else {
@@ -530,7 +529,7 @@ impl Element for TextElement {
     fn paint(
         &mut self,
         _id: Option<&GlobalElementId>,
-        _inspector_id: Option<&gpui::InspectorElementId>,
+        _inspector_id: Option<&flui_core::InspectorElementId>,
         bounds: Bounds<Pixels>,
         _request_layout: &mut Self::RequestLayoutState,
         prepaint: &mut Self::PrepaintState,
@@ -550,7 +549,7 @@ impl Element for TextElement {
         line.paint(
             bounds.origin,
             window.line_height(),
-            gpui::TextAlign::Left,
+            flui_core::TextAlign::Left,
             None,
             window,
             cx,

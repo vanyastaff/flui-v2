@@ -1,4 +1,4 @@
-use gpui::{PlatformKeyboardLayout, SharedString};
+use flui_core::{PlatformKeyboardLayout, SharedString};
 
 #[derive(Clone)]
 pub(crate) struct LinuxKeyboardLayout {

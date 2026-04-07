@@ -1,7 +1,6 @@
-extern crate flui_core as gpui;
 use std::{ops::Range, rc::Rc, time::Duration};
 
-use gpui::{
+use flui_core::{
     App, Application, Bounds, Context, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point,
     Render, SharedString, UniformListScrollHandle, Window, WindowBounds, WindowOptions, canvas,
     div, point, prelude::*, px, rgb, size, uniform_list,
@@ -122,11 +121,11 @@ impl Quote {
         (self.last_done - self.prev_close) / self.prev_close * 100.0
     }
 
-    fn change_color(&self) -> gpui::Hsla {
+    fn change_color(&self) -> flui_core::Hsla {
         if self.change() > 0.0 {
-            gpui::green()
+            flui_core::green()
         } else {
-            gpui::red()
+            flui_core::red()
         }
     }
 
@@ -145,7 +144,7 @@ impl TableRow {
         Self { ix, quote }
     }
 
-    fn render_cell(&self, key: &str, width: Pixels, color: gpui::Hsla) -> impl IntoElement {
+    fn render_cell(&self, key: &str, width: Pixels, color: flui_core::Hsla) -> impl IntoElement {
         div()
             .whitespace_nowrap()
             .truncate()
@@ -375,7 +374,7 @@ impl DataTable {
 impl Render for DataTable {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
-            .bg(gpui::white())
+            .bg(flui_core::white())
             .text_sm()
             .size_full()
             .p_4()

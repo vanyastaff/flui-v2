@@ -22,7 +22,7 @@ use windows::{
 };
 
 use crate::{HWND, SafeHwnd, WM_GPUI_TASK_DISPATCHED_ON_MAIN_THREAD};
-use gpui::{
+use flui_core::{
     GLOBAL_THREAD_TIMINGS, PlatformDispatcher, Priority, PriorityQueueSender, RunnableVariant,
     THREAD_TIMINGS, TaskTiming, ThreadTaskTimings, TimerResolutionGuard,
 };
@@ -88,14 +88,14 @@ impl WindowsDispatcher {
             start,
             end: None,
         };
-        gpui::profiler::add_task_timing(timing);
+        flui_core::profiler::add_task_timing(timing);
 
         runnable.run();
 
         let end = Instant::now();
         timing.end = Some(end);
 
-        gpui::profiler::add_task_timing(timing);
+        flui_core::profiler::add_task_timing(timing);
     }
 }
 
@@ -105,7 +105,7 @@ impl PlatformDispatcher for WindowsDispatcher {
         ThreadTaskTimings::convert(&global_thread_timings)
     }
 
-    fn get_current_thread_timings(&self) -> gpui::ThreadTaskTimings {
+    fn get_current_thread_timings(&self) -> flui_core::ThreadTaskTimings {
         THREAD_TIMINGS.with(|timings| {
             let timings = timings.lock();
             let thread_name = timings.thread_name.clone();
@@ -118,7 +118,7 @@ impl PlatformDispatcher for WindowsDispatcher {
             vec.extend_from_slice(s1);
             vec.extend_from_slice(s2);
 
-            gpui::ThreadTaskTimings {
+            flui_core::ThreadTaskTimings {
                 thread_name,
                 thread_id: std::thread::current().id(),
                 timings: vec,

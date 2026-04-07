@@ -1,5 +1,4 @@
-extern crate flui_core as gpui;
-use gpui::{
+use flui_core::{
     App, Application, Bounds, Context, SharedString, Window, WindowBounds, WindowOptions, div,
     prelude::*, px, rgb, size,
 };
@@ -31,57 +30,57 @@ impl Render for HelloWorld {
                     .child(
                         div()
                             .size_8()
-                            .bg(gpui::red())
+                            .bg(flui_core::red())
                             .border_1()
                             .border_dashed()
                             .rounded_md()
-                            .border_color(gpui::white()),
+                            .border_color(flui_core::white()),
                     )
                     .child(
                         div()
                             .size_8()
-                            .bg(gpui::green())
+                            .bg(flui_core::green())
                             .border_1()
                             .border_dashed()
                             .rounded_md()
-                            .border_color(gpui::white()),
+                            .border_color(flui_core::white()),
                     )
                     .child(
                         div()
                             .size_8()
-                            .bg(gpui::blue())
+                            .bg(flui_core::blue())
                             .border_1()
                             .border_dashed()
                             .rounded_md()
-                            .border_color(gpui::white()),
+                            .border_color(flui_core::white()),
                     )
                     .child(
                         div()
                             .size_8()
-                            .bg(gpui::yellow())
+                            .bg(flui_core::yellow())
                             .border_1()
                             .border_dashed()
                             .rounded_md()
-                            .border_color(gpui::white()),
+                            .border_color(flui_core::white()),
                     )
                     .child(
                         div()
                             .size_8()
-                            .bg(gpui::black())
+                            .bg(flui_core::black())
                             .border_1()
                             .border_dashed()
                             .rounded_md()
                             .rounded_md()
-                            .border_color(gpui::white()),
+                            .border_color(flui_core::white()),
                     )
                     .child(
                         div()
                             .size_8()
-                            .bg(gpui::white())
+                            .bg(flui_core::white())
                             .border_1()
                             .border_dashed()
                             .rounded_md()
-                            .border_color(gpui::black()),
+                            .border_color(flui_core::black()),
                     ),
             )
     }

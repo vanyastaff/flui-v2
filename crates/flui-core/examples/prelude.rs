@@ -1,4 +1,3 @@
-extern crate flui_core as gpui;
 //! Example Prelude
 //!
 //! Common helpers for GPUI examples. Import with:
@@ -9,7 +8,7 @@ extern crate flui_core as gpui;
 //! use example_prelude::init_example;
 //! ```
 
-use gpui::{App, KeyBinding, Menu, MenuItem, SharedString, actions};
+use flui_core::{App, KeyBinding, Menu, MenuItem, SharedString, actions};
 
 actions!(example, [Quit, CloseWindow]);
 

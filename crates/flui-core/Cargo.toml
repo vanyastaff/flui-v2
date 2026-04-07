@@ -54,7 +54,7 @@ windows-manifest = []
 
 [lib]
 name = "flui_core"
-path = "src/gpui.rs"
+path = "src/lib.rs"
 doctest = false
 
 [dependencies]

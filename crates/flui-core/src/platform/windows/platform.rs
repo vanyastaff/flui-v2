@@ -28,7 +28,7 @@ use windows::{
 };
 
 use crate::*;
-use gpui::*;
+use flui_core::*;
 
 pub struct WindowsPlatform {
     inner: Rc<WindowsPlatformInner>,
@@ -112,7 +112,7 @@ impl WindowsPlatform {
         } else {
             (
                 None,
-                Arc::new(gpui::NoopTextSystem::new()) as Arc<dyn PlatformTextSystem>,
+                Arc::new(flui_core::NoopTextSystem::new()) as Arc<dyn PlatformTextSystem>,
                 None,
             )
         };
@@ -496,7 +496,7 @@ impl Platform for WindowsPlatform {
     fn screen_capture_sources(
         &self,
     ) -> oneshot::Receiver<Result<Vec<Rc<dyn ScreenCaptureSource>>>> {
-        gpui::scap_screen_capture::scap_screen_sources(&self.foreground_executor)
+        flui_core::scap_screen_capture::scap_screen_sources(&self.foreground_executor)
     }
 
     fn active_window(&self) -> Option<AnyWindowHandle> {
@@ -1341,7 +1341,7 @@ unsafe extern "system" fn window_procedure(
 #[cfg(test)]
 mod tests {
     use crate::{read_from_clipboard, write_to_clipboard};
-    use gpui::ClipboardItem;
+    use flui_core::ClipboardItem;
 
     #[test]
     fn test_clipboard() {

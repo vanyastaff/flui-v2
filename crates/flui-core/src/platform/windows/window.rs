@@ -27,7 +27,7 @@ use windows::{
 };
 
 use crate::*;
-use gpui::*;
+use flui_core::*;
 
 pub(crate) struct WindowsWindow(pub Rc<WindowsWindowInner>);
 
@@ -579,7 +579,7 @@ impl PlatformWindow for WindowsWindow {
 
     fn resize(&mut self, size: Size<Pixels>) {
         let hwnd = self.0.hwnd;
-        let bounds = gpui::bounds(self.bounds().origin, size).to_device_pixels(self.scale_factor());
+        let bounds = flui_core::bounds(self.bounds().origin, size).to_device_pixels(self.scale_factor());
         let rect = calculate_window_rect(bounds, &self.state.border_offset);
 
         self.0
@@ -1478,7 +1478,7 @@ fn set_non_rude_hwnd(hwnd: HWND, non_rude: bool) {
 #[cfg(test)]
 mod tests {
     use super::ClickState;
-    use gpui::{DevicePixels, MouseButton, point};
+    use flui_core::{DevicePixels, MouseButton, point};
     use std::time::Duration;
 
     #[test]

@@ -1,4 +1,3 @@
-extern crate flui_core as gpui;
 //! Styling Patterns Example
 //!
 //! This example demonstrates different styling approaches in GPUI:
@@ -7,8 +6,8 @@ extern crate flui_core as gpui;
 //! 2. Conditional styling - when, when_some, map
 //! 3. Theming patterns - using Colors for consistent styling
 
-use gpui::colors::Colors;
-use gpui::{
+use flui_core::colors::Colors;
+use flui_core::{
     App, Application, Bounds, Context, FocusHandle, Hsla, KeyBinding, Menu, MenuItem, Render, Rgba,
     Window, WindowBounds, WindowOptions, actions, div, prelude::*, px, rgb, size,
 };
@@ -18,7 +17,7 @@ actions!(styling_example, [Quit, Tab, TabPrev]);
 // Interactive States Example
 
 fn interactive_button(
-    id: impl Into<gpui::ElementId>,
+    id: impl Into<flui_core::ElementId>,
     label: &'static str,
     colors: &Colors,
 ) -> impl IntoElement {
@@ -42,7 +41,7 @@ fn interactive_button(
 }
 
 fn focus_button(
-    id: impl Into<gpui::ElementId>,
+    id: impl Into<flui_core::ElementId>,
     label: &'static str,
     focus_handle: &FocusHandle,
     colors: &Colors,
@@ -64,7 +63,7 @@ fn focus_button(
         .text_color(text)
         .text_sm()
         .border_2()
-        .border_color(gpui::transparent_black())
+        .border_color(flui_core::transparent_black())
         .hover(move |style| style.bg(surface_hover))
         .focus(move |style| style.border_color(accent))
         .focus_visible(move |style| style.border_color(focus_ring).shadow_sm())
@@ -120,7 +119,7 @@ enum StatusVariant {
 }
 
 fn list_item(
-    id: impl Into<gpui::ElementId>,
+    id: impl Into<flui_core::ElementId>,
     label: &'static str,
     is_selected: bool,
     is_disabled: bool,
@@ -140,7 +139,7 @@ fn list_item(
         .text_sm()
         .cursor_pointer()
         .border_1()
-        .border_color(gpui::transparent_black())
+        .border_color(flui_core::transparent_black())
         .when(is_disabled, |el| {
             el.opacity(0.5)
                 .cursor_not_allowed()
@@ -202,7 +201,7 @@ fn conditional_section(colors: &Colors) -> impl IntoElement {
 // Group Hover Example
 
 fn card_with_group_hover(
-    id: impl Into<gpui::ElementId>,
+    id: impl Into<flui_core::ElementId>,
     title: &'static str,
     description: &'static str,
     colors: &Colors,
@@ -231,7 +230,7 @@ fn card_with_group_hover(
                 .child(
                     div()
                         .text_sm()
-                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                        .font_weight(flui_core::FontWeight::SEMIBOLD)
                         .text_color(text)
                         .child(title),
                 )
@@ -344,7 +343,7 @@ impl Render for StylingExample {
                             .child(
                                 div()
                                     .text_xl()
-                                    .font_weight(gpui::FontWeight::BOLD)
+                                    .font_weight(flui_core::FontWeight::BOLD)
                                     .text_color(colors.text)
                                     .child("Styling Patterns"),
                             )
@@ -454,7 +453,7 @@ fn section(colors: &Colors, title: &'static str, content: impl IntoElement) -> i
         .child(
             div()
                 .text_sm()
-                .font_weight(gpui::FontWeight::SEMIBOLD)
+                .font_weight(flui_core::FontWeight::SEMIBOLD)
                 .text_color(colors.text)
                 .child(title),
         )
@@ -475,7 +474,7 @@ fn color_swatch(colors: &Colors, name: &'static str, color: Rgba) -> impl IntoEl
                 .rounded_md()
                 .bg(color)
                 .border_1()
-                .border_color(gpui::white().opacity(0.2)),
+                .border_color(flui_core::white().opacity(0.2)),
         )
         .child(div().text_xs().text_color(text_muted).child(name))
 }

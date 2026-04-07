@@ -1,4 +1,3 @@
-extern crate flui_core as gpui;
 //! Text Example
 //!
 //! This example demonstrates text capabilities in GPUI:
@@ -14,7 +13,7 @@ extern crate flui_core as gpui;
 mod example_prelude;
 
 use example_prelude::init_example;
-use gpui::{
+use flui_core::{
     App, Application, Bounds, Context, FontStyle, FontWeight, Hsla, Render, StyledText,
     TextOverflow, Window, WindowBounds, WindowOptions, colors::Colors, current_platform, div,
     prelude::*, px, relative, rgb, size,

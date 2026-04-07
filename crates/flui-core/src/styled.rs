@@ -1,11 +1,11 @@
 use crate::{
-    self as gpui, AbsoluteLength, AlignContent, AlignItems, AlignSelf, BorderStyle, CursorStyle,
+    self as flui_core, AbsoluteLength, AlignContent, AlignItems, AlignSelf, BorderStyle, CursorStyle,
     DefiniteLength, Display, Fill, FlexDirection, FlexWrap, Font, FontFeatures, FontStyle,
     FontWeight, GridPlacement, GridTemplate, Hsla, JustifyContent, Length, SharedString,
     StrikethroughStyle, StyleRefinement, TemplateColumnMinSize, TextAlign, TextOverflow,
     TextStyleRefinement, UnderlineStyle, WhiteSpace, px, relative, rems,
 };
-pub use gpui_macros::{
+pub use flui_macros::{
     border_style_methods, box_shadow_style_methods, cursor_style_methods, margin_style_methods,
     overflow_style_methods, padding_style_methods, position_style_methods,
     visibility_style_methods,
@@ -17,21 +17,21 @@ const ELLIPSIS: SharedString = SharedString::new_static("…");
 // gate on rust-analyzer so rust-analyzer never needs to expand this macro, it takes up to 10 seconds to expand due to inefficiencies in rust-analyzers proc-macro srv
 #[cfg_attr(
     all(any(feature = "inspector", debug_assertions), not(rust_analyzer)),
-    gpui_macros::derive_inspector_reflection
+    flui_macros::derive_inspector_reflection
 )]
 pub trait Styled: Sized {
     /// Returns a reference to the style memory of this element.
     fn style(&mut self) -> &mut StyleRefinement;
 
-    gpui_macros::style_helpers!();
-    gpui_macros::visibility_style_methods!();
-    gpui_macros::margin_style_methods!();
-    gpui_macros::padding_style_methods!();
-    gpui_macros::position_style_methods!();
-    gpui_macros::overflow_style_methods!();
-    gpui_macros::cursor_style_methods!();
-    gpui_macros::border_style_methods!();
-    gpui_macros::box_shadow_style_methods!();
+    flui_macros::style_helpers!();
+    flui_macros::visibility_style_methods!();
+    flui_macros::margin_style_methods!();
+    flui_macros::padding_style_methods!();
+    flui_macros::position_style_methods!();
+    flui_macros::overflow_style_methods!();
+    flui_macros::cursor_style_methods!();
+    flui_macros::border_style_methods!();
+    flui_macros::box_shadow_style_methods!();
 
     /// Sets the display type of the element to `block`.
     /// [Docs](https://tailwindcss.com/docs/display)

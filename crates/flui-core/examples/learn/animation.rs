@@ -1,4 +1,3 @@
-extern crate flui_core as gpui;
 //! Animation Example
 //!
 //! This example demonstrates animation capabilities in GPUI:
@@ -14,8 +13,8 @@ mod example_prelude;
 use std::time::Duration;
 
 use anyhow::Result;
-use gpui::colors::Colors;
-use gpui::{
+use flui_core::colors::Colors;
+use flui_core::{
     Animation, AnimationExt as _, App, Application, AssetSource, Bounds, Context, Hsla,
     SharedString, Transformation, Window, WindowBounds, WindowOptions, bounce, div, ease_in_out,
     linear, percentage, prelude::*, px, rgb, size as gpui_size, svg,
@@ -73,7 +72,7 @@ impl Render for AnimationExample {
                             .child(
                                 div()
                                     .text_xl()
-                                    .font_weight(gpui::FontWeight::BOLD)
+                                    .font_weight(flui_core::FontWeight::BOLD)
                                     .text_color(colors.text)
                                     .child("Animation Patterns"),
                             )
@@ -254,7 +253,7 @@ fn section(colors: &Colors, title: &'static str, content: impl IntoElement) -> i
         .child(
             div()
                 .text_sm()
-                .font_weight(gpui::FontWeight::SEMIBOLD)
+                .font_weight(flui_core::FontWeight::SEMIBOLD)
                 .text_color(colors.text)
                 .child(title),
         )

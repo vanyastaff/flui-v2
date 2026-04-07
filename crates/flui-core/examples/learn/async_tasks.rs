@@ -1,4 +1,3 @@
-extern crate flui_core as gpui;
 //! Async Tasks Example
 //!
 //! This example demonstrates different async patterns in GPUI:
@@ -13,8 +12,8 @@ mod example_prelude;
 
 use std::time::Duration;
 
-use gpui::colors::Colors;
-use gpui::{
+use flui_core::colors::Colors;
+use flui_core::{
     App, Application, Bounds, Context, Entity, Render, Task, Window, WindowBounds, WindowOptions,
     div, prelude::*, px, rgb, size,
 };
@@ -267,7 +266,7 @@ impl Render for AsyncTasksExample {
                             .child(
                                 div()
                                     .text_xl()
-                                    .font_weight(gpui::FontWeight::BOLD)
+                                    .font_weight(flui_core::FontWeight::BOLD)
                                     .text_color(colors.text)
                                     .child("Async Tasks"),
                             )
@@ -343,7 +342,7 @@ impl Render for AsyncTasksExample {
                             .child(
                                 div()
                                     .text_2xl()
-                                    .font_weight(gpui::FontWeight::BOLD)
+                                    .font_weight(flui_core::FontWeight::BOLD)
                                     .text_color(colors.text)
                                     .child(format!("{}", cancellable.counter)),
                             )
@@ -459,7 +458,7 @@ fn demo_section(
                 .child(
                     div()
                         .text_sm()
-                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                        .font_weight(flui_core::FontWeight::SEMIBOLD)
                         .text_color(colors.text)
                         .child(title),
                 )
@@ -475,10 +474,10 @@ fn demo_section(
 
 fn button(
     colors: &Colors,
-    id: impl Into<gpui::ElementId>,
+    id: impl Into<flui_core::ElementId>,
     label: &'static str,
     disabled: bool,
-) -> gpui::Stateful<gpui::Div> {
+) -> flui_core::Stateful<flui_core::Div> {
     let disabled_bg = colors.selected;
     let bg = colors.selected;
     let bg_hover = colors.selected;
@@ -506,9 +505,9 @@ fn button(
 
 fn secondary_button(
     colors: &Colors,
-    id: impl Into<gpui::ElementId>,
+    id: impl Into<flui_core::ElementId>,
     label: &'static str,
-) -> gpui::Stateful<gpui::Div> {
+) -> flui_core::Stateful<flui_core::Div> {
     let bg = colors.selected;
     let bg_hover = colors.border;
     let text = colors.text;
@@ -542,7 +541,7 @@ fn progress_bar(colors: &Colors, progress: u32) -> impl IntoElement {
                 .h_full()
                 .rounded_full()
                 .bg(bar_fill)
-                .w(gpui::relative(clamped as f32 / 100.0)),
+                .w(flui_core::relative(clamped as f32 / 100.0)),
         )
 }
 

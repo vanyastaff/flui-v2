@@ -132,7 +132,7 @@ impl WgpuContext {
         let (device, queue) = adapter
             .request_device(
                 &wgpu::DeviceDescriptor {
-                    label: Some("gpui_device"),
+                    label: Some("flui_device"),
                     required_features,
                     required_limits: wgpu::Limits::downlevel_defaults()
                         .using_resolution(adapter.limits())

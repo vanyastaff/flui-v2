@@ -30,7 +30,7 @@ use wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_surface_v1;
 use crate::platform::linux::wayland::{display::WaylandDisplay, serial::SerialKind};
 use crate::platform::linux::{Globals, Output, WaylandClientStatePtr, get_window};
 use crate::platform::wgpu::{CompositorGpuHint, WgpuRenderer, WgpuSurfaceConfig};
-use gpui::{
+use flui_core::{
     AnyWindowHandle, Bounds, Capslock, Decorations, DevicePixels, GpuSpecs, Modifiers, Pixels,
     PlatformAtlas, PlatformDisplay, PlatformInput, PlatformInputHandler, PlatformWindow, Point,
     PromptButton, PromptLevel, RequestFrameOptions, ResizeEdge, Scene, Size, Tiling,
@@ -42,7 +42,7 @@ use gpui::{
 #[derive(Default)]
 pub(crate) struct Callbacks {
     request_frame: Option<Box<dyn FnMut(RequestFrameOptions)>>,
-    input: Option<Box<dyn FnMut(gpui::PlatformInput) -> gpui::DispatchEventResult>>,
+    input: Option<Box<dyn FnMut(flui_core::PlatformInput) -> flui_core::DispatchEventResult>>,
     active_status_change: Option<Box<dyn FnMut(bool)>>,
     hover_status_change: Option<Box<dyn FnMut(bool)>>,
     resize: Option<Box<dyn FnMut(Size<Pixels>, f32)>>,
@@ -1300,7 +1300,7 @@ impl PlatformWindow for WaylandWindow {
         self.0.callbacks.borrow_mut().request_frame = Some(callback);
     }
 
-    fn on_input(&self, callback: Box<dyn FnMut(PlatformInput) -> gpui::DispatchEventResult>) {
+    fn on_input(&self, callback: Box<dyn FnMut(PlatformInput) -> flui_core::DispatchEventResult>) {
         self.0.callbacks.borrow_mut().input = Some(callback);
     }
 
@@ -1396,7 +1396,7 @@ impl PlatformWindow for WaylandWindow {
         }
     }
 
-    fn start_window_resize(&self, edge: gpui::ResizeEdge) {
+    fn start_window_resize(&self, edge: flui_core::ResizeEdge) {
         let state = self.borrow();
         if let Some(toplevel) = state.surface_state.toplevel() {
             toplevel.resize(

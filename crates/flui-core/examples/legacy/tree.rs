@@ -1,9 +1,8 @@
-extern crate flui_core as gpui;
 //! Renders a div with deep children hierarchy. This example is useful to exemplify that Zed can
 //! handle deep hierarchies (even though it cannot just yet!).
 use std::sync::LazyLock;
 
-use gpui::{
+use flui_core::{
     App, Application, Bounds, Context, Window, WindowBounds, WindowOptions, div, prelude::*, px,
     size,
 };
@@ -20,7 +19,7 @@ static DEPTH: LazyLock<u64> = LazyLock::new(|| {
 impl Render for Tree {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         let mut depth = *DEPTH;
-        static COLORS: [gpui::Hsla; 4] = [gpui::red(), gpui::blue(), gpui::green(), gpui::yellow()];
+        static COLORS: [flui_core::Hsla; 4] = [flui_core::red(), flui_core::blue(), flui_core::green(), flui_core::yellow()];
         let mut colors = COLORS.iter().cycle().copied();
         let mut next_div = || div().p_0p5().bg(colors.next().unwrap());
         let mut innermost_node = next_div();

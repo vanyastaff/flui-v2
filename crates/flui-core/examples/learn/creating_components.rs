@@ -1,4 +1,3 @@
-extern crate flui_core as gpui;
 //! Creating Components Example
 //!
 //! This example demonstrates three different approaches to creating interactive
@@ -12,8 +11,8 @@ extern crate flui_core as gpui;
 mod example_prelude;
 
 use example_prelude::init_example;
-use gpui::colors::Colors;
-use gpui::{
+use flui_core::colors::Colors;
+use flui_core::{
     App, Application, Bounds, Context, Entity, IntoElement, Render, RenderOnce, Window,
     WindowBounds, WindowOptions, div, prelude::*, px, rgb, size,
 };
@@ -375,7 +374,7 @@ impl Render for CreatingComponentsExample {
                     .child(
                         div()
                             .text_2xl()
-                            .font_weight(gpui::FontWeight::BOLD)
+                            .font_weight(flui_core::FontWeight::BOLD)
                             .text_color(colors.text)
                             .child("Creating Components"),
                     )

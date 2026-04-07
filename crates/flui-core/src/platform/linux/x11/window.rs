@@ -3,7 +3,7 @@ use x11rb::connection::RequestConnection;
 
 use crate::platform::linux::X11ClientStatePtr;
 use crate::platform::wgpu::{CompositorGpuHint, WgpuRenderer, WgpuSurfaceConfig};
-use gpui::{
+use flui_core::{
     AnyWindowHandle, Bounds, Decorations, DevicePixels, ForegroundExecutor, GpuSpecs, Modifiers,
     Pixels, PlatformAtlas, PlatformDisplay, PlatformInput, PlatformInputHandler, PlatformWindow,
     Point, PromptButton, PromptLevel, RequestFrameOptions, ResizeEdge, ScaledPixels, Scene, Size,
@@ -242,7 +242,7 @@ unsafe impl Sync for RawWindow {}
 #[derive(Default)]
 pub struct Callbacks {
     request_frame: Option<Box<dyn FnMut(RequestFrameOptions)>>,
-    input: Option<Box<dyn FnMut(PlatformInput) -> gpui::DispatchEventResult>>,
+    input: Option<Box<dyn FnMut(PlatformInput) -> flui_core::DispatchEventResult>>,
     active_status_change: Option<Box<dyn FnMut(bool)>>,
     hovered_status_change: Option<Box<dyn FnMut(bool)>>,
     resize: Option<Box<dyn FnMut(Size<Pixels>, f32)>>,
@@ -1368,7 +1368,7 @@ impl PlatformWindow for X11Window {
             .unwrap_or_default()
     }
 
-    fn capslock(&self) -> gpui::Capslock {
+    fn capslock(&self) -> flui_core::Capslock {
         self.0
             .state
             .borrow()
@@ -1567,7 +1567,7 @@ impl PlatformWindow for X11Window {
         self.0.callbacks.borrow_mut().request_frame = Some(callback);
     }
 
-    fn on_input(&self, callback: Box<dyn FnMut(PlatformInput) -> gpui::DispatchEventResult>) {
+    fn on_input(&self, callback: Box<dyn FnMut(PlatformInput) -> flui_core::DispatchEventResult>) {
         self.0.callbacks.borrow_mut().input = Some(callback);
     }
 
@@ -1681,7 +1681,7 @@ impl PlatformWindow for X11Window {
             .log_err();
     }
 
-    fn window_decorations(&self) -> gpui::Decorations {
+    fn window_decorations(&self) -> flui_core::Decorations {
         let state = self.0.state.borrow();
 
         // Client window decorations require compositor support
@@ -1757,16 +1757,16 @@ impl PlatformWindow for X11Window {
         }
     }
 
-    fn request_decorations(&self, mut decorations: gpui::WindowDecorations) {
+    fn request_decorations(&self, mut decorations: flui_core::WindowDecorations) {
         let mut state = self.0.state.borrow_mut();
 
-        if matches!(decorations, gpui::WindowDecorations::Client)
+        if matches!(decorations, flui_core::WindowDecorations::Client)
             && !state.client_side_decorations_supported
         {
             log::info!(
                 "x11: no compositor present, falling back to server-side window decorations"
             );
-            decorations = gpui::WindowDecorations::Server;
+            decorations = flui_core::WindowDecorations::Server;
         }
 
         // https://github.com/rust-windowing/winit/blob/master/src/platform_impl/linux/x11/util/hint.rs#L53-L87

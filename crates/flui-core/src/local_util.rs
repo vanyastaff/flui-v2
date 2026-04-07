@@ -164,7 +164,7 @@ mod tests {
 
     use super::*;
 
-    #[gpui::test]
+    #[flui_core::test]
     async fn test_with_timeout(cx: &mut TestAppContext) {
         Task::ready(())
             .with_timeout(Duration::from_secs(1), &cx.executor())

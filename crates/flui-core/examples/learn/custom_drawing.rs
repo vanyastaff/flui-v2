@@ -1,4 +1,3 @@
-extern crate flui_core as gpui;
 //! Custom Drawing Example
 //!
 //! This example demonstrates custom drawing in GPUI using:
@@ -8,8 +7,8 @@ extern crate flui_core as gpui;
 //! 3. `window.paint_*` methods - Drawing quads, paths, and more
 //! 4. Interactive drawing - Responding to mouse events
 
-use gpui::colors::Colors;
-use gpui::{
+use flui_core::colors::Colors;
+use flui_core::{
     App, Application, Bounds, Context, Hsla, MouseButton, MouseDownEvent, MouseMoveEvent,
     MouseUpEvent, Path, PathBuilder, Pixels, Point, Render, Rgba, Window, WindowBounds,
     WindowOptions, canvas, div, fill, point, prelude::*, px, rgb, size,
@@ -353,7 +352,7 @@ impl Render for DrawingCanvas {
 // Main Application View
 
 struct CustomDrawingExample {
-    drawing_canvas: gpui::Entity<DrawingCanvas>,
+    drawing_canvas: flui_core::Entity<DrawingCanvas>,
 }
 
 impl CustomDrawingExample {
@@ -388,7 +387,7 @@ impl Render for CustomDrawingExample {
                             .child(
                                 div()
                                     .text_xl()
-                                    .font_weight(gpui::FontWeight::BOLD)
+                                    .font_weight(flui_core::FontWeight::BOLD)
                                     .text_color(colors.text)
                                     .child("Custom Drawing"),
                             )
@@ -450,7 +449,7 @@ fn section(
                 .child(
                     div()
                         .text_sm()
-                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                        .font_weight(flui_core::FontWeight::SEMIBOLD)
                         .text_color(colors.text)
                         .child(title),
                 )

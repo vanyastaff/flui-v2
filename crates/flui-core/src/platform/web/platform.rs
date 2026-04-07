@@ -5,7 +5,7 @@ use crate::platform::wgpu::WgpuContext;
 use crate::window::WebWindow;
 use anyhow::Result;
 use futures::channel::oneshot;
-use gpui::{
+use flui_core::{
     Action, AnyWindowHandle, BackgroundExecutor, ClipboardItem, CursorStyle, DummyKeyboardMapper,
     ForegroundExecutor, Keymap, Menu, MenuItem, PathPromptOptions, Platform, PlatformDisplay,
     PlatformKeyboardLayout, PlatformKeyboardMapper, PlatformTextSystem, PlatformWindow, Task,

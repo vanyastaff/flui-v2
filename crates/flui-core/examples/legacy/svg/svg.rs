@@ -1,9 +1,8 @@
-extern crate flui_core as gpui;
 use std::fs;
 use std::path::PathBuf;
 
 use anyhow::Result;
-use gpui::{
+use flui_core::{
     App, Application, AssetSource, Bounds, Context, SharedString, Window, WindowBounds,
     WindowOptions, current_platform, div, prelude::*, px, rgb, size, svg,
 };

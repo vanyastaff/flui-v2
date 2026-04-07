@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::{cell::Cell, cell::RefCell, rc::Rc};
 
 use crate::platform::wgpu::{WgpuContext, WgpuRenderer, WgpuSurfaceConfig};
-use gpui::{
+use flui_core::{
     AnyWindowHandle, Bounds, Capslock, Decorations, DevicePixels, DispatchEventResult, GpuSpecs,
     Modifiers, MouseButton, Pixels, PlatformAtlas, PlatformDisplay, PlatformInput,
     PlatformInputHandler, PlatformWindow, Point, PromptButton, PromptLevel, RequestFrameOptions,

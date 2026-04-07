@@ -6,7 +6,7 @@ use calloop::{
 };
 use collections::HashMap;
 use core::str;
-use gpui::{Capslock, TaskTiming, profiler};
+use flui_core::{Capslock, TaskTiming, profiler};
 use http_client::Url;
 use log::Level;
 use smallvec::SmallVec;
@@ -61,7 +61,7 @@ use crate::platform::linux::{
 };
 
 use crate::platform::wgpu::{CompositorGpuHint, GpuContext};
-use gpui::{
+use flui_core::{
     AnyWindowHandle, Bounds, ClipboardItem, CursorStyle, DisplayId, FileDropEvent, Keystroke,
     Modifiers, ModifiersChangedEvent, MouseButton, Pixels, PlatformDisplay, PlatformInput,
     PlatformKeyboardLayout, PlatformWindow, Point, RequestFrameOptions, ScrollDelta, Size,
@@ -889,7 +889,7 @@ impl X11Client {
                         .collect();
                     let input = PlatformInput::FileDrop(FileDropEvent::Entered {
                         position: state.xdnd_state.position,
-                        paths: gpui::ExternalPaths(paths),
+                        paths: flui_core::ExternalPaths(paths),
                     });
                     drop(state);
                     window.handle_input(input);
@@ -1069,7 +1069,7 @@ impl X11Client {
                     keystroke
                 };
                 drop(state);
-                window.handle_input(PlatformInput::KeyDown(gpui::KeyDownEvent {
+                window.handle_input(PlatformInput::KeyDown(flui_core::KeyDownEvent {
                     keystroke,
                     is_held: false,
                     prefer_character_input: false,
@@ -1102,7 +1102,7 @@ impl X11Client {
                     keystroke
                 };
                 drop(state);
-                window.handle_input(PlatformInput::KeyUp(gpui::KeyUpEvent { keystroke }));
+                window.handle_input(PlatformInput::KeyUp(flui_core::KeyUpEvent { keystroke }));
             }
             Event::XinputButtonPress(event) => {
                 let window = self.get_window(event.event)?;
@@ -1149,7 +1149,7 @@ impl X11Client {
                         let current_count = state.current_count;
 
                         drop(state);
-                        window.handle_input(PlatformInput::MouseDown(gpui::MouseDownEvent {
+                        window.handle_input(PlatformInput::MouseDown(flui_core::MouseDownEvent {
                             button,
                             position,
                             modifiers,
@@ -1195,7 +1195,7 @@ impl X11Client {
                     Some(ButtonOrScroll::Button(button)) => {
                         let click_count = state.current_count;
                         drop(state);
-                        window.handle_input(PlatformInput::MouseUp(gpui::MouseUpEvent {
+                        window.handle_input(PlatformInput::MouseUp(flui_core::MouseUpEvent {
                             button,
                             position,
                             modifiers,
@@ -1246,7 +1246,7 @@ impl X11Client {
                 drop(state);
 
                 if event.valuator_mask[0] & 3 != 0 {
-                    window.handle_input(PlatformInput::MouseMove(gpui::MouseMoveEvent {
+                    window.handle_input(PlatformInput::MouseMove(flui_core::MouseMoveEvent {
                         position,
                         pressed_button,
                         modifiers,
@@ -1288,7 +1288,7 @@ impl X11Client {
                 drop(state);
 
                 let window = self.get_window(event.event)?;
-                window.handle_input(PlatformInput::MouseExited(gpui::MouseExitEvent {
+                window.handle_input(PlatformInput::MouseExited(flui_core::MouseExitEvent {
                     pressed_button,
                     position,
                     modifiers,
@@ -1498,9 +1498,9 @@ impl LinuxClient for X11Client {
     #[cfg(feature = "screen-capture")]
     fn screen_capture_sources(
         &self,
-    ) -> futures::channel::oneshot::Receiver<anyhow::Result<Vec<Rc<dyn gpui::ScreenCaptureSource>>>>
+    ) -> futures::channel::oneshot::Receiver<anyhow::Result<Vec<Rc<dyn flui_core::ScreenCaptureSource>>>>
     {
-        gpui::scap_screen_capture::scap_screen_sources(&self.0.borrow().common.foreground_executor)
+        flui_core::scap_screen_capture::scap_screen_sources(&self.0.borrow().common.foreground_executor)
     }
 
     fn open_window(
@@ -1624,7 +1624,7 @@ impl LinuxClient for X11Client {
         );
     }
 
-    fn write_to_primary(&self, item: gpui::ClipboardItem) {
+    fn write_to_primary(&self, item: flui_core::ClipboardItem) {
         let state = self.0.borrow_mut();
         state
             .clipboard
@@ -1637,7 +1637,7 @@ impl LinuxClient for X11Client {
             .log_with_level(log::Level::Debug);
     }
 
-    fn write_to_clipboard(&self, item: gpui::ClipboardItem) {
+    fn write_to_clipboard(&self, item: flui_core::ClipboardItem) {
         let mut state = self.0.borrow_mut();
         state
             .clipboard
@@ -1651,7 +1651,7 @@ impl LinuxClient for X11Client {
         state.clipboard_item.replace(item);
     }
 
-    fn read_from_primary(&self) -> Option<gpui::ClipboardItem> {
+    fn read_from_primary(&self) -> Option<flui_core::ClipboardItem> {
         let state = self.0.borrow_mut();
         state
             .clipboard
@@ -1660,7 +1660,7 @@ impl LinuxClient for X11Client {
             .log_with_level(log::Level::Debug)
     }
 
-    fn read_from_clipboard(&self) -> Option<gpui::ClipboardItem> {
+    fn read_from_clipboard(&self) -> Option<flui_core::ClipboardItem> {
         let state = self.0.borrow_mut();
         // if the last copy was from this app, return our cached item
         // which has metadata attached.
@@ -2312,7 +2312,7 @@ fn make_scroll_wheel_event(
     position: Point<Pixels>,
     scroll_delta: Point<f32>,
     modifiers: Modifiers,
-) -> gpui::ScrollWheelEvent {
+) -> flui_core::ScrollWheelEvent {
     // When shift is held down, vertical scrolling turns into horizontal scrolling.
     let delta = if modifiers.shift {
         Point {
@@ -2322,7 +2322,7 @@ fn make_scroll_wheel_event(
     } else {
         scroll_delta
     };
-    gpui::ScrollWheelEvent {
+    flui_core::ScrollWheelEvent {
         position,
         delta: ScrollDelta::Lines(delta),
         modifiers,

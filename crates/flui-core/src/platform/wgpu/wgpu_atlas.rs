@@ -1,7 +1,7 @@
 use anyhow::{Context as _, Result};
 use collections::FxHashMap;
 use etagere::{BucketedAtlasAllocator, size2};
-use gpui::{
+use flui_core::{
     AtlasKey, AtlasTextureId, AtlasTextureKind, AtlasTextureList, AtlasTile, Bounds, DevicePixels,
     PlatformAtlas, Point, Size,
 };

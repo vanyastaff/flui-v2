@@ -27,7 +27,7 @@ use core_foundation::{
 use ctor::ctor;
 use dispatch2::DispatchQueue;
 use futures::channel::oneshot;
-use gpui::{
+use flui_core::{
     Action, AnyWindowHandle, BackgroundExecutor, ClipboardItem, CursorStyle, ForegroundExecutor,
     KeyContext, Keymap, Menu, MenuItem, OsMenu, OwnedMenu, PathPromptOptions, Platform,
     PlatformDisplay, PlatformKeyboardLayout, PlatformKeyboardMapper, PlatformTextSystem,
@@ -188,7 +188,7 @@ impl MacPlatform {
         let text_system = Arc::new(super::MacTextSystem::new());
 
         #[cfg(not(feature = "font-kit"))]
-        let text_system = Arc::new(gpui::NoopTextSystem::new());
+        let text_system = Arc::new(flui_core::NoopTextSystem::new());
 
         let keyboard_layout = MacKeyboardLayout::new();
         let keyboard_mapper = Rc::new(MacKeyboardMapper::new(keyboard_layout.id()));
@@ -323,14 +323,14 @@ impl MacPlatform {
                         .map(|binding| binding.keystrokes());
 
                     let selector = match os_action {
-                        Some(gpui::OsAction::Cut) => selector("cut:"),
-                        Some(gpui::OsAction::Copy) => selector("copy:"),
-                        Some(gpui::OsAction::Paste) => selector("paste:"),
-                        Some(gpui::OsAction::SelectAll) => selector("selectAll:"),
+                        Some(flui_core::OsAction::Cut) => selector("cut:"),
+                        Some(flui_core::OsAction::Copy) => selector("copy:"),
+                        Some(flui_core::OsAction::Paste) => selector("paste:"),
+                        Some(flui_core::OsAction::SelectAll) => selector("selectAll:"),
                         // "undo:" and "redo:" are always disabled in our case, as
                         // we don't have a NSTextView/NSTextField to enable them on.
-                        Some(gpui::OsAction::Undo) => selector("handleGPUIMenuItem:"),
-                        Some(gpui::OsAction::Redo) => selector("handleGPUIMenuItem:"),
+                        Some(flui_core::OsAction::Undo) => selector("handleGPUIMenuItem:"),
+                        Some(flui_core::OsAction::Redo) => selector("handleGPUIMenuItem:"),
                         None => selector("handleGPUIMenuItem:"),
                     };
 
@@ -456,7 +456,7 @@ impl Platform for MacPlatform {
         self.0.lock().background_executor.clone()
     }
 
-    fn foreground_executor(&self) -> gpui::ForegroundExecutor {
+    fn foreground_executor(&self) -> flui_core::ForegroundExecutor {
         self.0.lock().foreground_executor.clone()
     }
 
@@ -599,7 +599,7 @@ impl Platform for MacPlatform {
     #[cfg(feature = "screen-capture")]
     fn screen_capture_sources(
         &self,
-    ) -> oneshot::Receiver<Result<Vec<Rc<dyn gpui::ScreenCaptureSource>>>> {
+    ) -> oneshot::Receiver<Result<Vec<Rc<dyn flui_core::ScreenCaptureSource>>>> {
         crate::screen_capture::get_sources()
     }
 

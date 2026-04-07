@@ -1,5 +1,5 @@
 use dispatch2::{DispatchQueue, DispatchQueueGlobalPriority, DispatchTime, GlobalQueueIdentifier};
-use gpui::{
+use flui_core::{
     GLOBAL_THREAD_TIMINGS, PlatformDispatcher, Priority, RunnableMeta, RunnableVariant,
     THREAD_TIMINGS, TaskTiming, ThreadTaskTimings,
 };

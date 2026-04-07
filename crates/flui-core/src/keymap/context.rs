@@ -517,7 +517,7 @@ mod tests {
     use core::slice;
 
     use super::*;
-    use crate as gpui;
+    use crate as flui_core;
     use KeyBindingContextPredicate::*;
 
     #[test]

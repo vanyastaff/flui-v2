@@ -231,7 +231,7 @@ pub trait Platform: 'static {
         let (sources_tx, sources_rx) = oneshot::channel();
         sources_tx
             .send(Err(anyhow::anyhow!(
-                "gpui was compiled without the screen-capture feature"
+                "flui was compiled without the screen-capture feature"
             )))
             .ok();
         sources_rx

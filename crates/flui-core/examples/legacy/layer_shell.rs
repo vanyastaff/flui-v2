@@ -1,4 +1,3 @@
-extern crate flui_core as gpui;
 fn main() {
     #[cfg(all(target_os = "linux", feature = "wayland"))]
     example::main();
@@ -11,7 +10,7 @@ fn main() {
 mod example {
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-    use gpui::{
+    use flui_core::{
         App, Application, Bounds, Context, FontWeight, Size, Window, WindowBackgroundAppearance,
         WindowBounds, WindowKind, WindowOptions, div, layer_shell::*, point, prelude::*, px, rems,
         rgba, white,

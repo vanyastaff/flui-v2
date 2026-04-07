@@ -721,7 +721,7 @@ impl PlatformInput {
 mod test {
 
     use crate::{
-        self as gpui, AppContext as _, Context, FocusHandle, InteractiveElement, IntoElement,
+        self as flui_core, AppContext as _, Context, FocusHandle, InteractiveElement, IntoElement,
         KeyBinding, Keystroke, ParentElement, Render, TestAppContext, Window, div,
     };
 
@@ -755,7 +755,7 @@ mod test {
         }
     }
 
-    #[gpui::test]
+    #[flui_core::test]
     fn test_on_events(cx: &mut TestAppContext) {
         let window = cx.update(|cx| {
             cx.open_window(Default::default(), |_, cx| {

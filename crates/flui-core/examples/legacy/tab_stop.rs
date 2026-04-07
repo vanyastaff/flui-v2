@@ -1,5 +1,4 @@
-extern crate flui_core as gpui;
-use gpui::{
+use flui_core::{
     App, Application, Bounds, Context, Div, ElementId, FocusHandle, KeyBinding, SharedString,
     Stateful, Window, WindowBounds, WindowOptions, actions, div, prelude::*, px, size,
 };
@@ -46,7 +45,7 @@ impl Example {
 impl Render for Example {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         fn tab_stop_style<T: Styled>(this: T) -> T {
-            this.border_3().border_color(gpui::blue())
+            this.border_3().border_color(flui_core::blue())
         }
 
         fn button(id: impl Into<ElementId>) -> Stateful<Div> {
@@ -58,9 +57,9 @@ impl Render for Example {
                 .justify_center()
                 .items_center()
                 .border_1()
-                .border_color(gpui::black())
-                .bg(gpui::black())
-                .text_color(gpui::white())
+                .border_color(flui_core::black())
+                .bg(flui_core::black())
+                .text_color(flui_core::white())
                 .focus(tab_stop_style)
                 .shadow_sm()
         }
@@ -75,8 +74,8 @@ impl Render for Example {
             .flex_col()
             .p_4()
             .gap_3()
-            .bg(gpui::white())
-            .text_color(gpui::black())
+            .bg(flui_core::white())
+            .text_color(flui_core::black())
             .child(self.message.clone())
             .children(
                 self.items
@@ -93,14 +92,14 @@ impl Render for Example {
                             .justify_center()
                             .items_center()
                             .border_1()
-                            .border_color(gpui::black())
+                            .border_color(flui_core::black())
                             .when(
                                 item_handle.tab_stop && item_handle.is_focused(window),
                                 tab_stop_style,
                             )
                             .map(|this| match item_handle.tab_stop {
                                 true => this
-                                    .hover(|this| this.bg(gpui::black().opacity(0.1)))
+                                    .hover(|this| this.bg(flui_core::black().opacity(0.1)))
                                     .child(format!("tab_index: {}", item_handle.tab_index)),
                                 false => this.opacity(0.4).child("tab_stop: false"),
                             })

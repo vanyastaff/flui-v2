@@ -1,5 +1,4 @@
-extern crate flui_core as gpui;
-use gpui::{
+use flui_core::{
     App, Application, Bounds, BoxShadow, Context, Div, SharedString, Window, WindowBounds,
     WindowOptions, current_platform, div, hsla, point, prelude::*, px, relative, rgb, size,
 };

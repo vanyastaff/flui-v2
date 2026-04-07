@@ -4,9 +4,8 @@
 
 #![allow(clippy::needless_pass_by_ref_mut)]
 
-extern crate flui_core as gpui;
 
-use gpui::{
+use flui_core::{
     div, hsla, prelude::*, px, rgb, size, App, Application, Bounds, Context, InteractiveElement,
     IntoElement, MouseButton, ParentElement, Render, SharedString, Styled, TitlebarOptions, Window,
     WindowBounds, WindowOptions,
@@ -92,11 +91,11 @@ fn nav_button(label: &str, path: &str) -> impl IntoElement {
         })
 }
 
-fn home_page(_window: &mut Window, _cx: &mut App, _params: &RouteParams) -> gpui::AnyElement {
+fn home_page(_window: &mut Window, _cx: &mut App, _params: &RouteParams) -> flui_core::AnyElement {
     page_content("Home", "Welcome to flui-v2!", hsla(0.38, 0.74, 0.66, 1.0))
 }
 
-fn about_page(_window: &mut Window, _cx: &mut App, _params: &RouteParams) -> gpui::AnyElement {
+fn about_page(_window: &mut Window, _cx: &mut App, _params: &RouteParams) -> flui_core::AnyElement {
     page_content(
         "About",
         "flui-v2 is a Flutter-inspired GPU-accelerated UI framework for Rust.",
@@ -104,7 +103,7 @@ fn about_page(_window: &mut Window, _cx: &mut App, _params: &RouteParams) -> gpu
     )
 }
 
-fn contact_page(_window: &mut Window, _cx: &mut App, _params: &RouteParams) -> gpui::AnyElement {
+fn contact_page(_window: &mut Window, _cx: &mut App, _params: &RouteParams) -> flui_core::AnyElement {
     page_content(
         "Contact",
         "github.com/vanyastaff/flui-v2",
@@ -112,7 +111,7 @@ fn contact_page(_window: &mut Window, _cx: &mut App, _params: &RouteParams) -> g
     )
 }
 
-fn page_content(title: &str, body: &str, accent: gpui::Hsla) -> gpui::AnyElement {
+fn page_content(title: &str, body: &str, accent: flui_core::Hsla) -> flui_core::AnyElement {
     div()
         .flex()
         .flex_col()

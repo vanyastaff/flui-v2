@@ -13,7 +13,7 @@ use core_graphics::display::{
 };
 use ctor::ctor;
 use futures::channel::oneshot;
-use gpui::{
+use flui_core::{
     DevicePixels, ForegroundExecutor, ScreenCaptureFrame, ScreenCaptureSource, ScreenCaptureStream,
     SharedString, SourceMetadata, size,
 };

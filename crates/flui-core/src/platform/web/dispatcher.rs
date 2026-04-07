@@ -1,4 +1,4 @@
-use gpui::{
+use flui_core::{
     PlatformDispatcher, Priority, PriorityQueueReceiver, PriorityQueueSender, RunnableVariant,
     ThreadTaskTimings,
 };

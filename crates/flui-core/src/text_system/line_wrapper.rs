@@ -876,7 +876,7 @@ mod tests {
 
     // For compatibility with the test macro
     #[cfg(target_os = "macos")]
-    use crate as gpui;
+    use crate as flui_core;
 
     // These seem to vary wildly based on the text system.
     #[cfg(target_os = "macos")]

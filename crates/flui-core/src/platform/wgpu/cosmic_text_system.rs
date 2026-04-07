@@ -4,7 +4,7 @@ use cosmic_text::{
     Attrs, AttrsList, Family, Font as CosmicTextFont, FontFeatures as CosmicFontFeatures,
     FontSystem, ShapeBuffer, ShapeLine,
 };
-use gpui::{
+use flui_core::{
     Bounds, DevicePixels, Font, FontFeatures, FontId, FontMetrics, FontRun, GlyphId, LineLayout,
     Pixels, PlatformTextSystem, RenderGlyphParams, SUBPIXEL_VARIANTS_X, SUBPIXEL_VARIANTS_Y,
     ShapedGlyph, ShapedRun, SharedString, Size, TextRenderingMode, point, size,
@@ -215,7 +215,7 @@ impl CosmicTextSystemState {
         name: &str,
         features: &FontFeatures,
     ) -> Result<SmallVec<[FontId; 4]>> {
-        let name = gpui::font_name_with_fallbacks(name, &self.system_font_fallback);
+        let name = flui_core::font_name_with_fallbacks(name, &self.system_font_fallback);
 
         let families = self
             .font_system
@@ -554,7 +554,7 @@ fn find_best_match(
     let target_weight = font.weight.0;
     let target_italic = matches!(
         font.style,
-        gpui::FontStyle::Italic | gpui::FontStyle::Oblique
+        flui_core::FontStyle::Italic | flui_core::FontStyle::Oblique
     );
 
     let mut best_index = 0;
@@ -602,12 +602,12 @@ fn cosmic_font_features(features: &FontFeatures) -> Result<CosmicFontFeatures> {
 }
 
 #[cfg(feature = "font-kit")]
-fn font_into_properties(font: &gpui::Font) -> font_kit::properties::Properties {
+fn font_into_properties(font: &flui_core::Font) -> font_kit::properties::Properties {
     font_kit::properties::Properties {
         style: match font.style {
-            gpui::FontStyle::Normal => font_kit::properties::Style::Normal,
-            gpui::FontStyle::Italic => font_kit::properties::Style::Italic,
-            gpui::FontStyle::Oblique => font_kit::properties::Style::Oblique,
+            flui_core::FontStyle::Normal => font_kit::properties::Style::Normal,
+            flui_core::FontStyle::Italic => font_kit::properties::Style::Italic,
+            flui_core::FontStyle::Oblique => font_kit::properties::Style::Oblique,
         },
         weight: font_kit::properties::Weight(font.weight.0),
         stretch: Default::default(),

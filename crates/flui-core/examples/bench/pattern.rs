@@ -1,5 +1,4 @@
-extern crate flui_core as gpui;
-use gpui::{
+use flui_core::{
     App, AppContext, Application, Bounds, Context, Window, WindowBounds, WindowOptions, div,
     linear_color_stop, linear_gradient, pattern_slash, prelude::*, px, rgb, size,
 };
@@ -25,24 +24,24 @@ impl Render for PatternExample {
                     .flex()
                     .flex_col()
                     .border_1()
-                    .border_color(gpui::blue())
+                    .border_color(flui_core::blue())
                     .child(div().w(px(54.0)).h(px(18.0)).bg(pattern_slash(
-                        gpui::red(),
+                        flui_core::red(),
                         18.0 / 4.0,
                         18.0 / 4.0,
                     )))
                     .child(div().w(px(54.0)).h(px(18.0)).bg(pattern_slash(
-                        gpui::red(),
+                        flui_core::red(),
                         18.0 / 4.0,
                         18.0 / 4.0,
                     )))
                     .child(div().w(px(54.0)).h(px(18.0)).bg(pattern_slash(
-                        gpui::red(),
+                        flui_core::red(),
                         18.0 / 4.0,
                         18.0 / 4.0,
                     )))
                     .child(div().w(px(54.0)).h(px(18.0)).bg(pattern_slash(
-                        gpui::red(),
+                        flui_core::red(),
                         18.0 / 4.0,
                         18.0 / 2.0,
                     ))),
@@ -52,26 +51,26 @@ impl Render for PatternExample {
                     .flex()
                     .flex_col()
                     .border_1()
-                    .border_color(gpui::blue())
-                    .bg(gpui::green().opacity(0.16))
+                    .border_color(flui_core::blue())
+                    .bg(flui_core::green().opacity(0.16))
                     .child("Elements the same height should align")
                     .child(div().w(px(256.0)).h(px(56.0)).bg(pattern_slash(
-                        gpui::red(),
+                        flui_core::red(),
                         56.0 / 6.0,
                         56.0 / 6.0,
                     )))
                     .child(div().w(px(256.0)).h(px(56.0)).bg(pattern_slash(
-                        gpui::green(),
+                        flui_core::green(),
                         56.0 / 6.0,
                         56.0 / 6.0,
                     )))
                     .child(div().w(px(256.0)).h(px(56.0)).bg(pattern_slash(
-                        gpui::blue(),
+                        flui_core::blue(),
                         56.0 / 6.0,
                         56.0 / 6.0,
                     )))
                     .child(div().w(px(256.0)).h(px(26.0)).bg(pattern_slash(
-                        gpui::yellow(),
+                        flui_core::yellow(),
                         56.0 / 6.0,
                         56.0 / 6.0,
                     ))),
@@ -79,21 +78,21 @@ impl Render for PatternExample {
             .child(
                 div()
                     .border_1()
-                    .border_color(gpui::blue())
+                    .border_color(flui_core::blue())
                     .w(px(240.0))
                     .h(px(40.0))
-                    .bg(gpui::red()),
+                    .bg(flui_core::red()),
             )
             .child(
                 div()
                     .border_1()
-                    .border_color(gpui::blue())
+                    .border_color(flui_core::blue())
                     .w(px(240.0))
                     .h(px(40.0))
                     .bg(linear_gradient(
                         45.,
-                        linear_color_stop(gpui::red(), 0.),
-                        linear_color_stop(gpui::blue(), 1.),
+                        linear_color_stop(flui_core::red(), 0.),
+                        linear_color_stop(flui_core::blue(), 1.),
                     )),
             )
     }

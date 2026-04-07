@@ -4,7 +4,7 @@
 //! and a test implementation of the `ForegroundExecutor` and `BackgroundExecutor` which ensure that your tests run
 //! deterministically even in the face of arbitrary parallelism.
 //!
-//! The output of the `gpui::test` macro is understood by other rust test runners, so you can use it with `cargo test`
+//! The output of the `flui_core::test` macro is understood by other rust test runners, so you can use it with `cargo test`
 //! or `cargo-nextest`, or another runner of your choice.
 //!
 //! To make it possible to test collaborative user interfaces (like Zed) you can ask for as many different contexts
@@ -15,12 +15,12 @@
 //! ```
 //! use gpui;
 //!
-//! #[gpui::test]
+//! #[flui_core::test]
 //! async fn test_example(cx: &TestAppContext) {
 //!   assert!(true)
 //! }
 //!
-//! #[gpui::test]
+//! #[flui_core::test]
 //! async fn test_collaboration_example(cx_a: &TestAppContext, cx_b: &TestAppContext) {
 //!   assert!(true)
 //! }
@@ -34,7 +34,7 @@ use std::{
     pin::Pin,
 };
 
-/// Strategy injected into `#[gpui::property_test]` tests to control the seed
+/// Strategy injected into `#[flui_core::property_test]` tests to control the seed
 /// given to the scheduler. Doesn't shrink, since all scheduler seeds are
 /// equivalent in complexity. If `$SEED` is set, it always uses that value.
 pub fn seed_strategy() -> impl Strategy<Value = u64> {
@@ -46,7 +46,7 @@ pub fn seed_strategy() -> impl Strategy<Value = u64> {
 
 /// Similar to [`run_test`], but only runs the callback once, allowing
 /// [`FnOnce`] callbacks. This is intended for use with the
-/// `gpui::property_test` macro and generally should not be used directly.
+/// `flui_core::property_test` macro and generally should not be used directly.
 ///
 /// Doesn't support many features of [`run_test`], since these are provided by
 /// proptest.
@@ -65,7 +65,7 @@ pub fn run_test_once(seed: u64, test_fn: Box<dyn UnwindSafe + FnOnce(TestDispatc
 }
 
 /// Run the given test function with the configured parameters.
-/// This is intended for use with the `gpui::test` macro
+/// This is intended for use with the `flui_core::test` macro
 /// and generally should not be used directly.
 pub fn run_test(
     num_iterations: usize,
