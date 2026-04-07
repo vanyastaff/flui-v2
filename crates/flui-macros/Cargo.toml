@@ -1,0 +1,25 @@
+[package]
+name = "flui-macros"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Procedural macros for flui-core"
+
+[features]
+inspector = []
+
+[lib]
+path = "src/gpui_macros.rs"
+proc-macro = true
+doctest = true
+
+[dependencies]
+heck = "0.5.0"
+proc-macro2 = "1.0.106"
+quote = "1.0.45"
+syn = { version = "2.0.117", features = ["full", "extra-traits", "visit-mut"] }
+
+[lints]
+workspace = true

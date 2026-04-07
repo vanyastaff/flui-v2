@@ -1,0 +1,14 @@
+[package]
+name = "flui-widgets"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Widget library for flui (Button, Input, Modal, Theme, etc.)"
+
+[dependencies]
+flui-core = { path = "../flui-core" }
+
+[lints]
+workspace = true

@@ -1,4 +1,4 @@
-use crate::{CompositorGpuHint, WgpuAtlas, WgpuContext};
+use super::{CompositorGpuHint, WgpuAtlas, WgpuContext};
 use bytemuck::{Pod, Zeroable};
 use gpui::{
     AtlasTextureId, Background, Bounds, DevicePixels, GpuSpecs, MonochromeSprite, Path, Point,
@@ -175,10 +175,12 @@ impl WgpuRenderer {
         let window_handle = window
             .window_handle()
             .map_err(|e| anyhow::anyhow!("Failed to get window handle: {e}"))?;
+        let display_handle = window
+            .display_handle()
+            .map_err(|e| anyhow::anyhow!("Failed to get display handle: {e}"))?;
 
         let target = wgpu::SurfaceTargetUnsafe::RawHandle {
-            // Fall back to the display handle already provided via InstanceDescriptor::display.
-            raw_display_handle: None,
+            raw_display_handle: display_handle.as_raw(),
             raw_window_handle: window_handle.as_raw(),
         };
 
@@ -424,7 +426,7 @@ impl WgpuRenderer {
 
         let last_error: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
         let last_error_clone = Arc::clone(&last_error);
-        device.on_uncaptured_error(Arc::new(move |error| {
+        device.on_uncaptured_error(Box::new(move |error: wgpu::Error| {
             let mut guard = last_error_clone.lock().unwrap();
             *guard = Some(error.to_string());
         }));
@@ -646,8 +648,8 @@ impl WgpuRenderer {
                                module: &wgpu::ShaderModule| {
             let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some(&format!("{name}_layout")),
-                bind_group_layouts: &[Some(globals_layout), Some(data_layout)],
-                immediate_size: 0,
+                bind_group_layouts: &[globals_layout, data_layout],
+                push_constant_ranges: &[],
             });
 
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -680,7 +682,7 @@ impl WgpuRenderer {
                     mask: !0,
                     alpha_to_coverage_enabled: false,
                 },
-                multiview_mask: None,
+                multiview: None,
                 cache: None,
             })
         };
@@ -923,12 +925,7 @@ impl WgpuRenderer {
             let resources = self.resources_mut();
 
             // Wait for any in-flight GPU work to complete before destroying textures
-            if let Err(e) = resources.device.poll(wgpu::PollType::Wait {
-                submission_index: None,
-                timeout: None,
-            }) {
-                warn!("Failed to poll device during resize: {e:?}");
-            }
+            resources.device.poll(wgpu::Maintain::Wait);
 
             // Destroy old textures before allocating new ones to avoid GPU memory spikes
             if let Some(ref texture) = resources.path_intermediate_texture {
@@ -1054,10 +1051,20 @@ impl WgpuRenderer {
         self.atlas.before_frame();
 
         let frame = match self.resources().surface.get_current_texture() {
-            wgpu::CurrentSurfaceTexture::Success(frame) => frame,
-            wgpu::CurrentSurfaceTexture::Suboptimal(frame) => {
-                // Textures must be destroyed before the surface can be reconfigured.
-                drop(frame);
+            Ok(frame) => {
+                if frame.suboptimal {
+                    // Textures must be destroyed before the surface can be reconfigured.
+                    drop(frame);
+                    let surface_config = self.surface_config.clone();
+                    let resources = self.resources_mut();
+                    resources
+                        .surface
+                        .configure(&resources.device, &surface_config);
+                    return;
+                }
+                frame
+            }
+            Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
                 let surface_config = self.surface_config.clone();
                 let resources = self.resources_mut();
                 resources
@@ -1065,20 +1072,12 @@ impl WgpuRenderer {
                     .configure(&resources.device, &surface_config);
                 return;
             }
-            wgpu::CurrentSurfaceTexture::Lost | wgpu::CurrentSurfaceTexture::Outdated => {
-                let surface_config = self.surface_config.clone();
-                let resources = self.resources_mut();
-                resources
-                    .surface
-                    .configure(&resources.device, &surface_config);
+            Err(wgpu::SurfaceError::Timeout) => {
                 return;
             }
-            wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => {
-                return;
-            }
-            wgpu::CurrentSurfaceTexture::Validation => {
+            Err(wgpu::SurfaceError::OutOfMemory | wgpu::SurfaceError::Other) => {
                 *self.last_error.lock().unwrap() =
-                    Some("Surface texture validation error".to_string());
+                    Some("Surface texture error".to_string());
                 return;
             }
         };
@@ -1157,7 +1156,6 @@ impl WgpuRenderer {
                             load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
                             store: wgpu::StoreOp::Store,
                         },
-                        depth_slice: None,
                     })],
                     depth_stencil_attachment: None,
                     ..Default::default()
@@ -1196,8 +1194,7 @@ impl WgpuRenderer {
                                         load: wgpu::LoadOp::Load,
                                         store: wgpu::StoreOp::Store,
                                     },
-                                    depth_slice: None,
-                                })],
+                                            })],
                                 depth_stencil_attachment: None,
                                 ..Default::default()
                             });
@@ -1567,7 +1564,6 @@ impl WgpuRenderer {
                         load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
                         store: wgpu::StoreOp::Store,
                     },
-                    depth_slice: None,
                 })],
                 depth_stencil_attachment: None,
                 ..Default::default()
@@ -1655,6 +1651,9 @@ impl WgpuRenderer {
         let window_handle = window
             .window_handle()
             .map_err(|e| anyhow::anyhow!("Failed to get window handle: {e}"))?;
+        let display_handle = window
+            .display_handle()
+            .map_err(|e| anyhow::anyhow!("Failed to get display handle: {e}"))?;
 
         let surface = if needs_new_context {
             log::warn!("GPU device lost, recreating context...");
@@ -1667,14 +1666,14 @@ impl WgpuRenderer {
             std::thread::sleep(std::time::Duration::from_millis(350));
 
             let instance = WgpuContext::instance(Box::new(window.clone()));
-            let surface = create_surface(&instance, window_handle.as_raw())?;
+            let surface = create_surface(&instance, window_handle.as_raw(), display_handle.as_raw())?;
             let new_context = WgpuContext::new(instance, &surface, self.compositor_gpu)?;
             *gpu_context.borrow_mut() = Some(new_context);
             surface
         } else {
             let ctx_ref = gpu_context.borrow();
             let instance = &ctx_ref.as_ref().unwrap().instance;
-            create_surface(instance, window_handle.as_raw())?
+            create_surface(instance, window_handle.as_raw(), display_handle.as_raw())?
         };
 
         let config = WgpuSurfaceConfig {
@@ -1710,12 +1709,12 @@ impl WgpuRenderer {
 fn create_surface(
     instance: &wgpu::Instance,
     raw_window_handle: raw_window_handle::RawWindowHandle,
+    raw_display_handle: raw_window_handle::RawDisplayHandle,
 ) -> anyhow::Result<wgpu::Surface<'static>> {
     unsafe {
         instance
             .create_surface_unsafe(wgpu::SurfaceTargetUnsafe::RawHandle {
-                // Fall back to the display handle already provided via InstanceDescriptor::display.
-                raw_display_handle: None,
+                raw_display_handle,
                 raw_window_handle,
             })
             .map_err(|e| anyhow::anyhow!("{e}"))

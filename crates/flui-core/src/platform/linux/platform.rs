@@ -367,8 +367,7 @@ impl<P: LinuxClient + 'static> Platform for LinuxPlatform<P> {
                         response
                             .uris()
                             .iter()
-                            .filter_map(|uri: &ashpd::Uri| url::Url::parse(uri.as_str()).ok())
-                            .filter_map(|uri: url::Url| uri.to_file_path().ok())
+                            .filter_map(|uri: &url::Url| uri.to_file_path().ok())
                             .collect::<Vec<_>>(),
                     )),
                     Err(ashpd::Error::Response(_)) => Ok(None),
@@ -430,8 +429,7 @@ impl<P: LinuxClient + 'static> Platform for LinuxPlatform<P> {
                         Ok(response) => Ok(response
                             .uris()
                             .first()
-                            .and_then(|uri: &ashpd::Uri| url::Url::parse(uri.as_str()).ok())
-                            .and_then(|uri: url::Url| uri.to_file_path().ok())),
+                            .and_then(|uri: &url::Url| uri.to_file_path().ok())),
                         Err(ashpd::Error::Response(_)) => Ok(None),
                         Err(e) => Err(e.into()),
                     };
@@ -632,11 +630,11 @@ pub(super) fn open_uri_internal(
     uri: &str,
     activation_token: Option<String>,
 ) {
-    if let Some(uri) = ashpd::Uri::parse(uri).log_err() {
+    if let Some(parsed_uri) = url::Url::parse(uri).log_err() {
         executor
             .spawn(async move {
                 let mut xdg_open_failed = false;
-                for mut command in open::commands(uri.to_string()) {
+                for mut command in open::commands(parsed_uri.to_string()) {
                     if let Some(token) = activation_token.as_ref() {
                         command.env("XDG_ACTIVATION_TOKEN", token);
                     }
@@ -663,7 +661,7 @@ pub(super) fn open_uri_internal(
                 if xdg_open_failed {
                     match ashpd::desktop::open_uri::OpenFileRequest::default()
                         .activation_token(activation_token.map(ashpd::ActivationToken::from))
-                        .send_uri(&uri)
+                        .send_uri(&parsed_uri)
                         .await
                         .and_then(|e| e.response())
                     {

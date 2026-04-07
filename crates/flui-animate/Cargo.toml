@@ -1,0 +1,14 @@
+[package]
+name = "flui-animate"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Animation system for flui (extends core with_animation)"
+
+[dependencies]
+flui-core = { path = "../flui-core" }
+
+[lints]
+workspace = true
