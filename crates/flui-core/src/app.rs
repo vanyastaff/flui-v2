@@ -2351,6 +2351,20 @@ impl App {
             .map(|sb| sb.0)
             .unwrap_or(crate::Brightness::Light)
     }
+
+    /// Get the system locale.
+    ///
+    /// Falls back to `Locale::default()` (English) if `SystemLocale` has not been set.
+    pub fn locale(&self) -> crate::Locale {
+        self.try_global::<crate::SystemLocale>()
+            .map(|sl| sl.0.clone())
+            .unwrap_or_default()
+    }
+
+    /// Get the text direction for the current locale.
+    pub fn text_direction(&self) -> crate::TextDirection {
+        crate::TextDirection::from_language(&self.locale().language)
+    }
 }
 
 impl AppContext for App {

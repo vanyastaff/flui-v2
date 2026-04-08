@@ -259,6 +259,19 @@ pub trait Platform: 'static {
         // Default: no-op
     }
 
+    /// Returns the system locale.
+    fn locale(&self) -> crate::Locale {
+        if let Ok(val) = std::env::var("LC_ALL")
+            .or_else(|_| std::env::var("LANG"))
+            .or_else(|_| std::env::var("LC_MESSAGES"))
+        {
+            if val != "C" && val != "POSIX" && !val.is_empty() {
+                return crate::Locale::from_posix(&val);
+            }
+        }
+        crate::Locale::default()
+    }
+
     fn open_url(&self, url: &str);
     fn on_open_urls(&self, callback: Box<dyn FnMut(Vec<String>)>);
     fn register_url_scheme(&self, url: &str) -> Task<Result<()>>;
