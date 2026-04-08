@@ -34,6 +34,7 @@ pub(crate) struct TestPlatform {
     pub opened_url: RefCell<Option<String>>,
     pub text_system: Arc<dyn PlatformTextSystem>,
     pub expect_restart: RefCell<Option<oneshot::Sender<Option<PathBuf>>>>,
+    pub(crate) brightness: Mutex<crate::Brightness>,
     headless_renderer_factory: Option<Box<dyn Fn() -> Option<Box<dyn PlatformHeadlessRenderer>>>>,
     weak: Weak<Self>,
 }
@@ -130,6 +131,7 @@ impl TestPlatform {
             weak: weak.clone(),
             opened_url: Default::default(),
             text_system,
+            brightness: Mutex::new(crate::Brightness::Light),
             headless_renderer_factory,
         })
     }
@@ -336,6 +338,10 @@ impl Platform for TestPlatform {
 
     fn window_appearance(&self) -> WindowAppearance {
         WindowAppearance::Light
+    }
+
+    fn brightness(&self) -> crate::Brightness {
+        *self.brightness.lock()
     }
 
     fn open_url(&self, url: &str) {
