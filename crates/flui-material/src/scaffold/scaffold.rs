@@ -1,7 +1,6 @@
 use flui_core::{
     AnyElement, App, IntoElement, InteractiveElement, ParentElement, RenderOnce,
     StatefulInteractiveElement, Styled, Window, div, px,
-    prelude::FluentBuilder,
 };
 use flui_theme::ActiveTheme;
 

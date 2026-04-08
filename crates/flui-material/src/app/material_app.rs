@@ -1,5 +1,5 @@
 use flui_core::{
-    AnyElement, App, BorrowAppContext, IntoElement, ParentElement, RenderOnce, Styled, Window,
+    AnyElement, App, IntoElement, ParentElement, RenderOnce, Styled, Window,
     WindowAppearance, div,
 };
 use flui_theme::{ActiveTheme, Brightness, ThemeData, ThemeMode};

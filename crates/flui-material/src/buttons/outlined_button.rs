@@ -1,6 +1,6 @@
 use flui_core::{
     InteractiveElement,
-    AnyElement, App, ClickEvent, ElementId, IntoElement, ParentElement, RenderOnce, SharedString,
+    App, ClickEvent, ElementId, IntoElement, ParentElement, RenderOnce, SharedString,
     Styled, Window, div, prelude::FluentBuilder,
 };
 use flui_theme::ActiveTheme;

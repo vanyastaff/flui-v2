@@ -69,7 +69,7 @@ impl RenderOnce for TextField {
         }
 
         let base_el = base.style(move |_state, child| {
-            let mut container = div()
+            let container = div()
                 .flex()
                 .items_center()
                 .gap(theme.spacing.sm)

@@ -1,5 +1,5 @@
 use flui_core::{
-    AnyElement, App, IntoElement, ParentElement, RenderOnce, SharedString, Styled, Window, div,
+    App, IntoElement, ParentElement, RenderOnce, SharedString, Styled, Window, div,
     prelude::FluentBuilder,
 };
 use flui_theme::ActiveTheme;
@@ -56,9 +56,8 @@ impl RenderOnce for AlertDialog {
 
         let mut dialog = DialogBase::new("alert-dialog").visible(self.visible);
 
-        if let Some(ref on_dismiss) = self.on_dismiss {
-            let dismiss = self.on_dismiss.unwrap();
-            dialog = dialog.on_dismiss(dismiss);
+        if let Some(on_dismiss) = self.on_dismiss {
+            dialog = dialog.on_dismiss(on_dismiss);
         }
 
         let on_confirm = self.on_confirm;

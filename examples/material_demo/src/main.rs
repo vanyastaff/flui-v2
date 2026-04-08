@@ -7,7 +7,7 @@ extern crate flui_core;
 
 use flui_core::{
     div, prelude::*, px, size, App, Application, Bounds, Context, IntoElement,
-    ParentElement, Render, SharedString, Styled, Window, WindowBounds, WindowOptions,
+    ParentElement, Render, Styled, Window, WindowBounds, WindowOptions,
     TitlebarOptions,
 };
 use flui_material::*;
