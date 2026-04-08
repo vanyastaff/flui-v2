@@ -1,8 +1,10 @@
+mod controller;
 mod curve;
 mod lerp;
 mod simulation;
 mod tween;
 
+pub use controller::{AnimationController, AnimationStatus};
 pub use curve::Curve;
 pub use lerp::Lerp;
 pub use simulation::{
