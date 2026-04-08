@@ -73,3 +73,65 @@ impl TextDirection {
 /// App-level global storing the system locale.
 pub(crate) struct SystemLocale(pub Locale);
 impl Global for SystemLocale {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_locale_from_posix_full() {
+        let locale = Locale::from_posix("en_US.UTF-8");
+        assert_eq!(locale.language, "en");
+        assert_eq!(locale.country, Some("US".to_string()));
+    }
+
+    #[test]
+    fn test_locale_from_posix_no_encoding() {
+        let locale = Locale::from_posix("ru_RU");
+        assert_eq!(locale.language, "ru");
+        assert_eq!(locale.country, Some("RU".to_string()));
+    }
+
+    #[test]
+    fn test_locale_from_posix_language_only() {
+        let locale = Locale::from_posix("en");
+        assert_eq!(locale.language, "en");
+        assert_eq!(locale.country, None);
+    }
+
+    #[test]
+    fn test_locale_from_posix_with_modifier() {
+        let locale = Locale::from_posix("sr_RS@latin");
+        assert_eq!(locale.language, "sr");
+        assert_eq!(locale.country, Some("RS".to_string()));
+    }
+
+    #[test]
+    fn test_locale_from_bcp47_simple() {
+        let locale = Locale::from_bcp47("en-US");
+        assert_eq!(locale.language, "en");
+        assert_eq!(locale.country, Some("US".to_string()));
+    }
+
+    #[test]
+    fn test_locale_from_bcp47_with_script() {
+        let locale = Locale::from_bcp47("zh-Hans-CN");
+        assert_eq!(locale.language, "zh");
+        assert_eq!(locale.country, Some("CN".to_string()));
+    }
+
+    #[test]
+    fn test_text_direction_ltr() {
+        assert_eq!(TextDirection::from_language("en"), TextDirection::Ltr);
+        assert_eq!(TextDirection::from_language("ru"), TextDirection::Ltr);
+        assert_eq!(TextDirection::from_language("zh"), TextDirection::Ltr);
+    }
+
+    #[test]
+    fn test_text_direction_rtl() {
+        assert_eq!(TextDirection::from_language("ar"), TextDirection::Rtl);
+        assert_eq!(TextDirection::from_language("he"), TextDirection::Rtl);
+        assert_eq!(TextDirection::from_language("fa"), TextDirection::Rtl);
+        assert_eq!(TextDirection::from_language("ur"), TextDirection::Rtl);
+    }
+}

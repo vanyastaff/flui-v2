@@ -65,3 +65,47 @@ pub fn read<T: InheritedValue>() -> T {
         )
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_push_read_pop() {
+        push(42i32);
+        assert_eq!(read::<i32>(), 42);
+        pop::<i32>();
+    }
+
+    #[test]
+    fn test_try_read_empty() {
+        assert_eq!(try_read::<f64>(), None);
+    }
+
+    #[test]
+    fn test_nested_override() {
+        push(1i32);
+        assert_eq!(read::<i32>(), 1);
+        push(2i32);
+        assert_eq!(read::<i32>(), 2);
+        pop::<i32>();
+        assert_eq!(read::<i32>(), 1);
+        pop::<i32>();
+    }
+
+    #[test]
+    fn test_multiple_types() {
+        push(42i32);
+        push("hello".to_string());
+        assert_eq!(read::<i32>(), 42);
+        assert_eq!(read::<String>(), "hello");
+        pop::<String>();
+        pop::<i32>();
+    }
+
+    #[test]
+    #[should_panic(expected = "No Provider<i32>")]
+    fn test_read_panics_when_empty() {
+        let _ = read::<i32>();
+    }
+}
