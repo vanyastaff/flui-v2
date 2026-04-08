@@ -6,6 +6,8 @@ members = [
     "crates/flui-animate",
     "crates/flui-navigator",
     "crates/flui-a11y",
+    "crates/flui-theme",
+    "crates/flui-material",
     "examples/nav_demo",
 ]
 resolver = "3"

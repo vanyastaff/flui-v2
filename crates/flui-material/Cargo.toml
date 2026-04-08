@@ -1,14 +1,16 @@
 [package]
-name = "flui-widgets"
+name = "flui-material"
 version = "0.1.0"
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Headless, unstyled widget primitives for flui — zero visual styling, pure behavior"
+description = "Material Design 3 components for flui"
 
 [dependencies]
 flui-core = { path = "../flui-core" }
+flui-widgets = { path = "../flui-widgets" }
+flui-theme = { path = "../flui-theme" }
 smallvec = "1"
 
 [lints]

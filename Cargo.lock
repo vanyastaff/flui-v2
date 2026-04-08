@@ -1789,6 +1789,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "flui-material"
+version = "0.1.0"
+dependencies = [
+ "flui-core",
+ "flui-theme",
+ "flui-widgets",
+ "smallvec",
+]
+
+[[package]]
 name = "flui-navigator"
 version = "0.1.0"
 dependencies = [
@@ -1800,10 +1810,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "flui-theme"
+version = "0.1.0"
+dependencies = [
+ "flui-core",
+ "flui-widgets",
+]
+
+[[package]]
 name = "flui-widgets"
 version = "0.1.0"
 dependencies = [
  "flui-core",
+ "smallvec",
 ]
 
 [[package]]
