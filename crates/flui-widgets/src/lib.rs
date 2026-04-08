@@ -21,6 +21,7 @@
 //! - Animation hooks (without visual implementation)
 
 pub mod layout;
+pub mod primitives;
 pub mod provider;
 pub mod state;
 /// Widget pattern documentation — maps Flutter concepts to flui equivalents.
@@ -28,5 +29,9 @@ pub mod widget;
 
 // Re-export core types at crate root
 pub use layout::{column, row, EdgeInsets, Expanded, Flexible, Padding, SizedBox, Stack};
+pub use primitives::{
+    ButtonBase, CheckboxBase, DialogBase, RadioBase, ScrollBase, SelectBase, SliderBase,
+    SwitchBase, TextFieldBase, TextFieldVisuals, VirtualListBase,
+};
 pub use provider::{InheritedValue, Provider, read, try_read};
 pub use state::InteractionState;
