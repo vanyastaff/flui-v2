@@ -28,7 +28,9 @@ Dark mode detection is currently per-window (`window.appearance()`). There is no
 
 ### Design
 
-**New Global:** `SystemBrightness` stored in `App`, initialized at startup from platform API.
+**Brightness enum:** Defined in `src/brightness.rs` in flui-core as the canonical definition. `flui-theme` deletes its own `brightness.rs` and re-exports `flui_core::Brightness`.
+
+**New Global:** `struct SystemBrightness(pub Brightness)` with `impl Global`. Stored in `App`, initialized at startup from platform API.
 
 **New Platform trait methods:**
 ```rust
@@ -86,7 +88,7 @@ pub enum TextDirection {
 
 **Platform detection:**
 - macOS: `NSLocale.currentLocale` → `languageCode` + `countryCode`
-- Linux: `LC_ALL` or `LANG` environment variable, parse `lang_COUNTRY.encoding`
+- Linux: `LC_ALL` → `LANG` → `LC_MESSAGES` → fallback `"en"`. Parse `lang_COUNTRY.encoding` format
 - Windows: `GetUserDefaultLocaleName` → parse BCP 47 tag
 
 **TextDirection:** Computed from `Locale.language`. RTL languages: `ar`, `he`, `fa`, `ur`, `ps`, `sd`, `yi`. All others: LTR. Simple lookup table, no ICU dependency.
@@ -151,7 +153,7 @@ No InheritedWidget/Provider wrapper — purely a convenience struct with zero ov
 ### Design
 
 **Move to flui-core:**
-- `src/provider.rs` (or `src/provider/` directory) containing:
+- `src/provider/` directory (3 files: `mod.rs`, `stack.rs`, `element.rs`) containing:
   - Thread-local stack: `HashMap<TypeId, Vec<Box<dyn Any>>>` with `push`/`pop`
   - `Provider<T>` component implementing `RenderOnce` → `ProviderElement<T>` implementing `Element`
   - `InheritedValue` trait (blanket impl for `Any + Clone + Send + Sync + 'static`)
@@ -190,7 +192,7 @@ flui-navigator → flui-core
 | `src/platform_brightness.rs` | SystemBrightness Global, App methods |
 | `src/locale.rs` | Locale, TextDirection, SystemLocale Global, App methods |
 | `src/media_query.rs` | MediaQueryData struct, Window method |
-| `src/provider.rs` | Provider<T>, ProviderElement<T>, InheritedValue, read/try_read |
+| `src/provider/` | Provider<T>, ProviderElement<T>, InheritedValue, read/try_read (3 files: mod.rs, stack.rs, element.rs) |
 
 ### Modified files in flui-core:
 | File | Change |
@@ -199,6 +201,7 @@ flui-navigator → flui-core
 | `src/platform/mac/platform.rs` | macOS implementations |
 | `src/platform/linux/platform.rs` | Linux implementations |
 | `src/platform/windows/platform.rs` | Windows implementations |
+| `src/platform/test/platform.rs` | Test platform: defaults (`Light`, `Locale("en", None)`) |
 | `src/app.rs` | Init SystemBrightness/SystemLocale, add platform_brightness/locale/text_direction methods |
 | `src/window.rs` | Add `media_query()` method |
 | `src/lib.rs` | pub mod + re-exports for new modules |
@@ -210,6 +213,8 @@ flui-navigator → flui-core
 | `crates/flui-widgets/src/lib.rs` | Re-export Provider from flui-core |
 | `crates/flui-theme/Cargo.toml` | Remove flui-widgets dependency |
 | `crates/flui-theme/src/lib.rs` | Remove flui-widgets re-export |
+| `crates/flui-theme/src/brightness.rs` | Delete — re-export `flui_core::Brightness` instead |
+| `crates/flui-theme/src/theme_data.rs` | Use `flui_core::Brightness` |
 
 ---
 
