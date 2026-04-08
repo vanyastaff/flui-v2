@@ -34,6 +34,7 @@ mod keymap;
 mod local_util;
 mod path_builder;
 mod platform;
+mod platform_brightness;
 pub mod prelude;
 /// Profiling utilities for task timing and thread performance tracking.
 pub mod profiler;
@@ -106,6 +107,7 @@ pub use keymap::*;
 pub use local_util::{FutureExt, Timeout, command};
 pub use path_builder::*;
 pub use platform::*;
+pub use platform_brightness::*;
 pub use profiler::*;
 #[cfg(any(target_os = "windows", target_os = "linux", target_family = "wasm"))]
 pub use queue::{PriorityQueueReceiver, PriorityQueueSender};

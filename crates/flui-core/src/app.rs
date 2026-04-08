@@ -2342,6 +2342,15 @@ impl App {
     pub fn init_colors(&mut self) {
         self.set_global(GlobalColors(Arc::new(Colors::default())));
     }
+
+    /// Returns the current platform brightness preference (light or dark).
+    ///
+    /// Falls back to [`Brightness::Light`] if `SystemBrightness` has not been set.
+    pub fn platform_brightness(&self) -> crate::Brightness {
+        self.try_global::<crate::SystemBrightness>()
+            .map(|sb| sb.0)
+            .unwrap_or(crate::Brightness::Light)
+    }
 }
 
 impl AppContext for App {
