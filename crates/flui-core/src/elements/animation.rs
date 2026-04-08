@@ -18,6 +18,8 @@ pub struct Animation {
     /// A function that takes a delta between 0 and 1 and returns a new delta
     /// between 0 and 1 based on the given easing function.
     pub easing: Rc<dyn Fn(f32) -> f32>,
+    /// An optional easing curve. Takes precedence over `easing` if set.
+    pub curve: Option<crate::animation::Curve>,
 }
 
 impl Animation {
@@ -28,6 +30,7 @@ impl Animation {
             duration,
             oneshot: true,
             easing: Rc::new(linear),
+            curve: None,
         }
     }
 
@@ -42,6 +45,12 @@ impl Animation {
     /// between 0 and 1
     pub fn with_easing(mut self, easing: impl Fn(f32) -> f32 + 'static) -> Self {
         self.easing = Rc::new(easing);
+        self
+    }
+
+    /// Set the easing curve. Takes precedence over `with_easing()` if both are set.
+    pub fn curve(mut self, curve: crate::animation::Curve) -> Self {
+        self.curve = Some(curve);
         self
     }
 }
@@ -160,7 +169,11 @@ impl<E: IntoElement + 'static> Element for AnimationElement<E> {
                     delta %= 1.0;
                 }
             }
-            let delta = (self.animations[animation_ix].easing)(delta);
+            let delta = if let Some(ref curve) = self.animations[animation_ix].curve {
+                curve.transform(delta)
+            } else {
+                (self.animations[animation_ix].easing)(delta)
+            };
 
             debug_assert!(
                 (0.0..=1.0).contains(&delta),
