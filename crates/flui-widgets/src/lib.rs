@@ -22,7 +22,6 @@
 
 pub mod layout;
 pub mod primitives;
-pub mod provider;
 pub mod state;
 /// Widget pattern documentation — maps Flutter concepts to flui equivalents.
 pub mod widget;
@@ -33,5 +32,5 @@ pub use primitives::{
     ButtonBase, CheckboxBase, DialogBase, RadioBase, ScrollBase, SelectBase, SliderBase,
     SwitchBase, TextFieldBase, TextFieldVisuals, VirtualListBase,
 };
-pub use provider::{InheritedValue, Provider, read, try_read};
+pub use flui_core::{InheritedValue, Provider, read, try_read};
 pub use state::InteractionState;
