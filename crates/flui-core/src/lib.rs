@@ -9,6 +9,7 @@ extern crate flui_macros;
 
 #[macro_use]
 mod action;
+pub mod animation;
 mod app;
 
 mod arena;
@@ -84,6 +85,7 @@ mod seal {
 }
 
 pub use action::*;
+pub use animation::*;
 pub use anyhow::Result;
 pub use app::*;
 pub(crate) use arena::*;
