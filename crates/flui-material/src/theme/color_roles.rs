@@ -1,0 +1,78 @@
+use flui_core::hsla;
+use flui_theme::ColorScheme;
+
+/// Material Design 3 baseline light color scheme.
+pub fn m3_light_colors() -> ColorScheme {
+    ColorScheme {
+        primary: hsla(262. / 360., 0.52, 0.47, 1.0),
+        on_primary: hsla(0., 0., 1., 1.0),
+        primary_container: hsla(264. / 360., 1.0, 0.91, 1.0),
+        on_primary_container: hsla(260. / 360., 1.0, 0.14, 1.0),
+        secondary: hsla(263. / 360., 0.12, 0.40, 1.0),
+        on_secondary: hsla(0., 0., 1., 1.0),
+        secondary_container: hsla(264. / 360., 0.34, 0.90, 1.0),
+        on_secondary_container: hsla(261. / 360., 0.31, 0.16, 1.0),
+        tertiary: hsla(340. / 360., 0.32, 0.41, 1.0),
+        on_tertiary: hsla(0., 0., 1., 1.0),
+        error: hsla(0., 0.74, 0.40, 1.0),
+        on_error: hsla(0., 0., 1., 1.0),
+        error_container: hsla(6. / 360., 1.0, 0.93, 1.0),
+        on_error_container: hsla(358. / 360., 1.0, 0.15, 1.0),
+        surface: hsla(270. / 360., 0.20, 0.99, 1.0),
+        on_surface: hsla(270. / 360., 0.10, 0.11, 1.0),
+        surface_variant: hsla(264. / 360., 0.17, 0.90, 1.0),
+        on_surface_variant: hsla(264. / 360., 0.05, 0.29, 1.0),
+        surface_container: hsla(264. / 360., 0.17, 0.94, 1.0),
+        surface_container_high: hsla(264. / 360., 0.17, 0.92, 1.0),
+        surface_container_low: hsla(264. / 360., 0.17, 0.96, 1.0),
+        background: hsla(270. / 360., 0.20, 0.99, 1.0),
+        on_background: hsla(270. / 360., 0.10, 0.11, 1.0),
+        outline: hsla(264. / 360., 0.05, 0.46, 1.0),
+        outline_variant: hsla(264. / 360., 0.10, 0.79, 1.0),
+        inverse_surface: hsla(270. / 360., 0.06, 0.19, 1.0),
+        inverse_on_surface: hsla(270. / 360., 0.15, 0.95, 1.0),
+        inverse_primary: hsla(265. / 360., 1.0, 0.83, 1.0),
+        scrim: hsla(0., 0., 0., 1.0),
+        shadow: hsla(0., 0., 0., 1.0),
+        warning: hsla(40. / 360., 0.95, 0.45, 1.0),
+        success: hsla(145. / 360., 0.63, 0.42, 1.0),
+    }
+}
+
+/// Material Design 3 baseline dark color scheme.
+pub fn m3_dark_colors() -> ColorScheme {
+    ColorScheme {
+        primary: hsla(265. / 360., 1.0, 0.83, 1.0),
+        on_primary: hsla(261. / 360., 0.68, 0.26, 1.0),
+        primary_container: hsla(261. / 360., 0.56, 0.37, 1.0),
+        on_primary_container: hsla(264. / 360., 1.0, 0.91, 1.0),
+        secondary: hsla(264. / 360., 0.24, 0.81, 1.0),
+        on_secondary: hsla(262. / 360., 0.18, 0.27, 1.0),
+        secondary_container: hsla(262. / 360., 0.14, 0.37, 1.0),
+        on_secondary_container: hsla(264. / 360., 0.34, 0.90, 1.0),
+        tertiary: hsla(339. / 360., 0.50, 0.78, 1.0),
+        on_tertiary: hsla(339. / 360., 0.35, 0.23, 1.0),
+        error: hsla(6. / 360., 1.0, 0.84, 1.0),
+        on_error: hsla(357. / 360., 1.0, 0.24, 1.0),
+        error_container: hsla(356. / 360., 0.68, 0.32, 1.0),
+        on_error_container: hsla(6. / 360., 1.0, 0.93, 1.0),
+        surface: hsla(270. / 360., 0.15, 0.08, 1.0),
+        on_surface: hsla(264. / 360., 0.14, 0.90, 1.0),
+        surface_variant: hsla(264. / 360., 0.05, 0.29, 1.0),
+        on_surface_variant: hsla(264. / 360., 0.10, 0.79, 1.0),
+        surface_container: hsla(265. / 360., 0.10, 0.12, 1.0),
+        surface_container_high: hsla(265. / 360., 0.10, 0.17, 1.0),
+        surface_container_low: hsla(265. / 360., 0.10, 0.10, 1.0),
+        background: hsla(270. / 360., 0.15, 0.08, 1.0),
+        on_background: hsla(264. / 360., 0.14, 0.90, 1.0),
+        outline: hsla(264. / 360., 0.05, 0.56, 1.0),
+        outline_variant: hsla(264. / 360., 0.05, 0.29, 1.0),
+        inverse_surface: hsla(264. / 360., 0.14, 0.90, 1.0),
+        inverse_on_surface: hsla(270. / 360., 0.06, 0.19, 1.0),
+        inverse_primary: hsla(262. / 360., 0.52, 0.47, 1.0),
+        scrim: hsla(0., 0., 0., 1.0),
+        shadow: hsla(0., 0., 0., 1.0),
+        warning: hsla(40. / 360., 0.95, 0.55, 1.0),
+        success: hsla(145. / 360., 0.63, 0.55, 1.0),
+    }
+}
