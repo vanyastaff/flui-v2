@@ -38,6 +38,7 @@ mod path_builder;
 mod platform;
 mod platform_brightness;
 pub mod prelude;
+mod provider;
 /// Profiling utilities for task timing and thread performance tracking.
 pub mod profiler;
 #[cfg(any(target_os = "windows", target_os = "linux", target_family = "wasm"))]
@@ -89,6 +90,7 @@ pub(crate) use arena::*;
 pub use asset_cache::*;
 pub use assets::*;
 pub use brightness::*;
+pub use provider::{InheritedValue, Provider, read, try_read};
 pub use color::*;
 pub use ctor::ctor;
 pub use element::*;
