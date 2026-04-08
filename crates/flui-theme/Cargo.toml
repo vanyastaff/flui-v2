@@ -9,7 +9,6 @@ description = "Universal theme token system for flui — design-system agnostic"
 
 [dependencies]
 flui-core = { path = "../flui-core" }
-flui-widgets = { path = "../flui-widgets" }
 
 [lints]
 workspace = true

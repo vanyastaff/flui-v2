@@ -19,16 +19,13 @@
 //! ```
 
 mod active_theme;
-mod brightness;
 mod theme_data;
 mod theme_mode;
 pub mod tokens;
 
 pub use active_theme::ActiveTheme;
-pub use brightness::Brightness;
+pub use flui_core::Brightness;
 pub use theme_data::ThemeData;
 pub use theme_mode::ThemeMode;
 pub use tokens::{ColorScheme, ShapeTheme, SpacingTheme, TextTheme, ThemeTextStyle};
 
-// Re-export flui-widgets for convenience
-pub use flui_widgets;
