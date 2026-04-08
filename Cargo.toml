@@ -9,6 +9,7 @@ members = [
     "crates/flui-theme",
     "crates/flui-material",
     "examples/nav_demo",
+    "examples/material_demo",
 ]
 resolver = "3"
 
