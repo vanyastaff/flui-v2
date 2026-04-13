@@ -27,21 +27,13 @@ mod test;
 #[cfg(all(target_os = "macos", any(test, feature = "test-support")))]
 mod visual_test;
 
-#[cfg(all(
-    feature = "screen-capture",
-    any(target_os = "windows", target_os = "linux", target_os = "freebsd",)
-))]
-pub mod scap_screen_capture;
-
-#[cfg(all(
-    any(target_os = "windows", target_os = "linux"),
-    feature = "screen-capture"
-))]
-pub(crate) type PlatformScreenCaptureFrame = scap::frame::Frame;
-#[cfg(not(feature = "screen-capture"))]
+/// Placeholder type for platform screen-capture frames.
+///
+/// Screen capture is currently not implemented in flui-core. The
+/// `ScreenCaptureSource` / `ScreenCaptureStream` traits exist as future
+/// extension points; when a concrete backend is reintroduced, this alias
+/// will be replaced with the real frame type.
 pub(crate) type PlatformScreenCaptureFrame = ();
-#[cfg(all(target_os = "macos", feature = "screen-capture"))]
-pub(crate) type PlatformScreenCaptureFrame = core_video::image_buffer::CVImageBuffer;
 
 use crate::scheduler::Instant;
 pub use crate::scheduler::RunnableMeta;
@@ -231,7 +223,7 @@ pub trait Platform: 'static {
         let (sources_tx, sources_rx) = oneshot::channel();
         sources_tx
             .send(Err(anyhow::anyhow!(
-                "flui was compiled without the screen-capture feature"
+                "screen capture is not implemented in flui-core"
             )))
             .ok();
         sources_rx
