@@ -32,16 +32,27 @@ impl AlertDialog {
         }
     }
 
-    pub fn visible(mut self, v: bool) -> Self { self.visible = v; self }
-    pub fn confirm_label(mut self, label: impl Into<SharedString>) -> Self { self.confirm_label = label.into(); self }
-    pub fn cancel_label(mut self, label: impl Into<SharedString>) -> Self { self.cancel_label = Some(label.into()); self }
+    pub fn visible(mut self, v: bool) -> Self {
+        self.visible = v;
+        self
+    }
+    pub fn confirm_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.confirm_label = label.into();
+        self
+    }
+    pub fn cancel_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.cancel_label = Some(label.into());
+        self
+    }
 
     pub fn on_confirm(mut self, f: impl Fn(&mut Window, &mut App) + 'static) -> Self {
-        self.on_confirm = Some(Box::new(f)); self
+        self.on_confirm = Some(Box::new(f));
+        self
     }
 
     pub fn on_dismiss(mut self, f: impl Fn(&mut Window, &mut App) + 'static) -> Self {
-        self.on_dismiss = Some(Box::new(f)); self
+        self.on_dismiss = Some(Box::new(f));
+        self
     }
 }
 

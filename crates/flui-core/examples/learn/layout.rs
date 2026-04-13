@@ -154,9 +154,23 @@ fn flexbox_grow_example(colors: &Colors) -> impl IntoElement {
             div()
                 .flex()
                 .gap_2()
-                .child(block("fixed", flui_core::red(), text).flex_none().w_16().h_8())
-                .child(block("flex_1 (grows)", flui_core::green(), text).flex_1().h_8())
-                .child(block("fixed", flui_core::blue(), text).flex_none().w_16().h_8()),
+                .child(
+                    block("fixed", flui_core::red(), text)
+                        .flex_none()
+                        .w_16()
+                        .h_8(),
+                )
+                .child(
+                    block("flex_1 (grows)", flui_core::green(), text)
+                        .flex_1()
+                        .h_8(),
+                )
+                .child(
+                    block("fixed", flui_core::blue(), text)
+                        .flex_none()
+                        .w_16()
+                        .h_8(),
+                ),
         )
 }
 

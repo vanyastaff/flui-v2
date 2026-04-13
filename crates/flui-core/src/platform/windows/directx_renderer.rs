@@ -4,7 +4,6 @@ use std::{
 };
 
 use ::util::ResultExt;
-use anyhow::{Context, Result};
 use ::windows::{
     Win32::{
         Foundation::HWND,
@@ -18,10 +17,11 @@ use ::windows::{
     },
     core::Interface,
 };
+use anyhow::{Context, Result};
 
 use self::shader_resources::{RawShaderBytes, ShaderModule, ShaderTarget};
-use crate::*;
 use super::*;
+use crate::*;
 
 pub(crate) const DISABLE_DIRECT_COMPOSITION: &str = "GPUI_DISABLE_DIRECT_COMPOSITION";
 const RENDER_TARGET_FORMAT: DXGI_FORMAT = DXGI_FORMAT_B8G8R8A8_UNORM;
@@ -1773,8 +1773,8 @@ mod nvidia {
         os::raw::{c_char, c_int, c_uint},
     };
 
-    use anyhow::Result;
     use ::windows::{Win32::System::LibraryLoader::GetProcAddress, core::s};
+    use anyhow::Result;
 
     use super::with_dll_library;
 
@@ -1840,8 +1840,8 @@ mod nvidia {
 mod amd {
     use std::os::raw::{c_char, c_int, c_void};
 
-    use anyhow::Result;
     use ::windows::{Win32::System::LibraryLoader::GetProcAddress, core::s};
+    use anyhow::Result;
 
     use super::with_dll_library;
 

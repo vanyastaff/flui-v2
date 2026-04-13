@@ -1,7 +1,6 @@
 use std::sync::OnceLock;
 
 use ::util::ResultExt;
-use anyhow::Context;
 use ::windows::{
     UI::{
         Color,
@@ -13,9 +12,10 @@ use ::windows::{
     },
     core::{BOOL, PCSTR},
 };
+use anyhow::Context;
 
-use crate::*;
 use super::*;
+use crate::*;
 
 pub(crate) trait HiLoWord {
     fn hiword(&self) -> u16;

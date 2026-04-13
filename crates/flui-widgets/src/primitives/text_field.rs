@@ -1,7 +1,6 @@
 use flui_core::{
-    AnyElement, App, ElementId, FocusHandle, Hsla, IntoElement, InteractiveElement, ParentElement,
-    RenderOnce, SharedString, Styled, Window, div,
-    prelude::FluentBuilder,
+    AnyElement, App, ElementId, FocusHandle, Hsla, InteractiveElement, IntoElement, ParentElement,
+    RenderOnce, SharedString, Styled, Window, div, prelude::FluentBuilder,
 };
 
 use crate::InteractionState;
@@ -79,19 +78,13 @@ impl TextFieldBase {
     }
 
     /// Called when the text value changes.
-    pub fn on_change(
-        mut self,
-        f: impl Fn(&str, &mut Window, &mut App) + 'static,
-    ) -> Self {
+    pub fn on_change(mut self, f: impl Fn(&str, &mut Window, &mut App) + 'static) -> Self {
         self.on_change = Some(Box::new(f));
         self
     }
 
     /// Called when the user presses Enter.
-    pub fn on_submit(
-        mut self,
-        f: impl Fn(&str, &mut Window, &mut App) + 'static,
-    ) -> Self {
+    pub fn on_submit(mut self, f: impl Fn(&str, &mut Window, &mut App) + 'static) -> Self {
         self.on_submit = Some(Box::new(f));
         self
     }
@@ -128,10 +121,9 @@ impl RenderOnce for TextFieldBase {
             }
         } else {
             div()
-                .when_some(
-                    self.visuals.as_ref().map(|v| v.text_color),
-                    |d, color| d.text_color(color),
-                )
+                .when_some(self.visuals.as_ref().map(|v| v.text_color), |d, color| {
+                    d.text_color(color)
+                })
                 .child(self.value.clone())
                 .into_any_element()
         };

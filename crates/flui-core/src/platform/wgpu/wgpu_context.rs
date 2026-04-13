@@ -91,13 +91,11 @@ impl WgpuContext {
             backend_options: wgpu::BackendOptions::default(),
         });
 
-        let adapter = pollster::block_on(instance.request_adapter(
-            &wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::LowPower,
-                compatible_surface: None,
-                force_fallback_adapter: false,
-            },
-        ))
+        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::LowPower,
+            compatible_surface: None,
+            force_fallback_adapter: false,
+        }))
         .map_err(|e| anyhow::anyhow!("Failed to request headless wgpu adapter: {e}"))?;
 
         log::info!(

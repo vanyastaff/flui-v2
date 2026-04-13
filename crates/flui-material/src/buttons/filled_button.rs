@@ -1,7 +1,6 @@
 use flui_core::{
-    InteractiveElement,
-    AnyElement, App, ClickEvent, ElementId, IntoElement, ParentElement, RenderOnce, SharedString,
-    Styled, Window, div, prelude::FluentBuilder,
+    AnyElement, App, ClickEvent, ElementId, InteractiveElement, IntoElement, ParentElement,
+    RenderOnce, SharedString, Styled, Window, div, prelude::FluentBuilder,
 };
 use flui_theme::ActiveTheme;
 use flui_widgets::ButtonBase;
@@ -34,10 +33,7 @@ impl FilledButton {
         self
     }
 
-    pub fn on_click(
-        mut self,
-        f: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
-    ) -> Self {
+    pub fn on_click(mut self, f: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> Self {
         self.on_click = Some(Box::new(f));
         self
     }

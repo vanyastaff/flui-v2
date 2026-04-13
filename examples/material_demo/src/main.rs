@@ -6,9 +6,8 @@
 extern crate flui_core;
 
 use flui_core::{
-    div, prelude::*, px, size, App, Application, Bounds, Context, IntoElement,
-    ParentElement, Render, Styled, Window, WindowBounds, WindowOptions,
-    TitlebarOptions,
+    App, Application, Bounds, Context, IntoElement, ParentElement, Render, Styled, TitlebarOptions,
+    Window, WindowBounds, WindowOptions, div, prelude::*, px, size,
 };
 use flui_material::*;
 
@@ -35,13 +34,11 @@ struct AppRoot;
 
 impl Render for AppRoot {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        MaterialApp::new()
-            .theme_mode(ThemeMode::Dark)
-            .child(
-                Scaffold::new()
-                    .app_bar(AppBar::new("flui Material Demo"))
-                    .body(demo_content()),
-            )
+        MaterialApp::new().theme_mode(ThemeMode::Dark).child(
+            Scaffold::new()
+                .app_bar(AppBar::new("flui Material Demo"))
+                .body(demo_content()),
+        )
     }
 }
 
@@ -57,11 +54,7 @@ fn demo_content() -> impl IntoElement {
 fn button_section() -> impl IntoElement {
     column()
         .gap(px(16.))
-        .child(
-            div()
-                .text_size(px(20.))
-                .child("Buttons"),
-        )
+        .child(div().text_size(px(20.)).child("Buttons"))
         .child(
             row()
                 .gap(px(12.))
@@ -99,33 +92,18 @@ fn button_section() -> impl IntoElement {
 fn card_section() -> impl IntoElement {
     column()
         .gap(px(16.))
-        .child(
-            div()
-                .text_size(px(20.))
-                .child("Cards"),
-        )
+        .child(div().text_size(px(20.)).child("Cards"))
         .child(
             row()
                 .gap(px(16.))
                 .child(
-                    Card::elevated()
-                        .child(
-                            div()
-                                .child("Elevated Card")
-                                .child(
-                                    div()
-                                        .text_size(px(12.))
-                                        .child("With shadow"),
-                                ),
-                        ),
+                    Card::elevated().child(
+                        div()
+                            .child("Elevated Card")
+                            .child(div().text_size(px(12.)).child("With shadow")),
+                    ),
                 )
-                .child(
-                    Card::filled()
-                        .child(div().child("Filled Card")),
-                )
-                .child(
-                    Card::outlined()
-                        .child(div().child("Outlined Card")),
-                ),
+                .child(Card::filled().child(div().child("Filled Card")))
+                .child(Card::outlined().child(div().child("Outlined Card"))),
         )
 }

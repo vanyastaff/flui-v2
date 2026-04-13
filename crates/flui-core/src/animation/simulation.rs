@@ -75,12 +75,7 @@ pub struct SpringSimulation {
 }
 
 impl SpringSimulation {
-    pub fn new(
-        spring: SpringDescription,
-        start: f32,
-        end: f32,
-        velocity: f32,
-    ) -> Self {
+    pub fn new(spring: SpringDescription, start: f32, end: f32, velocity: f32) -> Self {
         Self::with_tolerance(spring, start, end, velocity, Tolerance::default())
     }
 
@@ -130,8 +125,9 @@ impl Simulation for SpringSimulation {
             let b = (self.velocity + self.zeta * self.omega * self.offset) / wd;
             let cos_part = (wd * t).cos();
             let sin_part = (wd * t).sin();
-            decay * ((-self.zeta * self.omega) * (a * cos_part + b * sin_part)
-                + wd * (-a * sin_part + b * cos_part))
+            decay
+                * ((-self.zeta * self.omega) * (a * cos_part + b * sin_part)
+                    + wd * (-a * sin_part + b * cos_part))
         } else {
             let decay = (-self.omega * t).exp();
             let b = self.velocity + self.omega * self.offset;
@@ -164,12 +160,7 @@ impl FrictionSimulation {
         Self::with_tolerance(drag, position, velocity, Tolerance::default())
     }
 
-    pub fn with_tolerance(
-        drag: f32,
-        position: f32,
-        velocity: f32,
-        tolerance: Tolerance,
-    ) -> Self {
+    pub fn with_tolerance(drag: f32, position: f32, velocity: f32, tolerance: Tolerance) -> Self {
         Self {
             position,
             velocity,
@@ -214,12 +205,7 @@ pub struct GravitySimulation {
 }
 
 impl GravitySimulation {
-    pub fn new(
-        acceleration: f32,
-        position: f32,
-        velocity: f32,
-        end: f32,
-    ) -> Self {
+    pub fn new(acceleration: f32, position: f32, velocity: f32, end: f32) -> Self {
         Self {
             acceleration,
             position,

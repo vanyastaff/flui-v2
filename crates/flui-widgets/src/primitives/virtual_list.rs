@@ -1,6 +1,8 @@
 use std::ops::Range;
 
-use flui_core::{AnyElement, App, ElementId, IntoElement, RenderOnce, Styled, Window, uniform_list};
+use flui_core::{
+    AnyElement, App, ElementId, IntoElement, RenderOnce, Styled, Window, uniform_list,
+};
 
 /// Headless virtual list — only renders visible items.
 ///

@@ -1,7 +1,6 @@
 use flui_core::{
-    InteractiveElement,
-    AnyElement, App, ClickEvent, ElementId, IntoElement, ParentElement, RenderOnce, Styled,
-    Window, div, px, prelude::FluentBuilder,
+    AnyElement, App, ClickEvent, ElementId, InteractiveElement, IntoElement, ParentElement,
+    RenderOnce, Styled, Window, div, prelude::FluentBuilder, px,
 };
 use flui_theme::ActiveTheme;
 use flui_widgets::ButtonBase;
@@ -26,9 +25,13 @@ impl IconButton {
             on_click: None,
         }
     }
-    pub fn disabled(mut self, v: bool) -> Self { self.disabled = v; self }
+    pub fn disabled(mut self, v: bool) -> Self {
+        self.disabled = v;
+        self
+    }
     pub fn on_click(mut self, f: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> Self {
-        self.on_click = Some(Box::new(f)); self
+        self.on_click = Some(Box::new(f));
+        self
     }
 }
 
@@ -37,17 +40,29 @@ impl RenderOnce for IconButton {
         let theme = cx.theme().clone();
         let disabled = self.disabled;
 
-        let mut base = ButtonBase::new(self.id).disabled(self.disabled).child(self.icon);
-        if let Some(on_click) = self.on_click { base = base.on_click(on_click); }
+        let mut base = ButtonBase::new(self.id)
+            .disabled(self.disabled)
+            .child(self.icon);
+        if let Some(on_click) = self.on_click {
+            base = base.on_click(on_click);
+        }
 
         base.style(move |_state, child| {
             div()
-                .flex().items_center().justify_center()
+                .flex()
+                .items_center()
+                .justify_center()
                 .size(px(40.))
                 .rounded(theme.shape.full)
-                .when(disabled, |d| d.text_color(theme.color_scheme.on_surface.opacity(0.38)))
-                .when(!disabled, |d| d.text_color(theme.color_scheme.on_surface_variant).hover(|s| s.bg(theme.color_scheme.on_surface.opacity(0.08))))
-                .child(child).into_any_element()
+                .when(disabled, |d| {
+                    d.text_color(theme.color_scheme.on_surface.opacity(0.38))
+                })
+                .when(!disabled, |d| {
+                    d.text_color(theme.color_scheme.on_surface_variant)
+                        .hover(|s| s.bg(theme.color_scheme.on_surface.opacity(0.08)))
+                })
+                .child(child)
+                .into_any_element()
         })
     }
 }

@@ -1076,8 +1076,7 @@ impl WgpuRenderer {
                 return;
             }
             Err(wgpu::SurfaceError::OutOfMemory | wgpu::SurfaceError::Other) => {
-                *self.last_error.lock().unwrap() =
-                    Some("Surface texture error".to_string());
+                *self.last_error.lock().unwrap() = Some("Surface texture error".to_string());
                 return;
             }
         };
@@ -1194,7 +1193,7 @@ impl WgpuRenderer {
                                         load: wgpu::LoadOp::Load,
                                         store: wgpu::StoreOp::Store,
                                     },
-                                            })],
+                                })],
                                 depth_stencil_attachment: None,
                                 ..Default::default()
                             });
@@ -1666,7 +1665,8 @@ impl WgpuRenderer {
             std::thread::sleep(std::time::Duration::from_millis(350));
 
             let instance = WgpuContext::instance(Box::new(window.clone()));
-            let surface = create_surface(&instance, window_handle.as_raw(), display_handle.as_raw())?;
+            let surface =
+                create_surface(&instance, window_handle.as_raw(), display_handle.as_raw())?;
             let new_context = WgpuContext::new(instance, &surface, self.compositor_gpu)?;
             *gpu_context.borrow_mut() = Some(new_context);
             surface

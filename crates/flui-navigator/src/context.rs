@@ -33,12 +33,12 @@ use crate::error::{ErrorHandlers, NavigationResult};
 use crate::history::{HistoryEntry, HistoryState};
 use crate::lifecycle::NavigationAction;
 use crate::nested::trim_slashes;
-use crate::resolve::{resolve_match_stack, MatchStack};
+use crate::resolve::{MatchStack, resolve_match_stack};
 use crate::route::NamedRouteRegistry;
 #[cfg(feature = "transition")]
 use crate::transition::Transition;
 use crate::{
-    debug_log, error_log, info_log, trace_log, warn_log, IntoRoute, Route, RouteParams, RouterState,
+    IntoRoute, Route, RouteParams, RouterState, debug_log, error_log, info_log, trace_log, warn_log,
 };
 use flui_core::{AnyView, App, BorrowAppContext, Global};
 use std::borrow::BorrowMut;
@@ -1565,8 +1565,10 @@ mod tests {
                     })
                     .guard(AuthGuard::new(|_| false, "/login"))
                     .child(
-                        Route::new("settings", |_, _cx, _params| flui_core::div().into_any_element())
-                            .into(),
+                        Route::new("settings", |_, _cx, _params| {
+                            flui_core::div().into_any_element()
+                        })
+                        .into(),
                     ),
                 );
                 router.add_route(Route::new("/login", |_, _cx, _params| {
@@ -1628,21 +1630,23 @@ mod tests {
                     flui_core::div().into_any_element()
                 }));
                 router.add_route(
-                    Route::new("/page", |_, _cx, _params| flui_core::div().into_any_element())
-                        .middleware(middleware_fn(
-                            move |_cx, req| {
-                                before_calls
-                                    .lock()
-                                    .unwrap()
-                                    .push(format!("before:{}", req.to));
-                            },
-                            move |_cx, req| {
-                                after_calls
-                                    .lock()
-                                    .unwrap()
-                                    .push(format!("after:{}", req.to));
-                            },
-                        )),
+                    Route::new("/page", |_, _cx, _params| {
+                        flui_core::div().into_any_element()
+                    })
+                    .middleware(middleware_fn(
+                        move |_cx, req| {
+                            before_calls
+                                .lock()
+                                .unwrap()
+                                .push(format!("before:{}", req.to));
+                        },
+                        move |_cx, req| {
+                            after_calls
+                                .lock()
+                                .unwrap()
+                                .push(format!("after:{}", req.to));
+                        },
+                    )),
                 );
             });
         });

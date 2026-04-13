@@ -1,6 +1,4 @@
-use flui_core::{
-    AnyElement, App, IntoElement, ParentElement, RenderOnce, Styled, Window, div,
-};
+use flui_core::{AnyElement, App, IntoElement, ParentElement, RenderOnce, Styled, Window, div};
 use flui_theme::ActiveTheme;
 use smallvec::SmallVec;
 
@@ -25,16 +23,29 @@ pub struct Card {
 
 impl Card {
     pub fn new() -> Self {
-        Self { variant: CardVariant::Elevated, children: SmallVec::new() }
+        Self {
+            variant: CardVariant::Elevated,
+            children: SmallVec::new(),
+        }
     }
 
-    pub fn variant(mut self, v: CardVariant) -> Self { self.variant = v; self }
-    pub fn elevated() -> Self { Self::new().variant(CardVariant::Elevated) }
-    pub fn filled() -> Self { Self::new().variant(CardVariant::Filled) }
-    pub fn outlined() -> Self { Self::new().variant(CardVariant::Outlined) }
+    pub fn variant(mut self, v: CardVariant) -> Self {
+        self.variant = v;
+        self
+    }
+    pub fn elevated() -> Self {
+        Self::new().variant(CardVariant::Elevated)
+    }
+    pub fn filled() -> Self {
+        Self::new().variant(CardVariant::Filled)
+    }
+    pub fn outlined() -> Self {
+        Self::new().variant(CardVariant::Outlined)
+    }
 
     pub fn child(mut self, child: impl IntoElement) -> Self {
-        self.children.push(child.into_any_element()); self
+        self.children.push(child.into_any_element());
+        self
     }
 }
 
@@ -47,17 +58,12 @@ impl RenderOnce for Card {
         let mut d = div().rounded(shape).p(spacing);
 
         d = match self.variant {
-            CardVariant::Elevated => {
-                d.bg(theme.color_scheme.surface_container_high).shadow_sm()
-            }
-            CardVariant::Filled => {
-                d.bg(theme.color_scheme.surface_container_high)
-            }
-            CardVariant::Outlined => {
-                d.bg(theme.color_scheme.surface)
-                    .border_1()
-                    .border_color(theme.color_scheme.outline_variant)
-            }
+            CardVariant::Elevated => d.bg(theme.color_scheme.surface_container_high).shadow_sm(),
+            CardVariant::Filled => d.bg(theme.color_scheme.surface_container_high),
+            CardVariant::Outlined => d
+                .bg(theme.color_scheme.surface)
+                .border_1()
+                .border_color(theme.color_scheme.outline_variant),
         };
 
         d.children(self.children)

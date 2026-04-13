@@ -42,4 +42,4 @@ pub use theme::MaterialTheme;
 
 // Re-export theme primitives for convenience
 pub use flui_theme::{ActiveTheme, Brightness, ColorScheme, ThemeData, ThemeMode};
-pub use flui_widgets::{column, row, Expanded, Flexible, Padding, SizedBox, Stack};
+pub use flui_widgets::{Expanded, Flexible, Padding, SizedBox, Stack, column, row};

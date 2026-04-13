@@ -8,8 +8,12 @@ pub struct Divider {
 }
 
 impl Divider {
-    pub fn horizontal() -> Self { Self { vertical: false } }
-    pub fn vertical() -> Self { Self { vertical: true } }
+    pub fn horizontal() -> Self {
+        Self { vertical: false }
+    }
+    pub fn vertical() -> Self {
+        Self { vertical: true }
+    }
 }
 
 impl RenderOnce for Divider {

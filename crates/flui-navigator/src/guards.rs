@@ -39,8 +39,8 @@
 //!     .guard(RoleGuard::new(|_cx| Some("admin".into()), "admin", Some("/forbidden")));
 //! ```
 
-use crate::lifecycle::NavigationAction;
 use crate::NavigationRequest;
+use crate::lifecycle::NavigationAction;
 use flui_core::App;
 
 // ============================================================================

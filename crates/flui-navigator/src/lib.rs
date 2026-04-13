@@ -155,31 +155,31 @@ mod context;
 #[cfg(feature = "cache")]
 pub use cache::{CacheStats, RouteCache, RouteId};
 pub use context::{
-    current_path, init_router, navigate, GlobalRouter, NavigationRequest, Navigator,
-    NavigatorHandle, UseRouter,
+    GlobalRouter, NavigationRequest, Navigator, NavigatorHandle, UseRouter, current_path,
+    init_router, navigate,
 };
 pub use error::{ErrorHandler, ErrorHandlers, NavigationError, NavigationResult, NotFoundHandler};
 #[cfg(feature = "guard")]
 pub use guards::{
-    guard_fn, AuthGuard, GuardBuilder, Guards, NotGuard, PermissionGuard, RoleGuard, RouteGuard,
+    AuthGuard, GuardBuilder, Guards, NotGuard, PermissionGuard, RoleGuard, RouteGuard, guard_fn,
 };
 pub use history::{History, HistoryEntry, HistoryState};
 pub use lifecycle::{NavigationAction, RouteLifecycle};
 #[cfg(feature = "middleware")]
-pub use middleware::{middleware_fn, RouteMiddleware};
+pub use middleware::{RouteMiddleware, middleware_fn};
 pub use nested::{build_child_path, extract_param_name, normalize_path, resolve_child_route};
 pub use params::{QueryParams, RouteParams};
-pub use resolve::{resolve_match_stack, MatchEntry, MatchStack};
+pub use resolve::{MatchEntry, MatchStack, resolve_match_stack};
 pub use route::{
-    validate_route_path, BuilderFn, IntoRoute, NamedRoute, NamedRouteRegistry, PageRoute, Route,
-    RouteConfig, RouteDescriptor,
+    BuilderFn, IntoRoute, NamedRoute, NamedRouteRegistry, PageRoute, Route, RouteConfig,
+    RouteDescriptor, validate_route_path,
 };
 pub use state::RouterState;
 #[cfg(feature = "transition")]
 pub use transition::{SlideDirection, Transition, TransitionConfig};
 pub use widgets::{
-    render_router_outlet, router_link, router_outlet, router_outlet_named, router_view,
-    DefaultPages, RouterLink, RouterOutlet, RouterView,
+    DefaultPages, RouterLink, RouterOutlet, RouterView, render_router_outlet, router_link,
+    router_outlet, router_outlet_named, router_view,
 };
 
 use std::collections::HashMap;

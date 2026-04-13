@@ -11,10 +11,6 @@ use std::{
 };
 
 use ::util::ResultExt;
-use anyhow::{Context as _, Result};
-use futures::channel::oneshot::{self, Receiver};
-use raw_window_handle as rwh;
-use smallvec::SmallVec;
 use ::windows::{
     Win32::{
         Foundation::*,
@@ -25,9 +21,13 @@ use ::windows::{
     },
     core::*,
 };
+use anyhow::{Context as _, Result};
+use futures::channel::oneshot::{self, Receiver};
+use raw_window_handle as rwh;
+use smallvec::SmallVec;
 
-use crate::*;
 use super::*;
+use crate::*;
 
 pub(crate) struct WindowsWindow(pub Rc<WindowsWindowInner>);
 
@@ -579,7 +579,8 @@ impl PlatformWindow for WindowsWindow {
 
     fn resize(&mut self, size: Size<Pixels>) {
         let hwnd = self.0.hwnd;
-        let bounds = flui_core::bounds(self.bounds().origin, size).to_device_pixels(self.scale_factor());
+        let bounds =
+            flui_core::bounds(self.bounds().origin, size).to_device_pixels(self.scale_factor());
         let rect = calculate_window_rect(bounds, &self.state.border_offset);
 
         self.0

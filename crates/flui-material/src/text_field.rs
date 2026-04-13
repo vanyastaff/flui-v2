@@ -16,10 +16,21 @@ pub struct InputDecoration {
 }
 
 impl InputDecoration {
-    pub fn new() -> Self { Self::default() }
-    pub fn label(mut self, label: impl Into<SharedString>) -> Self { self.label = Some(label.into()); self }
-    pub fn helper_text(mut self, text: impl Into<SharedString>) -> Self { self.helper_text = Some(text.into()); self }
-    pub fn filled(mut self) -> Self { self.filled = true; self }
+    pub fn new() -> Self {
+        Self::default()
+    }
+    pub fn label(mut self, label: impl Into<SharedString>) -> Self {
+        self.label = Some(label.into());
+        self
+    }
+    pub fn helper_text(mut self, text: impl Into<SharedString>) -> Self {
+        self.helper_text = Some(text.into());
+        self
+    }
+    pub fn filled(mut self) -> Self {
+        self.filled = true;
+        self
+    }
 }
 
 /// Material Design 3 TextField.
@@ -47,11 +58,21 @@ impl TextField {
         }
     }
 
-    pub fn placeholder(mut self, text: impl Into<SharedString>) -> Self { self.placeholder = Some(text.into()); self }
-    pub fn disabled(mut self, v: bool) -> Self { self.disabled = v; self }
-    pub fn decoration(mut self, dec: InputDecoration) -> Self { self.decoration = dec; self }
+    pub fn placeholder(mut self, text: impl Into<SharedString>) -> Self {
+        self.placeholder = Some(text.into());
+        self
+    }
+    pub fn disabled(mut self, v: bool) -> Self {
+        self.disabled = v;
+        self
+    }
+    pub fn decoration(mut self, dec: InputDecoration) -> Self {
+        self.decoration = dec;
+        self
+    }
     pub fn on_change(mut self, f: impl Fn(&str, &mut Window, &mut App) + 'static) -> Self {
-        self.on_change = Some(Box::new(f)); self
+        self.on_change = Some(Box::new(f));
+        self
     }
 }
 

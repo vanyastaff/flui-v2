@@ -5,9 +5,6 @@ use std::{
 };
 
 use ::util::{ResultExt, maybe};
-use anyhow::{Context, Result};
-use collections::HashMap;
-use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use ::windows::{
     Win32::{
         Foundation::*,
@@ -21,10 +18,13 @@ use ::windows::{
     },
     core::*,
 };
+use anyhow::{Context, Result};
+use collections::HashMap;
+use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use windows_numerics::Vector2;
 
-use crate::*;
 use super::*;
+use crate::*;
 
 #[derive(Debug)]
 struct FontInfo {

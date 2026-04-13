@@ -102,9 +102,18 @@ fn keystroke_parse_tolerance_probe() {
     //   "ctrl-"   Ok — dangling modifier accepted
     //   "ctrl-a"  Ok — normal
     //   "a"       Ok — bare letter
-    assert!(Keystroke::parse("").is_ok(), "empty string currently parses");
-    assert!(Keystroke::parse("ctrl-").is_ok(), "dangling modifier currently parses");
-    assert!(Keystroke::parse("ctrl-a").is_ok(), "normal modifier+key parses");
+    assert!(
+        Keystroke::parse("").is_ok(),
+        "empty string currently parses"
+    );
+    assert!(
+        Keystroke::parse("ctrl-").is_ok(),
+        "dangling modifier currently parses"
+    );
+    assert!(
+        Keystroke::parse("ctrl-a").is_ok(),
+        "normal modifier+key parses"
+    );
     assert!(Keystroke::parse("a").is_ok(), "bare letter parses");
 }
 
@@ -212,7 +221,11 @@ fn scheduler_run_until_parked_drains_tasks() {
     cx.run_until_parked();
 
     let final_order = order.borrow().clone();
-    assert_eq!(final_order.len(), 3, "expected 3 tasks, got {final_order:?}");
+    assert_eq!(
+        final_order.len(),
+        3,
+        "expected 3 tasks, got {final_order:?}"
+    );
     // Do not assert the exact permutation — `TestDispatcher` is allowed
     // to randomize order when seeded for fuzzing. The contract we pin
     // here is that ALL scheduled tasks run by the time
@@ -240,8 +253,7 @@ fn clipboard_item_json_metadata() {
         version: 1,
         label: "test".into(),
     };
-    let item =
-        ClipboardItem::new_string_with_json_metadata("body".into(), &payload);
+    let item = ClipboardItem::new_string_with_json_metadata("body".into(), &payload);
     assert_eq!(item.text().as_deref(), Some("body"));
     // No assertion on the metadata extraction API because it's
     // version-specific; we're pinning that construction at least works.

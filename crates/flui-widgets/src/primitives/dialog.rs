@@ -84,12 +84,12 @@ impl RenderOnce for DialogBase {
         // Backdrop with click-to-dismiss
         if self.close_on_backdrop {
             if let Some(on_dismiss) = self.on_dismiss {
-                let backdrop = div()
-                    .absolute()
-                    .inset_0()
-                    .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                let backdrop = div().absolute().inset_0().on_mouse_down(
+                    MouseButton::Left,
+                    move |_, window, cx| {
                         on_dismiss(window, cx);
-                    });
+                    },
+                );
                 overlay = overlay.child(backdrop);
             }
         }

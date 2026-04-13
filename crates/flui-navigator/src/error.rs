@@ -252,7 +252,7 @@ impl Default for ErrorHandlers {
 #[allow(clippy::needless_pass_by_ref_mut)]
 mod tests {
     use super::*;
-    use flui_core::{div, IntoElement, ParentElement, TestAppContext};
+    use flui_core::{IntoElement, ParentElement, TestAppContext, div};
 
     #[test]
     fn test_navigation_result_success() {

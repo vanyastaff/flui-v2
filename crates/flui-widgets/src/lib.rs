@@ -27,10 +27,10 @@ pub mod state;
 pub mod widget;
 
 // Re-export core types at crate root
-pub use layout::{column, row, EdgeInsets, Expanded, Flexible, Padding, SizedBox, Stack};
+pub use flui_core::{InheritedValue, Provider, read, try_read};
+pub use layout::{EdgeInsets, Expanded, Flexible, Padding, SizedBox, Stack, column, row};
 pub use primitives::{
     ButtonBase, CheckboxBase, DialogBase, RadioBase, ScrollBase, SelectBase, SliderBase,
     SwitchBase, TextFieldBase, TextFieldVisuals, VirtualListBase,
 };
-pub use flui_core::{InheritedValue, Provider, read, try_read};
 pub use state::InteractionState;

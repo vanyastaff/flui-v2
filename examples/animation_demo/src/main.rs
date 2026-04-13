@@ -6,11 +6,11 @@ extern crate flui_core;
 
 use std::time::Duration;
 
-use flui_core::{
-    div, hsla, prelude::*, px, size, App, Application, Bounds, Context, Entity, IntoElement,
-    ParentElement, Render, Styled, Window, WindowBounds, WindowOptions, TitlebarOptions,
-};
 use flui_core::animation::{AnimationController, Curve, Tween, animated};
+use flui_core::{
+    App, Application, Bounds, Context, Entity, IntoElement, ParentElement, Render, Styled,
+    TitlebarOptions, Window, WindowBounds, WindowOptions, div, hsla, prelude::*, px, size,
+};
 use flui_material::*;
 
 fn main() {
@@ -65,85 +65,98 @@ impl Render for AnimationDemo {
         let color_anim = self.color.clone();
         let bounce = self.bounce.clone();
 
-        MaterialApp::new()
-            .theme_mode(ThemeMode::Dark)
-            .child(
-                Scaffold::new()
-                    .app_bar(AppBar::new("Animation Demo"))
-                    .body(
-                        column()
-                            .p(px(24.))
-                            .gap(px(24.))
-                            // Fade
-                            .child(
-                                row().items_center().gap(px(16.))
-                                    .child(
-                                        animated(&self.fade, window, cx, |v| {
-                                            div()
-                                                .w(px(200.)).h(px(60.)).rounded(px(12.))
-                                                .bg(hsla(262. / 360., 0.52, 0.47, 1.0))
-                                                .opacity(v)
-                                                .flex().items_center().justify_center()
-                                                .text_color(hsla(0., 0., 1., 1.0))
-                                                .child("Fade (EaseInOut)")
-                                        })
-                                    )
-                                    .child(make_controls("fade", fade))
-                            )
-                            // Slide
-                            .child(
-                                row().items_center().gap(px(16.))
-                                    .child(
-                                        animated(&self.slide, window, cx, |v| {
-                                            let offset = Tween::new(px(-200.), px(0.)).transform(v);
-                                            div()
-                                                .ml(offset)
-                                                .w(px(200.)).h(px(60.)).rounded(px(12.))
-                                                .bg(hsla(145. / 360., 0.63, 0.42, 1.0))
-                                                .flex().items_center().justify_center()
-                                                .text_color(hsla(0., 0., 1., 1.0))
-                                                .child("Slide (EaseOutCubic)")
-                                        })
-                                    )
-                                    .child(make_controls("slide", slide))
-                            )
-                            // Color tween
-                            .child(
-                                row().items_center().gap(px(16.))
-                                    .child(
-                                        animated(&self.color, window, cx, |v| {
-                                            let bg = Tween::new(
-                                                hsla(0., 0.74, 0.40, 1.0),
-                                                hsla(262. / 360., 0.52, 0.47, 1.0),
-                                            ).transform(v);
-                                            div()
-                                                .w(px(200.)).h(px(60.)).rounded(px(12.))
-                                                .bg(bg)
-                                                .flex().items_center().justify_center()
-                                                .text_color(hsla(0., 0., 1., 1.0))
-                                                .child("Color Tween")
-                                        })
-                                    )
-                                    .child(make_controls("color", color_anim))
-                            )
-                            // Bounce
-                            .child(
-                                row().items_center().gap(px(16.))
-                                    .child(
-                                        animated(&self.bounce, window, cx, |v| {
-                                            let h = Tween::new(px(20.), px(60.)).transform(v);
-                                            div()
-                                                .w(px(200.)).h(h).rounded(px(12.))
-                                                .bg(hsla(40. / 360., 0.95, 0.55, 1.0))
-                                                .flex().items_center().justify_center()
-                                                .text_color(hsla(0., 0., 0., 1.0))
-                                                .child("Bounce!")
-                                        })
-                                    )
-                                    .child(make_controls("bounce", bounce))
-                            ),
+        MaterialApp::new().theme_mode(ThemeMode::Dark).child(
+            Scaffold::new().app_bar(AppBar::new("Animation Demo")).body(
+                column()
+                    .p(px(24.))
+                    .gap(px(24.))
+                    // Fade
+                    .child(
+                        row()
+                            .items_center()
+                            .gap(px(16.))
+                            .child(animated(&self.fade, window, cx, |v| {
+                                div()
+                                    .w(px(200.))
+                                    .h(px(60.))
+                                    .rounded(px(12.))
+                                    .bg(hsla(262. / 360., 0.52, 0.47, 1.0))
+                                    .opacity(v)
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .text_color(hsla(0., 0., 1., 1.0))
+                                    .child("Fade (EaseInOut)")
+                            }))
+                            .child(make_controls("fade", fade)),
+                    )
+                    // Slide
+                    .child(
+                        row()
+                            .items_center()
+                            .gap(px(16.))
+                            .child(animated(&self.slide, window, cx, |v| {
+                                let offset = Tween::new(px(-200.), px(0.)).transform(v);
+                                div()
+                                    .ml(offset)
+                                    .w(px(200.))
+                                    .h(px(60.))
+                                    .rounded(px(12.))
+                                    .bg(hsla(145. / 360., 0.63, 0.42, 1.0))
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .text_color(hsla(0., 0., 1., 1.0))
+                                    .child("Slide (EaseOutCubic)")
+                            }))
+                            .child(make_controls("slide", slide)),
+                    )
+                    // Color tween
+                    .child(
+                        row()
+                            .items_center()
+                            .gap(px(16.))
+                            .child(animated(&self.color, window, cx, |v| {
+                                let bg = Tween::new(
+                                    hsla(0., 0.74, 0.40, 1.0),
+                                    hsla(262. / 360., 0.52, 0.47, 1.0),
+                                )
+                                .transform(v);
+                                div()
+                                    .w(px(200.))
+                                    .h(px(60.))
+                                    .rounded(px(12.))
+                                    .bg(bg)
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .text_color(hsla(0., 0., 1., 1.0))
+                                    .child("Color Tween")
+                            }))
+                            .child(make_controls("color", color_anim)),
+                    )
+                    // Bounce
+                    .child(
+                        row()
+                            .items_center()
+                            .gap(px(16.))
+                            .child(animated(&self.bounce, window, cx, |v| {
+                                let h = Tween::new(px(20.), px(60.)).transform(v);
+                                div()
+                                    .w(px(200.))
+                                    .h(h)
+                                    .rounded(px(12.))
+                                    .bg(hsla(40. / 360., 0.95, 0.55, 1.0))
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .text_color(hsla(0., 0., 0., 1.0))
+                                    .child("Bounce!")
+                            }))
+                            .child(make_controls("bounce", bounce)),
                     ),
-            )
+            ),
+        )
     }
 }
 
@@ -153,24 +166,27 @@ fn make_controls(prefix: &str, ctrl: Entity<AnimationController>) -> impl IntoEl
     row()
         .gap(px(8.))
         .child(
-            FilledButton::new(format!("{prefix}-fwd"), "Forward")
-                .on_click({
-                    let c = ctrl;
-                    move |_, _, cx| { c.update(cx, |c, cx| c.forward(cx)); }
-                }),
+            FilledButton::new(format!("{prefix}-fwd"), "Forward").on_click({
+                let c = ctrl;
+                move |_, _, cx| {
+                    c.update(cx, |c, cx| c.forward(cx));
+                }
+            }),
         )
         .child(
-            OutlinedButton::new(format!("{prefix}-rev"), "Reverse")
-                .on_click({
-                    let c = ctrl2;
-                    move |_, _, cx| { c.update(cx, |c, cx| c.reverse(cx)); }
-                }),
+            OutlinedButton::new(format!("{prefix}-rev"), "Reverse").on_click({
+                let c = ctrl2;
+                move |_, _, cx| {
+                    c.update(cx, |c, cx| c.reverse(cx));
+                }
+            }),
         )
         .child(
-            TextButton::new(format!("{prefix}-reset"), "Reset")
-                .on_click({
-                    let c = ctrl3;
-                    move |_, _, cx| { c.update(cx, |c, cx| c.reset(cx)); }
-                }),
+            TextButton::new(format!("{prefix}-reset"), "Reset").on_click({
+                let c = ctrl3;
+                move |_, _, cx| {
+                    c.update(cx, |c, cx| c.reset(cx));
+                }
+            }),
         )
 }

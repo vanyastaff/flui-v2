@@ -1,5 +1,5 @@
 use flui_core::{
-    AnyElement, App, IntoElement, InteractiveElement, ParentElement, RenderOnce,
+    AnyElement, App, InteractiveElement, IntoElement, ParentElement, RenderOnce,
     StatefulInteractiveElement, Styled, Window, div, px,
 };
 use flui_theme::ActiveTheme;
@@ -46,12 +46,7 @@ impl RenderOnce for Scaffold {
         let theme = cx.theme();
         let bg = theme.color_scheme.background;
 
-        let mut container = div()
-            .size_full()
-            .flex()
-            .flex_col()
-            .bg(bg)
-            .relative();
+        let mut container = div().size_full().flex().flex_col().bg(bg).relative();
 
         if let Some(app_bar) = self.app_bar {
             container = container.child(app_bar);
@@ -68,13 +63,7 @@ impl RenderOnce for Scaffold {
         }
 
         if let Some(fab) = self.floating_action_button {
-            container = container.child(
-                div()
-                    .absolute()
-                    .bottom(px(16.))
-                    .right(px(16.))
-                    .child(fab),
-            );
+            container = container.child(div().absolute().bottom(px(16.)).right(px(16.)).child(fab));
         }
 
         container

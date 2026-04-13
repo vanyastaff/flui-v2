@@ -23,10 +23,10 @@
 
 use crate::history::{History, HistoryEntry, HistoryState};
 use crate::route::Route;
-use crate::{debug_log, trace_log, RouteChangeEvent, RouteMatch, RouteParams};
+use crate::{RouteChangeEvent, RouteMatch, RouteParams, debug_log, trace_log};
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// Core navigation state that tracks history, registered routes, and match cache.
 ///

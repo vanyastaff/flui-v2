@@ -26,13 +26,13 @@ use core_foundation::{
 };
 use ctor::ctor;
 use dispatch2::DispatchQueue;
-use futures::channel::oneshot;
 use flui_core::{
     Action, AnyWindowHandle, BackgroundExecutor, ClipboardItem, CursorStyle, ForegroundExecutor,
     KeyContext, Keymap, Menu, MenuItem, OsMenu, OwnedMenu, PathPromptOptions, Platform,
     PlatformDisplay, PlatformKeyboardLayout, PlatformKeyboardMapper, PlatformTextSystem,
     PlatformWindow, Result, SystemMenuType, Task, ThermalState, WindowAppearance, WindowParams,
 };
+use futures::channel::oneshot;
 use itertools::Itertools;
 use objc::{
     class,

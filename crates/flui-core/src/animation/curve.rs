@@ -24,13 +24,25 @@ pub enum Curve {
     Elastic,
 
     // Parametric
-    Spring { damping: f32, stiffness: f32 },
-    CubicBezier { x1: f32, y1: f32, x2: f32, y2: f32 },
+    Spring {
+        damping: f32,
+        stiffness: f32,
+    },
+    CubicBezier {
+        x1: f32,
+        y1: f32,
+        x2: f32,
+        y2: f32,
+    },
 
     // Composition
     /// Maps a sub-range of the timeline to 0.0..1.0.
     /// Used for staggered animations: `Interval { begin: 0.0, end: 0.33, .. }`.
-    Interval { begin: f32, end: f32, curve: Box<Curve> },
+    Interval {
+        begin: f32,
+        end: f32,
+        curve: Box<Curve>,
+    },
     Reversed(Box<Curve>),
 
     // Custom
@@ -85,8 +97,7 @@ impl Curve {
                     t
                 } else {
                     let p = 0.3;
-                    -(2.0_f32.powf(10.0 * (t - 1.0))
-                        * ((t - 1.0 - p / 4.0) * 2.0 * PI / p).sin())
+                    -(2.0_f32.powf(10.0 * (t - 1.0)) * ((t - 1.0 - p / 4.0) * 2.0 * PI / p).sin())
                 }
             }
             Curve::Spring { damping, stiffness } => {
@@ -103,9 +114,7 @@ impl Curve {
                     1.0 - (1.0 + omega * t) * (-omega * t).exp()
                 }
             }
-            Curve::CubicBezier { x1, y1, x2, y2 } => {
-                cubic_bezier_transform(t, *x1, *y1, *x2, *y2)
-            }
+            Curve::CubicBezier { x1, y1, x2, y2 } => cubic_bezier_transform(t, *x1, *y1, *x2, *y2),
             Curve::Interval { begin, end, curve } => {
                 if t <= *begin {
                     0.0

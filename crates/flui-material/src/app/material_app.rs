@@ -1,6 +1,5 @@
 use flui_core::{
-    AnyElement, App, IntoElement, ParentElement, RenderOnce, Styled, Window,
-    WindowAppearance, div,
+    AnyElement, App, IntoElement, ParentElement, RenderOnce, Styled, Window, WindowAppearance, div,
 };
 use flui_theme::{ActiveTheme, Brightness, ThemeData, ThemeMode};
 
@@ -78,12 +77,8 @@ impl RenderOnce for MaterialApp {
 
         // Select the right theme
         let theme = match brightness {
-            Brightness::Light => {
-                self.light_theme.unwrap_or_else(MaterialTheme::light)
-            }
-            Brightness::Dark => {
-                self.dark_theme.unwrap_or_else(MaterialTheme::dark)
-            }
+            Brightness::Light => self.light_theme.unwrap_or_else(MaterialTheme::light),
+            Brightness::Dark => self.dark_theme.unwrap_or_else(MaterialTheme::dark),
         };
 
         // Install as Global — every cx.theme() call downstream reads this
@@ -94,10 +89,7 @@ impl RenderOnce for MaterialApp {
         let bg = t.color_scheme.background;
         let fg = t.color_scheme.on_background;
 
-        let mut container = div()
-            .size_full()
-            .bg(bg)
-            .text_color(fg);
+        let mut container = div().size_full().bg(bg).text_color(fg);
 
         if let Some(child) = self.child {
             container = container.child(child);

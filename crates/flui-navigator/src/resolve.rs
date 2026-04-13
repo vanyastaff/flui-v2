@@ -44,7 +44,7 @@
 
 use crate::nested::{normalize_path, trim_slashes};
 use crate::route::Route;
-use crate::{debug_log, trace_log, warn_log, RouteParams};
+use crate::{RouteParams, debug_log, trace_log, warn_log};
 use std::cell::Cell;
 use std::sync::Arc;
 

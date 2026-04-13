@@ -132,9 +132,7 @@ impl AnimationController {
 
         if let Some(start) = self.start_time {
             let duration = match self.status {
-                AnimationStatus::Reverse => {
-                    self.reverse_duration.unwrap_or(self.duration)
-                }
+                AnimationStatus::Reverse => self.reverse_duration.unwrap_or(self.duration),
                 _ => self.duration,
             };
 
@@ -150,8 +148,12 @@ impl AnimationController {
             let curved_t = self.curve.transform(raw_t);
 
             match self.status {
-                AnimationStatus::Forward => self.start_value + curved_t * (self.upper_bound - self.start_value),
-                AnimationStatus::Reverse => self.start_value - curved_t * (self.start_value - self.lower_bound),
+                AnimationStatus::Forward => {
+                    self.start_value + curved_t * (self.upper_bound - self.start_value)
+                }
+                AnimationStatus::Reverse => {
+                    self.start_value - curved_t * (self.start_value - self.lower_bound)
+                }
                 _ => self.value,
             }
         } else {
@@ -167,9 +169,7 @@ impl AnimationController {
 
         if let Some(start) = self.start_time {
             let duration = match self.status {
-                AnimationStatus::Reverse => {
-                    self.reverse_duration.unwrap_or(self.duration)
-                }
+                AnimationStatus::Reverse => self.reverse_duration.unwrap_or(self.duration),
                 _ => self.duration,
             };
             let elapsed = start.elapsed();
@@ -261,11 +261,7 @@ impl AnimationController {
     }
 
     /// Drive animation with a physics simulation (spring, friction, gravity).
-    pub fn animate_with(
-        &mut self,
-        simulation: impl Simulation + 'static,
-        cx: &mut Context<Self>,
-    ) {
+    pub fn animate_with(&mut self, simulation: impl Simulation + 'static, cx: &mut Context<Self>) {
         self.start_time = None;
         self.sim_start_time = Some(Instant::now());
         self.simulation = Some(Box::new(simulation));

@@ -4,13 +4,12 @@
 
 #![allow(clippy::needless_pass_by_ref_mut)]
 
-
 use flui_core::{
-    div, hsla, prelude::*, px, rgb, size, App, Application, Bounds, Context, InteractiveElement,
-    IntoElement, MouseButton, ParentElement, Render, SharedString, Styled, TitlebarOptions, Window,
-    WindowBounds, WindowOptions,
+    App, Application, Bounds, Context, InteractiveElement, IntoElement, MouseButton, ParentElement,
+    Render, SharedString, Styled, TitlebarOptions, Window, WindowBounds, WindowOptions, div, hsla,
+    prelude::*, px, rgb, size,
 };
-use flui_navigator::{init_router, router_view, Navigator, Route, RouteParams, Transition};
+use flui_navigator::{Navigator, Route, RouteParams, Transition, init_router, router_view};
 
 fn main() {
     Application::new().run(|cx: &mut App| {
@@ -103,7 +102,11 @@ fn about_page(_window: &mut Window, _cx: &mut App, _params: &RouteParams) -> flu
     )
 }
 
-fn contact_page(_window: &mut Window, _cx: &mut App, _params: &RouteParams) -> flui_core::AnyElement {
+fn contact_page(
+    _window: &mut Window,
+    _cx: &mut App,
+    _params: &RouteParams,
+) -> flui_core::AnyElement {
     page_content(
         "Contact",
         "github.com/vanyastaff/flui-v2",

@@ -4,8 +4,8 @@
 #![allow(clippy::collapsible_else_if)] // False positives in platform specific code
 #![allow(unused_mut)] // False positives in platform specific code
 
-extern crate self as flui_core;
 extern crate flui_macros;
+extern crate self as flui_core;
 
 #[macro_use]
 mod action;
@@ -33,16 +33,16 @@ mod inspector;
 mod interactive;
 mod key_dispatch;
 mod keymap;
-mod locale;
 mod local_util;
+mod locale;
 mod media_query;
 mod path_builder;
 mod platform;
 mod platform_brightness;
 pub mod prelude;
-mod provider;
 /// Profiling utilities for task timing and thread performance tracking.
 pub mod profiler;
+mod provider;
 #[cfg(any(target_os = "windows", target_os = "linux", target_family = "wasm"))]
 #[expect(missing_docs)]
 pub mod queue;
@@ -96,28 +96,28 @@ pub(crate) use arena::*;
 pub use asset_cache::*;
 pub use assets::*;
 pub use brightness::*;
-pub use provider::{InheritedValue, Provider, read, try_read};
 pub use color::*;
 pub use ctor::ctor;
 pub use element::*;
 pub use elements::*;
 pub use executor::*;
-pub use geometry::*;
-pub use global::*;
 pub use flui_macros::{
     AppContext, IntoElement, Render, VisualContext, derive_inspector_reflection, register_action,
     test,
 };
+pub use geometry::*;
+pub use global::*;
 pub use http_client;
 pub use input::*;
 pub use inspector::*;
 pub use interactive::*;
 use key_dispatch::*;
 pub use keymap::*;
-pub use locale::*;
 pub use local_util::{FutureExt, Timeout, command};
+pub use locale::*;
 pub use media_query::*;
 pub use path_builder::*;
+pub use provider::{InheritedValue, Provider, read, try_read};
 // Explicit re-exports from the `platform` module (replacing the former
 // `pub use platform::*;` glob). See spec S01a.3 for rationale. Any new
 // `pub` item in `platform.rs` must be explicitly routed through this
@@ -147,8 +147,8 @@ pub use platform::{
 };
 
 // Free functions
-pub use platform::{application, background_executor, current_platform, headless};
 pub use platform::get_gamma_correction_ratios;
+pub use platform::{application, background_executor, current_platform, headless};
 
 // Crate-internal re-exports (formerly caught by the pub use platform::*
 // glob; these are pub(crate) fns in the platform subtree that other
@@ -177,12 +177,12 @@ pub use platform::{
 pub use platform::{PlatformDispatcher, RunnableMeta, RunnableVariant, TimerResolutionGuard};
 
 // Test-support-only items (public)
+#[cfg(feature = "test-support")]
+pub use platform::current_headless_renderer;
 #[cfg(any(test, feature = "test-support"))]
 pub use platform::{
     PlatformHeadlessRenderer, TestDispatcher, TestScreenCaptureSource, TestScreenCaptureStream,
 };
-#[cfg(feature = "test-support")]
-pub use platform::current_headless_renderer;
 
 // Test-support-only items (crate-internal — used by app/test_context and
 // other flui-core tests). TestWindow is `pub struct` at the definition
@@ -194,10 +194,10 @@ pub(crate) use platform::{TestDisplay, TestPlatform, TestWindow};
 // Per-target platform impls
 #[cfg(target_os = "macos")]
 pub use platform::MacPlatform;
-#[cfg(target_os = "windows")]
-pub use platform::WindowsPlatform;
 #[cfg(all(target_os = "macos", any(test, feature = "test-support")))]
 pub use platform::VisualTestPlatform;
+#[cfg(target_os = "windows")]
+pub use platform::WindowsPlatform;
 
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 pub use platform::guess_compositor;

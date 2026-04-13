@@ -3,7 +3,7 @@ use crate::{
     LayoutId, Pixels, RenderOnce, Window,
 };
 
-use super::{stack, InheritedValue};
+use super::{InheritedValue, stack};
 
 /// Provides a value of type `T` to all descendant widgets during rendering.
 ///

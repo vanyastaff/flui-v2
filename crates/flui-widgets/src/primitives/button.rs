@@ -1,5 +1,5 @@
 use flui_core::{
-    AnyElement, App, ClickEvent, ElementId, FocusHandle, IntoElement, InteractiveElement,
+    AnyElement, App, ClickEvent, ElementId, FocusHandle, InteractiveElement, IntoElement,
     ParentElement, RenderOnce, StatefulInteractiveElement, Styled, Window, div,
     prelude::FluentBuilder,
 };
@@ -62,10 +62,7 @@ impl ButtonBase {
     }
 
     /// Set the click handler. Fires on mouse click and keyboard activation (Space/Enter).
-    pub fn on_click(
-        mut self,
-        f: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
-    ) -> Self {
+    pub fn on_click(mut self, f: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> Self {
         self.on_click = Some(Box::new(f));
         self
     }

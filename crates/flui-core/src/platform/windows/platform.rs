@@ -10,11 +10,6 @@ use std::{
 };
 
 use ::util::{ResultExt, paths::SanitizedPath};
-use anyhow::{Context as _, Result, anyhow};
-use futures::channel::oneshot::{self, Receiver};
-use itertools::Itertools;
-use parking_lot::RwLock;
-use smallvec::SmallVec;
 use ::windows::{
     UI::ViewManagement::UISettings,
     Win32::{
@@ -26,9 +21,14 @@ use ::windows::{
     },
     core::*,
 };
+use anyhow::{Context as _, Result, anyhow};
+use futures::channel::oneshot::{self, Receiver};
+use itertools::Itertools;
+use parking_lot::RwLock;
+use smallvec::SmallVec;
 
-use crate::*;
 use super::*;
+use crate::*;
 
 /// Windows platform implementation. Created via [`WindowsPlatform::new`] and
 /// passed to [`crate::Application::with_platform`].

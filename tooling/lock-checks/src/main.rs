@@ -469,7 +469,10 @@ fn render_imports_report(sites: &[GlobImportSite]) -> String {
     out.push_str("| File | Line | Import |\n");
     out.push_str("|---|---:|---|\n");
     for site in sites {
-        out.push_str(&format!("| `{}` | {} | `{}` |\n", site.path, site.line, site.text));
+        out.push_str(&format!(
+            "| `{}` | {} | `{}` |\n",
+            site.path, site.line, site.text
+        ));
     }
     out
 }
@@ -513,7 +516,10 @@ mod tests {
 
     #[test]
     fn macro_counter_handles_word_boundaries() {
-        assert_eq!(count_macro_invocations("unimplemented!()", "unimplemented"), 1);
+        assert_eq!(
+            count_macro_invocations("unimplemented!()", "unimplemented"),
+            1
+        );
         assert_eq!(
             count_macro_invocations("is_unimplemented!()", "unimplemented"),
             0

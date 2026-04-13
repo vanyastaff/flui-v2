@@ -37,7 +37,7 @@
 //! for performance in hot paths like route resolution.
 
 use crate::route::Route;
-use crate::{trace_log, warn_log, RouteParams};
+use crate::{RouteParams, trace_log, warn_log};
 use std::borrow::Cow;
 use std::sync::Arc;
 
@@ -286,7 +286,9 @@ fn resolve_child_route_impl(
                         "Parameter collision: child route '{}' shadows parent parameter '{}' (parent value: '{}', child value: '{}')",
                         child.config.path,
                         param_name,
-                        parent_params.get(&param_name).map_or("<none>", String::as_str),
+                        parent_params
+                            .get(&param_name)
+                            .map_or("<none>", String::as_str),
                         first_segment
                     );
                 }

@@ -1,4 +1,6 @@
-use flui_core::{AnyElement, App, IntoElement, ParentElement, Pixels, RenderOnce, Styled, Window, div};
+use flui_core::{
+    AnyElement, App, IntoElement, ParentElement, Pixels, RenderOnce, Styled, Window, div,
+};
 
 use super::EdgeInsets;
 

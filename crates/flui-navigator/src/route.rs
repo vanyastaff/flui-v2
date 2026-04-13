@@ -57,8 +57,10 @@ use crate::middleware::RouteMiddleware;
 use crate::params::RouteParams;
 #[cfg(feature = "transition")]
 use crate::transition::TransitionConfig;
-use crate::{trace_log, warn_log, RouteMatch};
-use flui_core::{AnyElement, AnyView, App, AppContext, BorrowAppContext, IntoElement, Render, Window};
+use crate::{RouteMatch, trace_log, warn_log};
+use flui_core::{
+    AnyElement, AnyView, App, AppContext, BorrowAppContext, IntoElement, Render, Window,
+};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -93,7 +95,7 @@ pub struct NamedRouteRegistry {
 
 impl NamedRouteRegistry {
     /// Create a new empty registry
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -109,7 +111,7 @@ impl NamedRouteRegistry {
     }
 
     /// Check if a route name exists
-    #[must_use] 
+    #[must_use]
     pub fn contains(&self, name: &str) -> bool {
         self.routes.contains_key(name)
     }
@@ -130,7 +132,7 @@ impl NamedRouteRegistry {
     /// let url = registry.url_for("user.detail", &params).unwrap();
     /// assert_eq!(url, "/users/123");
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn url_for(&self, name: &str, params: &RouteParams) -> Option<String> {
         let pattern = self.get(name)?;
         Some(substitute_params(pattern, params))
@@ -142,13 +144,13 @@ impl NamedRouteRegistry {
     }
 
     /// Get number of registered routes
-    #[must_use] 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.routes.len()
     }
 
     /// Check if registry is empty
-    #[must_use] 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.routes.is_empty()
     }
@@ -265,7 +267,7 @@ pub struct RouteConfig {
 
 impl RouteConfig {
     /// Check if this is a layout route (has children but no explicit builder)
-    #[must_use] 
+    #[must_use]
     pub fn is_layout(&self) -> bool {
         !self.children.is_empty()
     }
@@ -836,7 +838,7 @@ impl Route {
     }
 
     /// Check if this route has a named outlet
-    #[must_use] 
+    #[must_use]
     pub fn has_named_outlet(&self, name: &str) -> bool {
         self.named_children.contains_key(name)
     }
@@ -847,7 +849,7 @@ impl Route {
     }
 
     /// Match a path against this route
-    #[must_use] 
+    #[must_use]
     pub fn matches(&self, path: &str) -> Option<RouteMatch> {
         match_path(&self.config.path, path)
     }
@@ -870,7 +872,7 @@ impl Route {
     /// Find a child route by path segment
     ///
     /// Used internally by `RouterOutlet` to resolve child routes.
-    #[must_use] 
+    #[must_use]
     pub fn find_child(&self, segment: &str) -> Option<&RouteRef> {
         self.children.iter().find(|child| {
             child.config.path == segment || child.config.path.trim_start_matches('/') == segment
@@ -878,7 +880,7 @@ impl Route {
     }
 
     /// Get all child routes
-    #[must_use] 
+    #[must_use]
     pub fn get_children(&self) -> &[RouteRef] {
         &self.children
     }
@@ -1321,9 +1323,11 @@ mod tests {
     fn test_validate_empty_parameter() {
         let result = validate_route_path("/users/:");
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .contains("parameter name cannot be empty"));
+        assert!(
+            result
+                .unwrap_err()
+                .contains("parameter name cannot be empty")
+        );
     }
 
     #[test]

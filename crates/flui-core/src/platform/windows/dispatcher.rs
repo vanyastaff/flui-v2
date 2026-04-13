@@ -4,8 +4,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use anyhow::Context;
-use util::ResultExt;
 use ::windows::{
     System::Threading::{
         ThreadPool, ThreadPoolTimer, TimerElapsedHandler, WorkItemHandler, WorkItemPriority,
@@ -20,6 +18,8 @@ use ::windows::{
         UI::WindowsAndMessaging::PostMessageW,
     },
 };
+use anyhow::Context;
+use util::ResultExt;
 
 use super::{HWND, SafeHwnd, WM_GPUI_TASK_DISPATCHED_ON_MAIN_THREAD};
 use crate::{

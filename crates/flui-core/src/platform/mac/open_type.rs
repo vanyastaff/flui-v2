@@ -23,8 +23,8 @@ use core_text::{
         CTFontDescriptorRef, kCTFontCascadeListAttribute, kCTFontFeatureSettingsAttribute,
     },
 };
-use font_kit::font::Font as FontKitFont;
 use flui_core::{FontFallbacks, FontFeatures};
+use font_kit::font::Font as FontKitFont;
 use std::ptr;
 
 pub fn apply_features_and_fallbacks(

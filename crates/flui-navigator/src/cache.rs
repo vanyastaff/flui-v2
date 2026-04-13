@@ -27,7 +27,7 @@
 //! ```
 
 use crate::route::Route;
-use crate::{debug_log, trace_log, RouteParams};
+use crate::{RouteParams, debug_log, trace_log};
 use lru::LruCache;
 use std::num::NonZeroUsize;
 

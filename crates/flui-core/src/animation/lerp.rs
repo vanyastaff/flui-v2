@@ -77,8 +77,18 @@ mod tests {
 
     #[test]
     fn test_hsla_lerp() {
-        let a = Hsla { h: 0.0, s: 0.0, l: 0.0, a: 1.0 };
-        let b = Hsla { h: 1.0, s: 1.0, l: 1.0, a: 1.0 };
+        let a = Hsla {
+            h: 0.0,
+            s: 0.0,
+            l: 0.0,
+            a: 1.0,
+        };
+        let b = Hsla {
+            h: 1.0,
+            s: 1.0,
+            l: 1.0,
+            a: 1.0,
+        };
         let mid = a.lerp(&b, 0.5);
         assert!((mid.h - 0.5).abs() < 0.01);
         assert!((mid.s - 0.5).abs() < 0.01);
@@ -87,8 +97,14 @@ mod tests {
 
     #[test]
     fn test_point_lerp() {
-        let a = Point { x: px(0.0), y: px(0.0) };
-        let b = Point { x: px(100.0), y: px(200.0) };
+        let a = Point {
+            x: px(0.0),
+            y: px(0.0),
+        };
+        let b = Point {
+            x: px(100.0),
+            y: px(200.0),
+        };
         let mid = a.lerp(&b, 0.5);
         assert!((mid.x.0 - 50.0).abs() < 0.01);
         assert!((mid.y.0 - 100.0).abs() < 0.01);
