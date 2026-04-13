@@ -1,0 +1,19 @@
+[package]
+name = "flui-platform"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Platform abstraction layer for flui (skeleton crate — populated incrementally by migration specs S02b through S06)"
+keywords = ["desktop", "gui", "platform"]
+categories = ["gui"]
+
+[lib]
+name = "flui_platform"
+path = "src/lib.rs"
+doctest = false
+
+[lints]
+workspace = true

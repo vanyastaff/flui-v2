@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/flui-core",
+    "crates/flui-platform",
     "crates/flui-macros",
     "crates/flui-widgets",
     "crates/flui-animate",

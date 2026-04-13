@@ -352,9 +352,18 @@ docs file in the same commit as the code.
   Each S01 sub-step is a single commit. All four must land (and their tests
   must remain green) before S02 begins.
 
-- **Step 1 — flui-platform skeleton + test platform.** (spec S02) Create the
-  crate, move `test/` and `visual_test.rs` only. Smallest and safest because
-  it has no native deps.
+- **Step 1a — flui-platform skeleton.** (spec S02a) Create an empty
+  `crates/flui-platform` workspace member with a minimal `Cargo.toml` and
+  a doc-only `lib.rs`. No source moves, no re-exports, no dependency edge
+  from `flui-core` yet. The smallest possible unblocking commit.
+- **Step 1b — Platform trait + test backend flip.** (spec S02b) Move the
+  `Platform` trait family, all supporting value types referenced by trait
+  method signatures, `platform/test/**`, `platform/visual_test.rs`, and
+  the `app/{test_context,test_app,visual_test_context,headless_app_context}.rs`
+  test scaffolding into `flui-platform` in one coordinated commit. First
+  introduction of the `flui-core → flui-platform` dependency edge. Update
+  `flui-macros` to emit `flui_platform::` paths in generated test-harness
+  code. Re-export from `flui-core` to preserve the public surface.
 - **Step 2 — wgpu + linux.** (spec S03) Move `wgpu/` and `linux/{x11,wayland,
   headless}` together because wgpu is the Linux renderer. Carry target-deps
   and the naga build.rs logic across.
@@ -377,6 +386,16 @@ docs file in the same commit as the code.
   clippy, and still has the same rollback problem at cut-over.
 - **Asymmetric (desktop stays in core).** Permanent technical debt; new
   contributors won't know where a platform lives.
+- **Original S02 scope (create crate + move `platform/test/**` + `visual_test.rs` in one step).**
+  Ruled out by adversarial review (see spec S02a `Context` section). Three
+  independent Cargo dependency cycles proved the move structurally
+  impossible in a single commit: `PlatformWindow::as_test` and
+  `PlatformDispatcher::as_test` return concrete test types by reference;
+  `VisualTestPlatform` implements `Platform` while holding `Rc<dyn Platform>`;
+  and `TestPlatform` references non-platform `flui-core` types like
+  `Brightness`. Resolving any of these requires moving the whole trait
+  family plus its supporting value types, which exceeds the S01a-split
+  single-reviewable-commit budget. Hence the S02 → {S02a, S02b} split.
 
 ## 5. Ordered spec list (master index)
 
@@ -395,8 +414,9 @@ order listed; each can be brainstormed and approved independently.
 | **S01b** | `lock-wgpu-headless-and-golden` | S01a.1 | `WgpuContext::new_headless`, pipeline cache lift, `WgpuHeadlessRenderer`, `Bgra8Unorm` lock, correct readback pattern, golden harness, mac + Linux golden suites. |
 | **S01c** | `lock-behavior-non-rendering` | S01a.1 | Event dispatch per variant, focus/tab-stop smoke, keyboard layout, clipboard, window lifecycle, real example smoke. Pure test additions. |
 | **S01d** | `lock-extraction-facades` | S01a.3 | `WebWindowInner` `#[doc(hidden)]` facade, `PlatformScreenCaptureFrame` opaque newtype, submodule visibility strategy for extraction. |
-| **S02** | `flui-platform-crate-skeleton` | S01a.1, S01a.2, S01a.3, S01a.4, S01b, S01c, S01d | Create `crates/flui-platform`, move `test/` + `visual_test.rs`, set up re-exports for backwards compatibility. |
-| **S03** | `platform-migration-wgpu-linux` | S02 | Move `wgpu/` + `linux/{x11,wayland,headless}` + Linux target-deps + naga build.rs. |
+| **S02a** | `flui-platform-crate-skeleton` | S01a.1, S01a.2, S01a.3, S01a.4, S01b, S01c, S01d | Create empty `crates/flui-platform` workspace member (minimal `Cargo.toml` + doc-only `lib.rs`). No file moves, no re-exports, no feature flags. |
+| **S02b** | `flui-platform-trait-and-test-flip` | S02a | Move `Platform` trait family, supporting value types (`ClipboardItem`, `WindowParams`, `AnyWindowHandle`, `CursorStyle`, `Menu`, `Keymap`, `Brightness`, …), `platform/test/**`, `platform/visual_test.rs`, and `app/{test_context,test_app,visual_test_context,headless_app_context}.rs` in one coordinated commit. Update `flui-macros` test-macro code generation to emit `flui_platform::` paths. Re-export from `flui-core` to preserve the public surface. First introduction of the `flui-core → flui-platform` dependency edge. |
+| **S03** | `platform-migration-wgpu-linux` | S02b | Move `wgpu/` + `linux/{x11,wayland,headless}` + Linux target-deps + naga build.rs. |
 | **S04** | `platform-migration-macos` | S03 | Move `mac/` + cbindgen cross-crate setup + Metal shader build.rs. |
 | **S05** | `platform-migration-windows` | S04 | Move `windows/` + FXC shader compilation + embed-resource build.rs. |
 | **S06** | `platform-migration-web` | S05 | Move `web/` + top-level files (keystroke, keyboard, app_menu, layer_shell, scap_screen_capture). Delete `flui-core/src/platform/`. |
@@ -432,9 +452,9 @@ order listed; each can be brainstormed and approved independently.
          ├─ S01a.3 ─┼─ S01d ─┐
 S01a.1 ──┼─ S01a.4 ─┤         │
          ├─ S01b ───┤         │
-         └─ S01c ───┴─────────┴─ S02 ─ S03 ─ S04 ─ S05 ─ S06 ─┬─ S07..S15 (parallelizable)
-                                                               │
-                                                               └─ S16 ─ (S17, S18, S19 parallel) ─ S20
+         └─ S01c ───┴─────────┴─ S02a ─ S02b ─ S03 ─ S04 ─ S05 ─ S06 ─┬─ S07..S15 (parallelizable)
+                                                                       │
+                                                                       └─ S16 ─ (S17, S18, S19 parallel) ─ S20
 ```
 
 S01a was split after adversarial review revealed that the initial "single
