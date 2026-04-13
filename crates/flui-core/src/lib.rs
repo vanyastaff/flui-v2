@@ -9,6 +9,7 @@ extern crate flui_macros;
 
 #[macro_use]
 mod action;
+/// Animation primitives: tweens, curves, controllers, and physics simulations.
 pub mod animation;
 mod app;
 

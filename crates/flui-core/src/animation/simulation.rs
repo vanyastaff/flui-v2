@@ -1,5 +1,7 @@
 // crates/flui-core/src/animation/simulation.rs
 
+#![allow(missing_docs)] // animation subsystem is pre-1.0; full rustdoc coverage tracked separately
+
 /// Threshold for determining when a simulation is "close enough" to its target.
 #[derive(Clone, Debug)]
 pub struct Tolerance {

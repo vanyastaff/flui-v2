@@ -57,6 +57,10 @@ impl Priority {
 }
 
 /// Metadata attached to runnables for debugging and profiling.
+///
+/// Used internally by flui-core's task macro plumbing. Not part of the
+/// public API and may change between versions without a semver bump.
+#[doc(hidden)]
 #[derive(Clone)]
 pub struct RunnableMeta {
     /// The source location where the task was spawned.
@@ -110,6 +114,9 @@ pub trait Scheduler: Send + Sync {
     /// Returns the clock used by this scheduler.
     fn clock(&self) -> Arc<dyn Clock>;
 
+    /// Returns this scheduler as a [`TestScheduler`] if it is one. Default
+    /// implementation returns `None`; `TestScheduler` overrides this to
+    /// return `Some(self)`.
     #[cfg(any(test, feature = "test-support"))]
     fn as_test(&self) -> Option<&TestScheduler> {
         None

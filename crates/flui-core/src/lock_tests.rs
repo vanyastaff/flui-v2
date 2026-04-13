@@ -29,8 +29,7 @@ use crate::{ClipboardItem, Keystroke, Modifiers, TestAppContext};
 #[test]
 fn clipboard_round_trip_string() {
     let cx = TestAppContext::single();
-    let item = ClipboardItem::new_string("hello world".into());
-    cx.write_to_clipboard(item.clone());
+    cx.write_to_clipboard(ClipboardItem::new_string("hello world".into()));
     let readback = cx.read_from_clipboard().expect("clipboard was empty");
     assert_eq!(readback.text().as_deref(), Some("hello world"));
 }
@@ -53,9 +52,10 @@ fn clipboard_empty_on_fresh_context() {
 #[test]
 fn clipboard_string_with_metadata() {
     let cx = TestAppContext::single();
-    let item =
-        ClipboardItem::new_string_with_metadata("content".into(), "meta-payload".into());
-    cx.write_to_clipboard(item.clone());
+    cx.write_to_clipboard(ClipboardItem::new_string_with_metadata(
+        "content".into(),
+        "meta-payload".into(),
+    ));
     let readback = cx.read_from_clipboard().expect("clipboard was empty");
     assert_eq!(readback.text().as_deref(), Some("content"));
 }
@@ -91,24 +91,30 @@ fn keystroke_parse_multiple_modifiers() {
 }
 
 #[test]
-fn keystroke_parse_rejects_garbage() {
-    // Empty and whitespace-only strings do not parse to a keystroke.
-    assert!(Keystroke::parse("").is_err() || Keystroke::parse("").is_ok());
-    // At minimum, a keystroke should have at least one character component;
-    // this test pins the current behavior without asserting one
-    // specific form of invalidity (the parser has evolved and may accept
-    // "ctrl-" as a dangling-modifier form). Re-run and update when
-    // Keystroke::parse's tolerance changes intentionally.
-    let _ = Keystroke::parse("ctrl-");
+fn keystroke_parse_tolerance_probe() {
+    // Probe `Keystroke::parse` tolerance for degenerate inputs. This
+    // test PINS the current behavior (whatever it is) so we notice if
+    // it changes — not the other way around. If any of these probes
+    // flips outcome, update the assertion and document why.
+    //
+    // Current behavior (pinned):
+    //   ""        Ok — permissive empty parse
+    //   "ctrl-"   Ok — dangling modifier accepted
+    //   "ctrl-a"  Ok — normal
+    //   "a"       Ok — bare letter
+    assert!(Keystroke::parse("").is_ok(), "empty string currently parses");
+    assert!(Keystroke::parse("ctrl-").is_ok(), "dangling modifier currently parses");
+    assert!(Keystroke::parse("ctrl-a").is_ok(), "normal modifier+key parses");
+    assert!(Keystroke::parse("a").is_ok(), "bare letter parses");
 }
 
 #[test]
 fn keystroke_to_string_round_trip_key_preserved() {
     // Pin the round-trip property that `Keystroke::parse(input).to_string()`
     // produces something that re-parses to the same key. Modifier
-    // round-trip is NOT asserted — the renderer normalizes letter case
-    // with synthetic shift which breaks naive round-trip (pin documented
-    // in docs/lock-coverage-gaps.md if this ever changes).
+    // round-trip is also asserted for inputs that don't trigger
+    // synthetic shift — see `keystroke_to_string_round_trip_modifiers`
+    // below for why letters like "a" are excluded.
     for input in ["ctrl-a", "ctrl-shift-k", "alt-f4"] {
         let parsed = Keystroke::parse(input).unwrap_or_else(|e| {
             panic!("parse failed for {input}: {e:?}");
@@ -120,6 +126,30 @@ fn keystroke_to_string_round_trip_key_preserved() {
         assert_eq!(
             parsed.key, reparsed.key,
             "round-trip key mismatch for {input}"
+        );
+    }
+}
+
+#[test]
+fn keystroke_to_string_round_trip_modifiers() {
+    // Separate test: pin that modifier flags survive the round-trip
+    // for inputs whose `key` is not an ASCII letter. Letters trigger
+    // case-normalization with a synthetic shift in the renderer — e.g.
+    // `ctrl-a` renders as `ctrl-A` which re-parses with `shift: true`.
+    // That's a known quirk of the Keystroke renderer, not a regression
+    // we want to catch here. The tests below use function keys and
+    // named keys that bypass the normalization.
+    for input in ["alt-f4", "ctrl-f1", "ctrl-alt-f12"] {
+        let parsed = Keystroke::parse(input).unwrap_or_else(|e| {
+            panic!("parse failed for {input}: {e:?}");
+        });
+        let rendered = parsed.to_string();
+        let reparsed = Keystroke::parse(&rendered).unwrap_or_else(|e| {
+            panic!("reparse failed for {input} -> {rendered}: {e:?}");
+        });
+        assert_eq!(
+            parsed.modifiers, reparsed.modifiers,
+            "round-trip modifiers mismatch for {input} (rendered as {rendered})"
         );
     }
 }
@@ -187,7 +217,7 @@ fn scheduler_run_until_parked_drains_tasks() {
     // to randomize order when seeded for fuzzing. The contract we pin
     // here is that ALL scheduled tasks run by the time
     // `run_until_parked` returns.
-    let mut sorted = final_order.clone();
+    let mut sorted = final_order;
     sorted.sort_unstable();
     assert_eq!(sorted, vec![1, 2, 3]);
 }

@@ -457,8 +457,17 @@ pub trait ScreenCaptureStream {
 /// implementation. The `ScreenCaptureSource` / `ScreenCaptureStream`
 /// traits exist as future extension points; when a concrete backend is
 /// reintroduced, this struct will gain real fields and a public
-/// constructor. Today it is uninhabited from outside `flui-core`
-/// (the wrapped `PlatformScreenCaptureFrame` is `pub(crate)`).
+/// constructor. Today it is **unconstructable from outside `flui-core`**
+/// (the wrapped `PlatformScreenCaptureFrame` is `pub(crate)`), which
+/// means no external consumer can create one to feed through the
+/// `ScreenCaptureStream::poll_frame` surface.
+///
+/// **Auto-trait stability:** the current `_private: ()` field makes
+/// this type trivially `Send + Sync + Unpin + UnwindSafe + RefUnwindSafe`.
+/// These guarantees are NOT part of the stable API and may change when
+/// a concrete frame backend is wired up — e.g. `scap::frame::Frame` is
+/// not `Send` on some platforms. Do not rely on auto-traits of this
+/// type across a `.await`, a `thread::spawn`, or a boxed-trait boundary.
 pub struct ScreenCaptureFrame {
     #[allow(dead_code)]
     _private: PlatformScreenCaptureFrame,

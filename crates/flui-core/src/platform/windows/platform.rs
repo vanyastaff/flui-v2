@@ -30,6 +30,8 @@ use ::windows::{
 use crate::*;
 use super::*;
 
+/// Windows platform implementation. Created via [`WindowsPlatform::new`] and
+/// passed to [`crate::Application::with_platform`].
 pub struct WindowsPlatform {
     inner: Rc<WindowsPlatformInner>,
     raw_window_handles: Arc<RwLock<SmallVec<[SafeHwnd; 4]>>>,
@@ -94,6 +96,9 @@ impl WindowsPlatformState {
 }
 
 impl WindowsPlatform {
+    /// Initializes COM/OLE, spawns the main-thread executor, and constructs a
+    /// Windows platform. Pass `headless = true` to skip creating a window-message
+    /// pump (used by headless tests and CI).
     pub fn new(headless: bool) -> Result<Self> {
         unsafe {
             OleInitialize(None).context("unable to initialize Windows OLE")?;

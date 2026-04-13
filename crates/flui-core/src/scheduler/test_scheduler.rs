@@ -1,3 +1,5 @@
+#![allow(missing_docs)] // test-support scaffolding; exempted from crate-level missing_docs
+
 use super::{
     BackgroundExecutor, Clock, ForegroundExecutor, Instant, Priority, RunnableMeta, Scheduler,
     SessionId, TestClock, Timer,

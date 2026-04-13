@@ -1,5 +1,7 @@
 // crates/flui-core/src/animation/curve.rs
 
+#![allow(missing_docs)] // animation subsystem is pre-1.0; full rustdoc coverage tracked separately
+
 use std::f32::consts::PI;
 use std::sync::Arc;
 

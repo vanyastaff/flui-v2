@@ -1,5 +1,7 @@
 // crates/flui-core/src/animation/tween.rs
 
+#![allow(missing_docs)] // animation subsystem is pre-1.0; full rustdoc coverage tracked separately
+
 use super::lerp::Lerp;
 
 /// Interpolates between two values of the same type.

@@ -26,7 +26,7 @@ fn main() {
                 }),
                 ..Default::default()
             },
-            |_, cx| cx.new(|cx| AnimationDemo::new(cx)),
+            |_, cx| cx.new(AnimationDemo::new),
         )
         .unwrap();
     });

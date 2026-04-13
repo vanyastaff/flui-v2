@@ -1,8 +1,10 @@
 // crates/flui-core/src/animation/controller.rs
 
+#![allow(missing_docs)] // animation subsystem is pre-1.0; full rustdoc coverage tracked separately
+
 use crate::animation::{Curve, Simulation};
 use crate::scheduler::Instant;
-use crate::{App, AppContext, Context, Entity};
+use crate::{AppContext, Context, Entity};
 use std::time::Duration;
 
 /// Status of an animation.

@@ -1,5 +1,7 @@
 // crates/flui-core/src/animation/animated.rs
 
+#![allow(missing_docs)] // animation subsystem is pre-1.0; full rustdoc coverage tracked separately
+
 use crate::animation::controller::AnimationController;
 use crate::{App, Entity, IntoElement, Window};
 
@@ -21,10 +23,10 @@ pub fn animated<E: IntoElement>(
     cx: &App,
     builder: impl FnOnce(f32) -> E,
 ) -> E {
-    let ctrl = controller.read(cx);
-    let value = ctrl.value();
-    let animating = ctrl.is_animating();
-    drop(ctrl);
+    let (value, animating) = {
+        let ctrl = controller.read(cx);
+        (ctrl.value(), ctrl.is_animating())
+    };
 
     if animating {
         window.request_animation_frame();

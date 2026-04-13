@@ -42,8 +42,11 @@
 //!   are baked into the uniform buffer and would skew golden output
 //!   on any dev machine that exports them.
 
-#![cfg(any(test, feature = "test-support"))]
-#![cfg(not(target_family = "wasm"))]
+// Module-level cfg gating lives at the `mod wgpu_headless_renderer;`
+// declaration in `platform/wgpu.rs` to avoid the pattern where this
+// file's `#![cfg(not(target_family = "wasm"))]` inner attribute would
+// empty the module under wasm + test-support, leaving the `pub use`
+// at the declaration site with an unresolved symbol.
 
 use super::{WgpuAtlas, WgpuContext};
 use flui_core::{DevicePixels, PlatformAtlas, PlatformHeadlessRenderer, Scene, Size};

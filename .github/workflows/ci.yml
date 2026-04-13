@@ -50,7 +50,15 @@ jobs:
 
       - name: Lock-phase consistency checks
         if: runner.os == 'Linux'
-        run: cargo run -q -p lock-checks -- check-stubs
+        run: |
+          cargo run -q -p lock-checks -- check-stubs
+          # Regenerate the platform-imports survey and fail on drift.
+          cargo run -q -p lock-checks -- check-platform-imports > /tmp/live-platform-imports.md
+          diff -u docs/reports/platform-imports.md /tmp/live-platform-imports.md \
+            || { echo; echo 'ERROR: platform-imports drift detected. Run:'; \
+                 echo '  cargo run -q -p lock-checks -- check-platform-imports --emit'; \
+                 echo 'and commit the updated docs/reports/platform-imports.md.'; \
+                 exit 1; }
 
   clippy:
     name: Clippy (${{ matrix.os }})
@@ -129,12 +137,14 @@ jobs:
         if: runner.os == 'Linux'
         env:
           VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
-        run: vulkaninfo --summary || true
+        run: |
+          vulkaninfo --summary
+          vulkaninfo --summary | grep -q -i 'llvmpipe\|lavapipe' \
+            || { echo 'lavapipe not detected — check mesa-vulkan-drivers install'; exit 1; }
 
       - name: Test
         env:
           VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
-          WGPU_POWER_PREF: low
         run: cargo test --workspace
 
   format:
