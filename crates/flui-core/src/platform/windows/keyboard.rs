@@ -316,8 +316,8 @@ const CANDIDATE_VKEYS: &[VIRTUAL_KEY] = &[
 
 #[cfg(test)]
 mod tests {
-    use crate::WindowsKeyboardMapper;
-    use flui_core::{Keystroke, Modifiers, PlatformKeyboardMapper};
+    use super::WindowsKeyboardMapper;
+    use crate::{Keystroke, Modifiers, PlatformKeyboardMapper};
 
     #[test]
     fn test_keyboard_mapper() {

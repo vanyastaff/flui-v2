@@ -1328,8 +1328,8 @@ unsafe extern "system" fn window_procedure(
 
 #[cfg(test)]
 mod tests {
-    use crate::{read_from_clipboard, write_to_clipboard};
-    use flui_core::ClipboardItem;
+    use super::{read_from_clipboard, write_to_clipboard};
+    use crate::ClipboardItem;
 
     #[test]
     fn test_clipboard() {

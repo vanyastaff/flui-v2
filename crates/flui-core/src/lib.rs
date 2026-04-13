@@ -58,6 +58,9 @@ mod tab_stop;
 mod taffy;
 #[cfg(any(test, feature = "test-support"))]
 pub mod test;
+
+#[cfg(test)]
+mod lock_tests;
 mod text_system;
 mod view;
 mod window;
@@ -174,8 +177,9 @@ pub use platform::{PlatformDispatcher, RunnableMeta, RunnableVariant, TimerResol
 #[cfg(any(test, feature = "test-support"))]
 pub use platform::{
     PlatformHeadlessRenderer, TestDispatcher, TestScreenCaptureSource, TestScreenCaptureStream,
-    current_headless_renderer,
 };
+#[cfg(feature = "test-support")]
+pub use platform::current_headless_renderer;
 
 // Test-support-only items (crate-internal — used by app/test_context and
 // other flui-core tests). TestWindow is `pub struct` at the definition

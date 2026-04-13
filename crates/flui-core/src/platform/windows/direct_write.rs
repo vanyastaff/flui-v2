@@ -1879,7 +1879,7 @@ const DEFAULT_LOCALE_NAME: PCWSTR = windows_core::w!("en-US");
 
 #[cfg(test)]
 mod tests {
-    use crate::direct_write::ClusterAnalyzer;
+    use super::ClusterAnalyzer;
 
     #[test]
     fn test_cluster_map() {
