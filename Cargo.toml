@@ -11,6 +11,7 @@ members = [
     "examples/nav_demo",
     "examples/material_demo",
     "examples/animation_demo",
+    "tooling/lock-checks",
 ]
 resolver = "3"
 

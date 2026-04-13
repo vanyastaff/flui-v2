@@ -1,0 +1,32 @@
+# Stub inventory for crates/flui-core/src/platform/**
+#
+# Auto-generated. Re-bless with:
+#   cargo run -p lock-checks -- check-stubs --bless
+#
+# Edit intent: when you intentionally add or remove a stub,
+# re-bless this fixture and commit it in the same commit as
+# the code change. The check fails on any drift.
+#
+# Format: one entry per line
+#   path|unimplemented|unreachable|todo
+#
+# Path is relative to the workspace root and uses forward
+# slashes. Files with zero matches are omitted.
+#
+# Scope: crates/flui-core/src/platform/**/*.rs only. Does not
+# cover top-level core modules, build.rs, shaders, or sibling
+# crates. See docs/superpowers/specs/2026-04-13-S01a1-lock-
+# inventory-and-hygiene-design.md for blind spots.
+
+crates/flui-core/src/platform/app_menu.rs|0|2|0
+crates/flui-core/src/platform/linux.rs|0|1|0
+crates/flui-core/src/platform/linux/wayland/client.rs|0|4|0
+crates/flui-core/src/platform/mac/metal_atlas.rs|1|5|0
+crates/flui-core/src/platform/mac/metal_renderer.rs|0|1|0
+crates/flui-core/src/platform/mac/platform.rs|0|1|0
+crates/flui-core/src/platform/test/platform.rs|12|0|0
+crates/flui-core/src/platform/test/window.rs|8|0|0
+crates/flui-core/src/platform/windows/direct_write.rs|0|1|0
+crates/flui-core/src/platform/windows/directx_devices.rs|0|2|0
+crates/flui-core/src/platform/windows/platform.rs|2|1|0
+crates/flui-core/src/platform/windows/window.rs|1|0|0

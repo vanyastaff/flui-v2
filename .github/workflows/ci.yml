@@ -46,6 +46,10 @@ jobs:
       - name: Check workspace
         run: cargo check --workspace
 
+      - name: Lock-phase consistency checks
+        if: runner.os == 'Linux'
+        run: cargo run -q -p lock-checks -- check-stubs
+
   clippy:
     name: Clippy (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

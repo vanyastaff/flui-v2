@@ -1,3 +1,11 @@
 # Prevent GitHub from displaying comments within JSON files as errors.
 *.json linguist-language=JSON-with-Comments
 
+# Lock-phase fixtures and reports are LF-only. Without this, Windows
+# contributors can introduce CRLF noise that desynchronizes the stub
+# inventory diff or corrupts the cbindgen scene.h snapshot (added in
+# a later spec).
+docs/fixtures/*.txt text eol=lf
+docs/fixtures/*.h text eol=lf
+docs/reports/*.md text eol=lf
+
