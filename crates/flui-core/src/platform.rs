@@ -1,3 +1,19 @@
+// Platform module visibility strategy (decided by S01d).
+//
+// The five OS-specific submodules (`mac`, `linux`, `windows`, `wgpu`,
+// `web`) are `pub(crate)`. Their internals are NOT part of the public
+// API; the only exported items are the concrete `XxxPlatform` types
+// re-exported below.
+//
+// When code from these modules moves to the future `flui-platform`
+// crate, any type that must remain in `flui-core` AND be reachable
+// from `flui-platform` will be added as a named `pub use` re-export
+// here, and the symbol added to the explicit list in `lib.rs`.
+//
+// Adding a new public re-export is a semver event. Do not add one
+// without a documented reason in the relevant migration spec
+// (S02-S06).
+
 mod app_menu;
 mod keyboard;
 mod keystroke;
@@ -415,7 +431,17 @@ pub trait ScreenCaptureStream {
 }
 
 /// A frame of video captured from a screen.
-pub struct ScreenCaptureFrame(pub PlatformScreenCaptureFrame);
+///
+/// Currently a placeholder — `flui-core` has no screen capture
+/// implementation. The `ScreenCaptureSource` / `ScreenCaptureStream`
+/// traits exist as future extension points; when a concrete backend is
+/// reintroduced, this struct will gain real fields and a public
+/// constructor. Today it is uninhabited from outside `flui-core`
+/// (the wrapped `PlatformScreenCaptureFrame` is `pub(crate)`).
+pub struct ScreenCaptureFrame {
+    #[allow(dead_code)]
+    _private: PlatformScreenCaptureFrame,
+}
 
 /// An opaque identifier for a hardware display
 #[derive(PartialEq, Eq, Hash, Copy, Clone)]
