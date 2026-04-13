@@ -169,9 +169,11 @@ pub use platform::{
     KeybindingKeystroke, Keystroke, Modifiers,
 };
 
-// Macro-support plumbing — hidden from rustdoc to match the annotations
-// at the definition site in `platform.rs`.
-#[doc(hidden)]
+// Macro-support plumbing. All four items carry `#[doc(hidden)]` at
+// their definition sites (`PlatformDispatcher`, `RunnableVariant`,
+// `TimerResolutionGuard` in `platform.rs`; `RunnableMeta` in
+// `scheduler/mod.rs`), so the re-export does not need to repeat the
+// annotation — rustdoc propagates hidden through re-exports.
 pub use platform::{PlatformDispatcher, RunnableMeta, RunnableVariant, TimerResolutionGuard};
 
 // Test-support-only items (public)

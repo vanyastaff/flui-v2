@@ -83,7 +83,7 @@ impl WgpuContext {
     /// builds. Selects the first adapter that can create a device with
     /// the same features/limits as the surface path, preferring low
     /// power (software rasterizers like lavapipe for CI reproducibility).
-    #[cfg(all(not(target_family = "wasm"), any(test, feature = "test-support")))]
+    #[cfg(all(any(test, feature = "test-support"), not(target_family = "wasm")))]
     pub fn new_headless() -> anyhow::Result<Self> {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::VULKAN | wgpu::Backends::GL,

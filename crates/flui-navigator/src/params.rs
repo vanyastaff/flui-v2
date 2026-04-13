@@ -516,7 +516,7 @@ fn test_query_params_get_as() {
 
 #[test]
 fn test_query_params_multiple_values() {
-    let query = QueryParams::from_query_string("tag=rust&tag=gpui&tag=ui");
+    let query = QueryParams::from_query_string("tag=rust&tag=flui_core&tag=ui");
 
     let tags = query.get_all("tag").unwrap();
     assert_eq!(tags.len(), 3);

@@ -1,7 +1,5 @@
 // crates/flui-core/src/animation/animated.rs
 
-#![allow(missing_docs)] // animation subsystem is pre-1.0; full rustdoc coverage tracked separately
-
 use crate::animation::controller::AnimationController;
 use crate::{App, Entity, IntoElement, Window};
 

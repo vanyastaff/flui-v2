@@ -473,6 +473,19 @@ pub struct ScreenCaptureFrame {
     _private: PlatformScreenCaptureFrame,
 }
 
+// Compile-time guard: pin the current auto-trait surface of
+// `ScreenCaptureFrame`. If a future change to `PlatformScreenCaptureFrame`
+// silently removes `Send`, `Sync`, `Unpin`, `UnwindSafe`, or
+// `RefUnwindSafe`, this const-eval block fails with a type error here
+// instead of in a downstream crate months later. Update the assertions
+// deliberately when changing the placeholder backend.
+const _: fn() = || {
+    fn assert_send_sync_unpin<T: Send + Sync + Unpin>() {}
+    fn assert_unwind_safe<T: std::panic::UnwindSafe + std::panic::RefUnwindSafe>() {}
+    assert_send_sync_unpin::<ScreenCaptureFrame>();
+    assert_unwind_safe::<ScreenCaptureFrame>();
+};
+
 /// An opaque identifier for a hardware display
 #[derive(PartialEq, Eq, Hash, Copy, Clone)]
 pub struct DisplayId(pub(crate) u32);

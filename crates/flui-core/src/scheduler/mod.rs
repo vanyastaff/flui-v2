@@ -60,7 +60,11 @@ impl Priority {
 ///
 /// Used internally by flui-core's task macro plumbing. Not part of the
 /// public API and may change between versions without a semver bump.
+/// Marked `#[non_exhaustive]` so external crates cannot construct or
+/// exhaustively pattern-match on it, making the "may change" promise
+/// type-system-true rather than a social contract.
 #[doc(hidden)]
+#[non_exhaustive]
 #[derive(Clone)]
 pub struct RunnableMeta {
     /// The source location where the task was spawned.
