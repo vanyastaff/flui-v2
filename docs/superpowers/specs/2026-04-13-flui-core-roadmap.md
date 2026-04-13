@@ -388,11 +388,14 @@ order listed; each can be brainstormed and approved independently.
 
 | Spec | Title | Depends on | Summary |
 |---|---|---|---|
-| **S01a** | `lock-ground-truth-and-cleanup` | — | Ground-truth stub inventory, fix `screen-capture` feature, explicit re-export list, `#[non_exhaustive] PrimitiveBatch`, enumerate `use crate::*;` globs, verify debug Windows build, commit cbindgen snapshot, decide `test-support` CI, install lavapipe. No new runtime code. |
-| **S01b** | `lock-wgpu-headless-and-golden` | S01a | `WgpuContext::new_headless`, pipeline cache lift, `WgpuHeadlessRenderer`, `Bgra8Unorm` lock, correct readback pattern, golden harness, mac + Linux golden suites. |
-| **S01c** | `lock-behavior-non-rendering` | S01a | Event dispatch per variant, focus/tab-stop smoke, keyboard layout, clipboard, window lifecycle, real example smoke. Pure test additions. |
-| **S01d** | `lock-extraction-facades` | S01a | `WebWindowInner` `#[doc(hidden)]` facade, `PlatformScreenCaptureFrame` opaque newtype, submodule visibility strategy for extraction. |
-| **S02** | `flui-platform-crate-skeleton` | S01a, S01b, S01c, S01d | Create `crates/flui-platform`, move `test/` + `visual_test.rs`, set up re-exports for backwards compatibility. |
+| **S01a.1** | `lock-inventory-and-hygiene` | — | Move stub inventory + `use crate::*;` import survey into `tooling/xtask` as `check-stubs` / `check-platform-imports` subcommands (follow existing `package_conformity` pattern). Add `.gitattributes` rule `docs/fixtures/*.h text eol=lf`. Benchmark `cargo test --features test-support` runtime delta on Linux + mac and decide whether to flip the CI default. No new runtime code. |
+| **S01a.2** | `delete-screen-capture-dead-code` | S01a.1 | Delete the `screen-capture` feature and all its references. The feature is declared nowhere in `Cargo.toml` but referenced at `platform.rs:31-44`, `windows/platform.rs:488-500`, `linux/x11/client.rs:1498-1504`, `mac/screen_capture.rs`, `scap_screen_capture.rs`. Delete the dead branches, collapse `PlatformScreenCaptureFrame` to `()`, keep `ScreenCaptureSource`/`ScreenCaptureStream`/`ScreenCaptureFrame` traits as future extension points. Verify all workspace siblings still build. |
+| **S01a.3** | `explicit-re-export-list` | S01a.1 | Replace `lib.rs:117 pub use platform::*;` with an enumerated `~95-100` symbol list grouped by `#[cfg]` predicate. Preserve every target gate exactly. Demote macro-support items (`PlatformDispatcher`, `RunnableVariant`, `TimerResolutionGuard`, `RunnableMeta`) to `#[doc(hidden)] pub use`. Verification: `cargo doc --no-deps` before/after diff and `cargo check` across all workspace siblings (esp. `flui-navigator` which does `use flui_core::*;`) on Linux + mac. Windows verification deferred to after S01a.4. Rationale comment: this is the only glob fixed now because `platform::*` is the prerequisite for S02; the ~29 other globs at `lib.rs` stay. |
+| **S01a.4** | `fix-debug-windows-build` | S01a.1 | Repair the debug-mode Windows compilation, currently broken with 257 errors. Root causes: missing `Win32_Media` feature on the `windows` crate dep, `windows::core::w!` path resolution, `use crate::*;` globs in `platform/windows/{direct_write, directx_renderer, events, platform, util, window}.rs` failing to resolve (`DirectXDevices`, `DirectXAtlas`, `WindowsWindowInner`, `HWND`, `SafeHwnd`, `logical_point`, `with_dll_library`, `WM_GPUI_*` constants). Add `Win32_Media` to the `windows` dep features; replace the globs with explicit imports per file. Verify: `cargo build -p flui-core` on a Windows machine exits 0. Does NOT block S01b or S01c. Blocks S02. |
+| **S01b** | `lock-wgpu-headless-and-golden` | S01a.1 | `WgpuContext::new_headless`, pipeline cache lift, `WgpuHeadlessRenderer`, `Bgra8Unorm` lock, correct readback pattern, golden harness, mac + Linux golden suites. |
+| **S01c** | `lock-behavior-non-rendering` | S01a.1 | Event dispatch per variant, focus/tab-stop smoke, keyboard layout, clipboard, window lifecycle, real example smoke. Pure test additions. |
+| **S01d** | `lock-extraction-facades` | S01a.3 | `WebWindowInner` `#[doc(hidden)]` facade, `PlatformScreenCaptureFrame` opaque newtype, submodule visibility strategy for extraction. |
+| **S02** | `flui-platform-crate-skeleton` | S01a.1, S01a.2, S01a.3, S01a.4, S01b, S01c, S01d | Create `crates/flui-platform`, move `test/` + `visual_test.rs`, set up re-exports for backwards compatibility. |
 | **S03** | `platform-migration-wgpu-linux` | S02 | Move `wgpu/` + `linux/{x11,wayland,headless}` + Linux target-deps + naga build.rs. |
 | **S04** | `platform-migration-macos` | S03 | Move `mac/` + cbindgen cross-crate setup + Metal shader build.rs. |
 | **S05** | `platform-migration-windows` | S04 | Move `windows/` + FXC shader compilation + embed-resource build.rs. |
@@ -425,15 +428,31 @@ order listed; each can be brainstormed and approved independently.
 ### Dependency graph
 
 ```
-S01a ─┬─ S01b ─┐
-      ├─ S01c ─┼─ S02 ─ S03 ─ S04 ─ S05 ─ S06 ─┬─ S07..S15 (parallelizable)
-      └─ S01d ─┘                                │
-                                                └─ S16 ─ (S17, S18, S19 parallel) ─ S20
+         ┌─ S01a.2 ─┐
+         ├─ S01a.3 ─┼─ S01d ─┐
+S01a.1 ──┼─ S01a.4 ─┤         │
+         ├─ S01b ───┤         │
+         └─ S01c ───┴─────────┴─ S02 ─ S03 ─ S04 ─ S05 ─ S06 ─┬─ S07..S15 (parallelizable)
+                                                               │
+                                                               └─ S16 ─ (S17, S18, S19 parallel) ─ S20
 ```
 
-S01b, S01c and S01d are independent siblings that each depend on S01a (which
-establishes ground truth and CI posture). They can be written and merged in
-any order after S01a lands, and all four must be green before S02 begins.
+S01a was split after adversarial review revealed that the initial "single
+lock spec" bundled nine unrelated hygiene tasks plus a rendering refactor
+plus a 257-error Windows repair. The four S01a.x sub-specs are each a single
+reviewable PR:
+
+- **S01a.1** lays down infrastructure (xtask subcommands, `.gitattributes`,
+  test-support benchmark).
+- **S01a.2** deletes the dead `screen-capture` code path (it was never
+  reachable — the feature is referenced but undeclared).
+- **S01a.3** replaces the `pub use platform::*;` glob with an explicit list
+  — the only API-visible change in the S01a family.
+- **S01a.4** repairs the currently-broken debug-mode Windows build (257
+  errors, verified locally). Does not block S01b/S01c but blocks S02.
+
+S01b, S01c and S01d then depend on S01a.1 (S01d additionally on S01a.3 for
+the re-export list it extends). All must be green before S02.
 
 Notes:
 
