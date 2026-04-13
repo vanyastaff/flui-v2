@@ -76,6 +76,60 @@ impl WgpuContext {
         })
     }
 
+    /// Creates a headless `WgpuContext` without any surface.
+    ///
+    /// Used by `WgpuHeadlessRenderer` for offscreen golden rendering and
+    /// by `current_headless_renderer()` on Linux/FreeBSD in test-support
+    /// builds. Selects the first adapter that can create a device with
+    /// the same features/limits as the surface path, preferring low
+    /// power (software rasterizers like lavapipe for CI reproducibility).
+    #[cfg(all(not(target_family = "wasm"), any(test, feature = "test-support")))]
+    pub fn new_headless() -> anyhow::Result<Self> {
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::VULKAN | wgpu::Backends::GL,
+            flags: wgpu::InstanceFlags::default(),
+            backend_options: wgpu::BackendOptions::default(),
+        });
+
+        let adapter = pollster::block_on(instance.request_adapter(
+            &wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::LowPower,
+                compatible_surface: None,
+                force_fallback_adapter: false,
+            },
+        ))
+        .map_err(|e| anyhow::anyhow!("Failed to request headless wgpu adapter: {e}"))?;
+
+        log::info!(
+            "Selected headless GPU adapter: {:?} ({:?})",
+            adapter.get_info().name,
+            adapter.get_info().backend
+        );
+
+        let (device, queue, dual_source_blending) =
+            pollster::block_on(Self::create_device(&adapter))?;
+
+        let device_lost = Arc::new(AtomicBool::new(false));
+        device.set_device_lost_callback({
+            let device_lost = Arc::clone(&device_lost);
+            move |reason, message| {
+                log::error!("wgpu device lost: reason={reason:?}, message={message}");
+                if reason != wgpu::DeviceLostReason::Destroyed {
+                    device_lost.store(true, Ordering::Relaxed);
+                }
+            }
+        });
+
+        Ok(Self {
+            instance,
+            adapter,
+            device: Arc::new(device),
+            queue: Arc::new(queue),
+            dual_source_blending,
+            device_lost,
+        })
+    }
+
     #[cfg(target_family = "wasm")]
     pub async fn new_web() -> anyhow::Result<Self> {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {

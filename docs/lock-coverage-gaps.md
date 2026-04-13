@@ -6,6 +6,43 @@ specs listed against each gap own the fix.
 This file is the canonical list of "what's not locked" so that new
 contributors can audit what silent regressions are possible.
 
+## Golden rendering via `WgpuHeadlessRenderer` (S01b follow-up)
+
+**Status:** skeleton only.
+
+S01b landed `WgpuContext::new_headless()` (fully implemented) and
+`WgpuHeadlessRenderer` (struct + trait impl + `current_headless_renderer()`
+wiring on Linux/FreeBSD). The constructor performs real wgpu adapter
+selection and device creation, so "can we even create a headless
+device on lavapipe" is exercised every test run.
+
+But the `render_scene_to_image` method currently returns a solid-black
+placeholder `RgbaImage`. The full pixel-accurate body — bind group
+allocation, pipeline construction with explicit
+`BlendState::PREMULTIPLIED_ALPHA_BLENDING`, instance buffer
+grow/shrink, path intermediate textures, MSAA resolve, offscreen
+texture readback with `COPY_BYTES_PER_ROW_ALIGNMENT`-padded rows, B/R
+channel swap on `Bgra8Unorm` → `RgbaImage` — is deferred to a
+follow-up that requires a Linux/Mesa environment for verification.
+
+The follow-up also commits the initial reference PNGs for the golden
+scene set (quad, shadow+blur, linear/radial gradient, path fill,
+monochrome/polychrome sprite, text single/multi-line, clip rect).
+Reference images must be captured on a lavapipe build (never a
+hardware GPU) so CI replay is bit-stable.
+
+**Owner:** Linux-capable contributor or CI-driven regen via a
+scheduled workflow. Until then, the Linux-side golden coverage of
+the migration (S02 → S03 wgpu+linux) falls back to manual visual
+inspection of examples.
+
+**Mac Metal goldens** via `MetalHeadlessRenderer` are NOT affected by
+this deferral — they remain fully functional and are the primary
+rendering regression guard on mac CI. Golden tests for the Metal
+path land in the same follow-up PR as the wgpu body so both platforms
+get their initial fixtures at once.
+
+
 ## Web platform — never compiled in CI
 
 **Status:** broken.

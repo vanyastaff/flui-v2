@@ -163,6 +163,16 @@ pub fn web_init() {
 }
 
 /// Returns a new headless renderer for the current platform, if available.
+///
+/// - macOS: returns `MetalHeadlessRenderer` (fully implemented, used for
+///   `visual_test` and mac golden tests).
+/// - Linux/FreeBSD: returns `WgpuHeadlessRenderer` (S01b skeleton — real
+///   `WgpuContext` + atlas, but `render_scene_to_image` currently returns
+///   a placeholder image pending the full renderer body in a follow-up
+///   PR. See `docs/lock-coverage-gaps.md`).
+/// - Windows: no headless renderer — `DirectXRenderer` has no offscreen
+///   path yet; deferred to S05-prep.
+/// - Web: no headless renderer in a browser context.
 #[cfg(feature = "test-support")]
 pub fn current_headless_renderer() -> Option<Box<dyn crate::PlatformHeadlessRenderer>> {
     #[cfg(target_os = "macos")]
@@ -170,7 +180,18 @@ pub fn current_headless_renderer() -> Option<Box<dyn crate::PlatformHeadlessRend
         Some(Box::new(mac::metal_renderer::MetalHeadlessRenderer::new()))
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+    {
+        match wgpu::WgpuHeadlessRenderer::new() {
+            Ok(renderer) => Some(Box::new(renderer)),
+            Err(e) => {
+                log::warn!("failed to create headless wgpu renderer: {e}");
+                None
+            }
+        }
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "freebsd")))]
     {
         None
     }

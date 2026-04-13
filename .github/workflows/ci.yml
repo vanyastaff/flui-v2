@@ -37,7 +37,9 @@ jobs:
             libxcb1-dev \
             libvulkan-dev \
             libssl-dev \
-            libsqlite3-dev
+            libsqlite3-dev \
+            mesa-vulkan-drivers \
+            vulkan-tools
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -76,7 +78,9 @@ jobs:
             libxcb1-dev \
             libvulkan-dev \
             libssl-dev \
-            libsqlite3-dev
+            libsqlite3-dev \
+            mesa-vulkan-drivers \
+            vulkan-tools
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -113,13 +117,24 @@ jobs:
             libxcb1-dev \
             libvulkan-dev \
             libssl-dev \
-            libsqlite3-dev
+            libsqlite3-dev \
+            mesa-vulkan-drivers \
+            vulkan-tools
 
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
 
+      - name: Vulkan diagnostic (Linux)
+        if: runner.os == 'Linux'
+        env:
+          VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
+        run: vulkaninfo --summary || true
+
       - name: Test
+        env:
+          VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
+          WGPU_POWER_PREF: low
         run: cargo test --workspace
 
   format:
