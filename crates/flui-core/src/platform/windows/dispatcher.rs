@@ -6,7 +6,7 @@ use std::{
 
 use anyhow::Context;
 use util::ResultExt;
-use windows::{
+use ::windows::{
     System::Threading::{
         ThreadPool, ThreadPoolTimer, TimerElapsedHandler, WorkItemHandler, WorkItemPriority,
     },
@@ -21,8 +21,8 @@ use windows::{
     },
 };
 
-use crate::{HWND, SafeHwnd, WM_GPUI_TASK_DISPATCHED_ON_MAIN_THREAD};
-use flui_core::{
+use super::{HWND, SafeHwnd, WM_GPUI_TASK_DISPATCHED_ON_MAIN_THREAD};
+use crate::{
     GLOBAL_THREAD_TIMINGS, PlatformDispatcher, Priority, PriorityQueueSender, RunnableVariant,
     THREAD_TIMINGS, TaskTiming, ThreadTaskTimings, TimerResolutionGuard,
 };

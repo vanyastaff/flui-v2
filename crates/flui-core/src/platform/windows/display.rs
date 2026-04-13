@@ -15,8 +15,8 @@ use windows::{
     core::*,
 };
 
-use crate::logical_point;
-use flui_core::{Bounds, DevicePixels, DisplayId, Pixels, PlatformDisplay, point, size};
+use super::logical_point;
+use crate::{Bounds, DevicePixels, DisplayId, Pixels, PlatformDisplay, point, size};
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct WindowsDisplay {

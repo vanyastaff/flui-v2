@@ -19,7 +19,7 @@ use windows::Win32::{
         },
     },
 };
-use windows::core::Interface;
+use windows_core::Interface;
 
 pub(crate) fn try_to_recover_from_device_lost<T>(mut f: impl FnMut() -> Result<T>) -> Result<T> {
     (0..5)

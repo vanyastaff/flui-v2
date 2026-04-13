@@ -15,7 +15,7 @@ use futures::channel::oneshot::{self, Receiver};
 use itertools::Itertools;
 use parking_lot::RwLock;
 use smallvec::SmallVec;
-use windows::{
+use ::windows::{
     UI::ViewManagement::UISettings,
     Win32::{
         Foundation::*,
@@ -28,7 +28,7 @@ use windows::{
 };
 
 use crate::*;
-use flui_core::*;
+use super::*;
 
 pub struct WindowsPlatform {
     inner: Rc<WindowsPlatformInner>,
@@ -1017,7 +1017,7 @@ fn open_target(target: impl AsRef<OsStr>) -> Result<()> {
     let ret = unsafe {
         ShellExecuteW(
             None,
-            windows::core::w!("open"),
+            windows_core::w!("open"),
             &HSTRING::from(target),
             None,
             None,
@@ -1155,8 +1155,8 @@ fn file_save_dialog(
 
     unsafe {
         dialog.SetFileTypes(&[Common::COMDLG_FILTERSPEC {
-            pszName: windows::core::w!("All files"),
-            pszSpec: windows::core::w!("*.*"),
+            pszName: windows_core::w!("All files"),
+            pszSpec: windows_core::w!("*.*"),
         }])?;
         if dialog.Show(window).is_err() {
             // User cancelled
@@ -1178,7 +1178,7 @@ fn load_icon() -> Result<HICON> {
     let handle = unsafe {
         LoadImageW(
             Some(module.into()),
-            windows::core::PCWSTR(1 as _),
+            windows_core::PCWSTR(1 as _),
             IMAGE_ICON,
             0,
             0,

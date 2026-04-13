@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use ::util::ResultExt;
 use anyhow::Context as _;
-use windows::{
+use ::windows::{
     Win32::{
         Foundation::*,
         Graphics::Gdi::*,
@@ -18,7 +18,7 @@ use windows::{
 };
 
 use crate::*;
-use flui_core::*;
+use super::*;
 
 pub(crate) const WM_GPUI_CURSOR_STYLE_CHANGED: u32 = WM_USER + 1;
 pub(crate) const WM_GPUI_CLOSE_ONE_WINDOW: u32 = WM_USER + 2;

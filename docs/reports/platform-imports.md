@@ -9,19 +9,19 @@ These imports rely on the source items being reachable through the crate-level g
 | File | Line | Import |
 |---|---:|---|
 | `crates/flui-core/src/platform/linux/dispatcher.rs` | 361 | `use super::*;` |
-| `crates/flui-core/src/platform/linux/platform.rs` | 1098 | `use super::*;` |
+| `crates/flui-core/src/platform/linux/platform.rs` | 1068 | `use super::*;` |
 | `crates/flui-core/src/platform/linux/x11/event.rs` | 127 | `use super::*;` |
 | `crates/flui-core/src/platform/mac/pasteboard.rs` | 343 | `use super::*;` |
-| `crates/flui-core/src/platform/mac/platform.rs` | 1417 | `use super::*;` |
+| `crates/flui-core/src/platform/mac/platform.rs` | 1404 | `use super::*;` |
 | `crates/flui-core/src/platform/windows/direct_write.rs` | 26 | `use crate::*;` |
-| `crates/flui-core/src/platform/windows/direct_write.rs` | 27 | `use flui_core::*;` |
+| `crates/flui-core/src/platform/windows/direct_write.rs` | 27 | `use super::*;` |
 | `crates/flui-core/src/platform/windows/directx_renderer.rs` | 23 | `use crate::*;` |
-| `crates/flui-core/src/platform/windows/directx_renderer.rs` | 24 | `use flui_core::*;` |
+| `crates/flui-core/src/platform/windows/directx_renderer.rs` | 24 | `use super::*;` |
 | `crates/flui-core/src/platform/windows/events.rs` | 20 | `use crate::*;` |
-| `crates/flui-core/src/platform/windows/events.rs` | 21 | `use flui_core::*;` |
+| `crates/flui-core/src/platform/windows/events.rs` | 21 | `use super::*;` |
 | `crates/flui-core/src/platform/windows/platform.rs` | 30 | `use crate::*;` |
-| `crates/flui-core/src/platform/windows/platform.rs` | 31 | `use flui_core::*;` |
+| `crates/flui-core/src/platform/windows/platform.rs` | 31 | `use super::*;` |
 | `crates/flui-core/src/platform/windows/util.rs` | 17 | `use crate::*;` |
-| `crates/flui-core/src/platform/windows/util.rs` | 18 | `use flui_core::*;` |
+| `crates/flui-core/src/platform/windows/util.rs` | 18 | `use super::*;` |
 | `crates/flui-core/src/platform/windows/window.rs` | 29 | `use crate::*;` |
-| `crates/flui-core/src/platform/windows/window.rs` | 30 | `use flui_core::*;` |
+| `crates/flui-core/src/platform/windows/window.rs` | 30 | `use super::*;` |
