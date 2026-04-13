@@ -135,16 +135,17 @@ jobs:
 
       - name: Vulkan diagnostic (Linux)
         if: runner.os == 'Linux'
-        env:
-          VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
         run: |
+          # Discover where mesa-vulkan-drivers actually installs ICDs.
+          # The loader auto-discovers any ICD JSON in /usr/share/vulkan/icd.d/
+          # and /etc/vulkan/icd.d/, so we let that work rather than hardcoding.
+          dpkg -L mesa-vulkan-drivers 2>/dev/null | grep -E '\.json$' || true
+          ls -la /usr/share/vulkan/icd.d/ 2>/dev/null || true
           vulkaninfo --summary
           vulkaninfo --summary | grep -q -i 'llvmpipe\|lavapipe' \
             || { echo 'lavapipe not detected — check mesa-vulkan-drivers install'; exit 1; }
 
       - name: Test
-        env:
-          VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
         run: cargo test --workspace
 
   format:
