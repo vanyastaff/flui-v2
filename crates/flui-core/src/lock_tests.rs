@@ -117,13 +117,18 @@ fn keystroke_parse_tolerance_probe() {
     assert!(Keystroke::parse("a").is_ok(), "bare letter parses");
 }
 
+// macOS Keystroke renderer uses platform-symbolic forms (`^a` for
+// `ctrl-a`, `⌥f4` for `alt-f4`, `⌘k` for `cmd-k`) that do not
+// round-trip through `Keystroke::parse`. The round-trip property
+// holds only on non-macOS platforms where the renderer uses the
+// literal `modifier-key` form.
+#[cfg(not(target_os = "macos"))]
 #[test]
 fn keystroke_to_string_round_trip_key_preserved() {
     // Pin the round-trip property that `Keystroke::parse(input).to_string()`
-    // produces something that re-parses to the same key. Modifier
-    // round-trip is also asserted for inputs that don't trigger
-    // synthetic shift — see `keystroke_to_string_round_trip_modifiers`
-    // below for why letters like "a" are excluded.
+    // produces something that re-parses to the same key. See
+    // `keystroke_to_string_round_trip_modifiers` for the modifier-side
+    // round-trip and the synthetic-shift exception.
     for input in ["ctrl-a", "ctrl-shift-k", "alt-f4"] {
         let parsed = Keystroke::parse(input).unwrap_or_else(|e| {
             panic!("parse failed for {input}: {e:?}");
@@ -139,6 +144,8 @@ fn keystroke_to_string_round_trip_key_preserved() {
     }
 }
 
+// Same macOS-specific renderer caveat as `..._round_trip_key_preserved`.
+#[cfg(not(target_os = "macos"))]
 #[test]
 fn keystroke_to_string_round_trip_modifiers() {
     // Separate test: pin that modifier flags survive the round-trip
