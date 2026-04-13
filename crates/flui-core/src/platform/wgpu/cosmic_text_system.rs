@@ -65,6 +65,7 @@ impl CosmicTextSystem {
         }))
     }
 
+    #[allow(dead_code)] // public extension API; not currently called inside flui-core
     pub fn new_without_system_fonts(system_font_fallback: &str) -> Self {
         let font_system = FontSystem::new_with_locale_and_db(
             "en-US".to_string(),

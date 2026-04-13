@@ -10,6 +10,11 @@ mod wgpu_headless_renderer;
 mod wgpu_renderer;
 
 pub use cosmic_text_system::*;
+// Re-export the wgpu crate for downstream consumers that need to
+// construct `wgpu::SurfaceConfiguration` / `wgpu::Backends` etc.
+// without taking a direct dep. Currently unused inside flui-core
+// itself, but part of the public extension surface.
+#[allow(unused_imports)]
 pub use wgpu;
 pub use wgpu_atlas::*;
 pub use wgpu_context::*;

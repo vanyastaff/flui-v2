@@ -1016,6 +1016,7 @@ impl WgpuRenderer {
         &self.atlas
     }
 
+    #[allow(dead_code)] // public query; reserved for shader-feature gating
     pub fn supports_dual_source_blending(&self) -> bool {
         self.dual_source_blending
     }
