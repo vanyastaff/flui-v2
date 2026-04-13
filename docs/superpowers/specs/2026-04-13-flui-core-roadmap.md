@@ -403,7 +403,38 @@ Each row below corresponds to a standalone design document that will live
 alongside this roadmap in `docs/superpowers/specs/`. Specs are written in the
 order listed; each can be brainstormed and approved independently.
 
-### Phase I — Migration (blocks everything else)
+### Phase I — Migration
+
+> **Status (2026-04-13): FROZEN after S01 + S02a skeleton.**
+>
+> S02b was ruled out by architectural analysis after S02a landed: the
+> `Platform` trait's method signatures reference `BackgroundExecutor`,
+> `ForegroundExecutor`, `Task`, `AnyWindowHandle`, `Keymap`, and `Action`,
+> all of which live in files (`executor.rs`, `window.rs`, `keymap.rs`)
+> that are core runtime infrastructure and cannot themselves be moved
+> without dragging most of `flui-core` along. The trait-flip is therefore
+> not a "migration" but a runtime extraction of ~15 kLoC, which serves
+> no current goal — Phase II (Flutter-parity subsystems S07–S15) does
+> not require any crate extraction to proceed, and Phase III (new
+> platforms) is not on the near-term path.
+>
+> **What stays in place:** S01 (lock phase) is complete and its benefits
+> (lock-check tooling, golden harness, behaviour pinning, extraction
+> facades) remain active. S02a left an empty `crates/flui-platform`
+> workspace slot; it is kept as a reserved slot so that future Phase III
+> work does not need a new crate-creation commit.
+>
+> **Resuming Phase I:** When Phase III work begins (iOS / Android / Web
+> backends force a real platform-abstraction boundary), revisit S02b's
+> scope with the benefit of the Phase II work. The answer at that point
+> may be S02b as currently drafted, an asymmetric split (trait stays in
+> `flui-core`, backends move to sibling crates like `flui-platform-mac`),
+> a full runtime extraction, or a Platform-trait refactor. The strategic
+> choice is deferred until a concrete Phase III driver exists.
+>
+> The tables below reflect the original plan and are retained for
+> historical context. No work should land against S02b–S06 without
+> re-opening this decision.
 
 | Spec | Title | Depends on | Summary |
 |---|---|---|---|
