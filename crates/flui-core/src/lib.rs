@@ -114,7 +114,94 @@ pub use locale::*;
 pub use local_util::{FutureExt, Timeout, command};
 pub use media_query::*;
 pub use path_builder::*;
-pub use platform::*;
+// Explicit re-exports from the `platform` module (replacing the former
+// `pub use platform::*;` glob). See spec S01a.3 for rationale. Any new
+// `pub` item in `platform.rs` must be explicitly routed through this
+// block before it becomes part of the `flui_core` public surface.
+// This is the prerequisite for S02 extracting the platform subtree into
+// the sibling `flui-platform` crate.
+//
+// NOTE: the other `pub use <mod>::*;` lines in this file intentionally
+// remain glob-re-exports. They will be converted case-by-case if and
+// when their modules are extracted; S01a.3 is scoped to `platform::*`
+// only.
+
+// Core platform traits
+pub use platform::{
+    InputHandler, Platform, PlatformAtlas, PlatformDisplay, PlatformTextSystem, PlatformWindow,
+    ScreenCaptureFrame, ScreenCaptureSource, ScreenCaptureStream, SourceMetadata,
+};
+
+// Display, window, and input types
+pub use platform::{
+    AtlasKey, AtlasTextureId, AtlasTextureKind, AtlasTextureList, AtlasTile, ClipboardEntry,
+    ClipboardItem, ClipboardString, CursorStyle, Decorations, DisplayId, Image, ImageFormat,
+    NoopTextSystem, PathPromptOptions, PlatformInputHandler, PromptButton, PromptLevel,
+    RequestFrameOptions, ResizeEdge, TextRenderingMode, ThermalState, TileId, Tiling,
+    TitlebarOptions, UTF16Selection, WindowAppearance, WindowBackgroundAppearance, WindowBounds,
+    WindowControls, WindowDecorations, WindowKind, WindowOptions, WindowParams,
+};
+
+// Free functions
+pub use platform::{application, background_executor, current_platform, headless};
+pub use platform::get_gamma_correction_ratios;
+
+// Crate-internal re-exports (formerly caught by the pub use platform::*
+// glob; these are pub(crate) fns in the platform subtree that other
+// parts of the crate reach via crate::X).
+pub(crate) use platform::init_app_menus;
+
+// app_menu (originally glob-re-exported via `platform::app_menu::*`)
+pub use platform::{
+    Menu, MenuItem, OsAction, OsMenu, OwnedMenu, OwnedMenuItem, OwnedOsMenu, SystemMenuType,
+};
+
+// keyboard (originally glob-re-exported via `platform::keyboard::*`)
+pub use platform::{DummyKeyboardMapper, PlatformKeyboardLayout, PlatformKeyboardMapper};
+
+// keystroke (originally glob-re-exported via `platform::keystroke::*`)
+pub use platform::{
+    AsKeystroke, Capslock, InvalidKeystrokeError, KEYSTROKE_PARSE_EXPECTED_MESSAGE,
+    KeybindingKeystroke, Keystroke, Modifiers,
+};
+
+// Macro-support plumbing — hidden from rustdoc to match the annotations
+// at the definition site in `platform.rs`.
+#[doc(hidden)]
+pub use platform::{PlatformDispatcher, RunnableMeta, RunnableVariant, TimerResolutionGuard};
+
+// Test-support-only items (public)
+#[cfg(any(test, feature = "test-support"))]
+pub use platform::{
+    PlatformHeadlessRenderer, TestDispatcher, TestScreenCaptureSource, TestScreenCaptureStream,
+    current_headless_renderer,
+};
+
+// Test-support-only items (crate-internal — used by app/test_context and
+// other flui-core tests). TestWindow is `pub struct` at the definition
+// site but demoted to pub(crate) by the `pub(crate) use window::*;`
+// in platform/test.rs.
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) use platform::{TestDisplay, TestPlatform, TestWindow};
+
+// Per-target platform impls
+#[cfg(target_os = "macos")]
+pub use platform::MacPlatform;
+#[cfg(target_os = "windows")]
+pub use platform::WindowsPlatform;
+#[cfg(all(target_os = "macos", any(test, feature = "test-support")))]
+pub use platform::VisualTestPlatform;
+
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
+pub use platform::guess_compositor;
+
+#[cfg(target_family = "wasm")]
+pub use platform::{single_threaded_web, web_init};
+
+// Linux + Wayland-only module — asymmetric by design.
+// `flui_core::layer_shell::*` is reachable only on that target.
+#[cfg(all(target_os = "linux", feature = "wayland"))]
+pub use platform::layer_shell;
 pub use platform_brightness::*;
 pub use profiler::*;
 #[cfg(any(target_os = "windows", target_os = "linux", target_family = "wasm"))]
