@@ -946,6 +946,23 @@ pub struct Window {
     default_prevented: bool,
     mouse_position: Point<Pixels>,
     mouse_hit_test: HitTest,
+    /// Per-frame map populated by `Interactivity::paint` (T14)
+    /// recording each hitbox's `HitTestBehavior` (Opaque /
+    /// Translucent / DeferToChild). `Window::hit_test` queries this
+    /// map; entries default to `HitTestBehavior::Opaque` when the
+    /// hitbox is not associated with an `Interactivity` (painted-only
+    /// case). Cleared at the start of each frame (alongside
+    /// `mouse_hit_test`).
+    pub(crate) hit_test_behaviors:
+        collections::FxHashMap<HitboxId, crate::gesture::HitTestBehavior>,
+    /// Per-`Window` pointer-state cache for the gesture dispatch path
+    /// (T6 — wires the existing `dispatch_event` path through
+    /// `gesture::dispatch::translate_*` before the existing
+    /// `dispatch_mouse_event` chain).
+    pub(crate) gesture_pointer_state: crate::gesture::dispatch::WindowPointerState,
+    /// `PointerSanitizer` for the gesture dispatch path. T20 grows
+    /// per-pointer state inside this; T4 ships it stateless.
+    pub(crate) gesture_sanitizer: crate::gesture::dispatch::PointerSanitizer,
     modifiers: Modifiers,
     capslock: Capslock,
     scale_factor: f32,
@@ -1437,6 +1454,9 @@ impl Window {
             default_prevented: true,
             mouse_position,
             mouse_hit_test: HitTest::default(),
+            hit_test_behaviors: collections::FxHashMap::default(),
+            gesture_pointer_state: crate::gesture::dispatch::WindowPointerState::default(),
+            gesture_sanitizer: crate::gesture::dispatch::PointerSanitizer::default(),
             modifiers,
             capslock,
             scale_factor,
@@ -2177,6 +2197,49 @@ impl Window {
     /// The position of the mouse relative to the window.
     pub fn mouse_position(&self) -> Point<Pixels> {
         self.mouse_position
+    }
+
+    /// Walk the existing committed hit-test list and produce a typed
+    /// `HitTestResult` paired with the recorded `HitTestBehavior` of
+    /// each entry.
+    ///
+    /// Walks `mouse_hit_test.ids` (committed during paint) front-to-back
+    /// (deepest first); each `HitboxId` is paired with its
+    /// `HitTestBehavior` from the per-frame `hit_test_behaviors` map
+    /// (populated by `Interactivity::paint` in T14 of the S07 plan;
+    /// until T14 lands, every entry defaults to
+    /// `HitTestBehavior::Opaque`). The `position` argument is stamped
+    /// on each returned [`HitTestEntry`] without being used to
+    /// re-do the hit test — the existing committed list is the source
+    /// of truth for "which hitboxes are under the pointer".
+    ///
+    /// Cost: O(n) over the committed `mouse_hit_test.ids`. Spatial
+    /// indexing (BVH/quadtree) is deferred to a P-track perf
+    /// milestone — current `SmallVec<[HitboxId; 8]>` is sufficient
+    /// for trees of up to ~16 hitboxes typical of `flui-core`
+    /// consumers.
+    pub fn hit_test(&self, position: Point<Pixels>) -> crate::gesture::HitTestResult {
+        let mut result = crate::gesture::HitTestResult::default();
+        for &hitbox_id in self.mouse_hit_test.ids.iter() {
+            let behavior = self
+                .hit_test_behaviors
+                .get(&hitbox_id)
+                .copied()
+                .unwrap_or(crate::gesture::HitTestBehavior::Opaque);
+            // SmallVec inline storage is 8; pushing more than 8 hits
+            // a one-time heap allocation that we accept for the rare
+            // very-deep-nesting case. T22 bench enforces the
+            // `<2µs/query` budget in the realistic 8-deep case.
+            //
+            // `HitTestEntry` is `#[non_exhaustive]` for downstream
+            // consumers; same-crate code can use the struct literal.
+            result.push(crate::gesture::HitTestEntry {
+                hitbox_id,
+                position,
+                behavior,
+            });
+        }
+        result
     }
 
     /// Captures the pointer for the given hitbox. While captured, all mouse move and mouse up
@@ -4175,6 +4238,59 @@ impl Window {
             },
             PlatformInput::KeyDown(_) | PlatformInput::KeyUp(_) => event,
         };
+
+        // S07 T6 — Gesture-pass scaffold.
+        //
+        // Translate the inbound `PlatformInput` into normalized
+        // `PointerEvent`s / `PointerSignalEvent`s for downstream
+        // consumption by the gesture arena (T15 will wire the arena
+        // dispatch + listener-chain reset). For T6 the translation
+        // runs and updates the per-`Window` `gesture_pointer_state`
+        // (so that delta / pressure / button-state caches stay
+        // current), but the produced events are discarded — recognizers
+        // do not exist yet (T7–T13).
+        //
+        // The arena pass MUST be isolated from the existing
+        // `dispatch_mouse_event` listener chain by an explicit
+        // `cx.propagate_event = true` reset, otherwise a recognizer's
+        // `cx.stop_propagation()` would silently break the
+        // `cx.active_drag` / `AnyDrag` contract — see
+        // `crate::gesture::recognizer` trait docs and the design doc
+        // § "Window::dispatch_event integration".
+        {
+            // Refresh the per-Window content bounds so the sanitizer
+            // can clamp out-of-bounds positions (Wayland decoration
+            // drag).
+            let bounds = self.bounds();
+            self.gesture_pointer_state.window_bounds = bounds;
+
+            let pointer_events = {
+                let Window {
+                    gesture_sanitizer,
+                    gesture_pointer_state,
+                    ..
+                } = self;
+                let _signal = gesture_sanitizer.convert_signal(&event, gesture_pointer_state);
+                gesture_sanitizer.convert(&event, gesture_pointer_state)
+            };
+
+            // Query hit-test for each translated pointer event so the
+            // call site exists before T15 wires it into the arena.
+            // For hover events, diff against the prior hit-test to
+            // synthesize Enter/Exit transitions.
+            for pe in pointer_events.iter() {
+                let hit_test = self.hit_test(pe.position);
+                let Window {
+                    gesture_sanitizer,
+                    gesture_pointer_state,
+                    ..
+                } = self;
+                let _hover_diff = gesture_sanitizer.diff_hover(pe, &hit_test, gesture_pointer_state);
+                // T15 will: arena.dispatch(pe, hit_test, ...);
+                //   then `cx.propagate_event = true;`
+                //   then existing dispatch_mouse_event chain runs.
+            }
+        }
 
         if let Some(any_mouse_event) = event.mouse_event() {
             self.dispatch_mouse_event(any_mouse_event, cx);

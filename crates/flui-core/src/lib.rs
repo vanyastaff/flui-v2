@@ -27,6 +27,10 @@ mod executor;
 mod platform_scheduler;
 pub(crate) use platform_scheduler::PlatformScheduler;
 mod geometry;
+/// Gesture arena, normalized pointer events, hit-test protocol, and
+/// competing recognizers (Tap, DoubleTap, LongPress, Drag, Scale).
+/// See `docs/superpowers/specs/2026-05-06-S07-gesture-arena-design.md`.
+pub mod gesture;
 mod global;
 mod input;
 mod inspector;
