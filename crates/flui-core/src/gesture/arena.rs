@@ -12,7 +12,7 @@
 //!
 //! See the design doc § "GestureArena and GestureArenaManager".
 
-use super::{GestureRecognizer, PointerEvent, PointerId};
+use super::{DeliveredEvent, GestureRecognizer, PointerEvent, PointerId};
 use smallvec::SmallVec;
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
@@ -229,7 +229,13 @@ impl GestureArenaManager {
         for (idx, recognizer) in snapshot.iter().enumerate() {
             let disposition = {
                 let mut r = recognizer.borrow_mut();
-                r.handle_event(event, window, cx)
+                // S07.5b: arena does not yet track per-entry hit-test
+                // transforms, so every recognizer sees the window-
+                // local position as its local position. S09 will
+                // store a per-entry inverse-transform alongside the
+                // recognizer and compute a real `local_position`
+                // here.
+                r.handle_event(DeliveredEvent::at_event_position(event), window, cx)
             };
             match disposition {
                 GestureDisposition::Accepted => {
@@ -563,14 +569,15 @@ mod tests {
         fn name(&self) -> &'static str {
             self.name
         }
-        fn add_pointer(&mut self, _: PointerId, _: &PointerEvent) {}
+        fn add_pointer(&mut self, _: PointerId, _: DeliveredEvent<'_>) {}
         fn handle_event(
             &mut self,
-            event: &PointerEvent,
+            event: DeliveredEvent<'_>,
             _: &mut crate::Window,
             _: &mut crate::App,
         ) -> GestureDisposition {
-            self.handle_calls.push((event.pointer_id, event.phase));
+            self.handle_calls
+                .push((event.event.pointer_id, event.event.phase));
             self.script
                 .pop_front()
                 .unwrap_or(GestureDisposition::Possible)

@@ -6,7 +6,7 @@
 //! See the design doc § "GestureRecognizer trait".
 
 use super::arena::ArenaBackChannel;
-use super::{GestureDisposition, GestureSettings, PointerEvent, PointerId};
+use super::{DeliveredEvent, GestureDisposition, GestureSettings, PointerId};
 use crate::FocusHandle;
 
 /// One competitor in the gesture arena.
@@ -43,16 +43,28 @@ pub trait GestureRecognizer: 'static {
 
     /// The recognizer is being added to the arena for `pointer_id`.
     /// Recognizers track per-pointer state internally.
-    fn add_pointer(&mut self, pointer_id: PointerId, event: &PointerEvent);
+    ///
+    /// `event.local_position` is the hit-target-local pointer position
+    /// at the moment the recognizer was registered; recognizers must
+    /// use it (rather than `event.event.position`) when initialising
+    /// per-pointer state such as `down_position`.
+    fn add_pointer(&mut self, pointer_id: PointerId, event: DeliveredEvent<'_>);
 
     /// A new event arrived for a tracked pointer. Recognizers may
     /// **eagerly accept** by returning [`GestureDisposition::Accepted`]
     /// or **eagerly reject** with [`GestureDisposition::Rejected`].
     /// Returning [`GestureDisposition::Possible`] keeps the recognizer
     /// in the arena.
+    ///
+    /// The dispatcher passes a [`DeliveredEvent`] carrying the
+    /// underlying `&PointerEvent` plus a per-recognizer
+    /// `local_position`. Recognizers must read
+    /// `event.local_position` for any in-target geometry (slop,
+    /// distance, drag delta) and `event.event.<field>` for everything
+    /// else (kind, phase, buttons, timestamps, pressure).
     fn handle_event(
         &mut self,
-        event: &PointerEvent,
+        event: DeliveredEvent<'_>,
         window: &mut crate::Window,
         cx: &mut crate::App,
     ) -> GestureDisposition;

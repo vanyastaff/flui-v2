@@ -8,7 +8,7 @@
 //! See the design doc § "TapGestureRecognizer".
 
 use crate::gesture::{
-    GestureDisposition, GestureRecognizer, GestureSettings, PointerButtons, PointerEvent,
+    DeliveredEvent, GestureDisposition, GestureRecognizer, GestureSettings, PointerButtons,
     PointerId, PointerKind, PointerPhase, RecognizerLifecycle, SemanticAction,
 };
 use crate::{FocusHandle, Pixels, Point};
@@ -138,36 +138,36 @@ impl GestureRecognizer for TapGestureRecognizer {
         "tap"
     }
 
-    fn add_pointer(&mut self, pointer_id: PointerId, event: &PointerEvent) {
+    fn add_pointer(&mut self, pointer_id: PointerId, event: DeliveredEvent<'_>) {
         if self.state != TapState::Idle {
             return;
         }
-        if !event.buttons.contains(self.button) {
+        if !event.buttons().contains(self.button) {
             return;
         }
         self.pointer = Some(pointer_id);
-        self.down_position = event.position;
-        self.last_kind = event.kind;
+        self.down_position = event.local_position;
+        self.last_kind = event.kind();
         self.state = TapState::Down;
     }
 
     fn handle_event(
         &mut self,
-        event: &PointerEvent,
+        event: DeliveredEvent<'_>,
         window: &mut crate::Window,
         cx: &mut crate::App,
     ) -> GestureDisposition {
-        if self.pointer != Some(event.pointer_id) {
+        if self.pointer != Some(event.pointer_id()) {
             return GestureDisposition::Possible;
         }
-        match event.phase {
+        match event.phase() {
             PointerPhase::Down => {
                 if let Some(cb) = self.on_tap_down.as_mut() {
                     cb(
                         TapDownDetails {
-                            global_position: event.position,
-                            local_position: event.position,
-                            kind: event.kind,
+                            global_position: event.global_position(),
+                            local_position: event.local_position,
+                            kind: event.kind(),
                         },
                         window,
                         cx,
@@ -176,8 +176,8 @@ impl GestureRecognizer for TapGestureRecognizer {
                 GestureDisposition::Possible
             }
             PointerPhase::Move => {
-                let dx = event.position.x.0 - self.down_position.x.0;
-                let dy = event.position.y.0 - self.down_position.y.0;
+                let dx = event.local_position.x.0 - self.down_position.x.0;
+                let dy = event.local_position.y.0 - self.down_position.y.0;
                 let dist_sq = dx * dx + dy * dy;
                 let slop = self.touch_slop.0;
                 if dist_sq > slop * slop {
@@ -193,9 +193,9 @@ impl GestureRecognizer for TapGestureRecognizer {
                 if let Some(cb) = self.on_tap_up.as_mut() {
                     cb(
                         TapUpDetails {
-                            global_position: event.position,
-                            local_position: event.position,
-                            kind: event.kind,
+                            global_position: event.global_position(),
+                            local_position: event.local_position,
+                            kind: event.kind(),
                         },
                         window,
                         cx,
@@ -204,8 +204,8 @@ impl GestureRecognizer for TapGestureRecognizer {
                 if let Some(cb) = self.on_tap.as_mut() {
                     cb(
                         TapDetails {
-                            kind: event.kind,
-                            global_position: event.position,
+                            kind: event.kind(),
+                            global_position: event.global_position(),
                         },
                         window,
                         cx,
@@ -291,12 +291,20 @@ mod tests {
 
     use super::*;
     use crate::gesture::{
-        GestureSettings, PointerButtons, PointerEvent, PointerId, PointerKind, PointerPhase,
+        DeliveredEvent, GestureSettings, PointerButtons, PointerEvent, PointerId, PointerKind,
+        PointerPhase,
     };
     use crate::scheduler::Instant;
     use crate::{self as flui_core, AppContext as _, Modifiers, Pixels, Point, TestAppContext};
     use std::cell::Cell;
     use std::rc::Rc;
+
+    /// Wrap a synthetic [`PointerEvent`] for delivery to the
+    /// [`GestureRecognizer`] trait. Tests assume identity transform
+    /// (no per-target inverse) — local position equals window position.
+    fn de(event: &PointerEvent) -> DeliveredEvent<'_> {
+        DeliveredEvent::at_event_position(event)
+    }
 
     fn pe(phase: PointerPhase, pos: Point<Pixels>, buttons: PointerButtons) -> PointerEvent {
         let now = Instant::now();
@@ -338,15 +346,15 @@ mod tests {
                         }));
                     }
                     let down = pe(PointerPhase::Down, p(10.0, 10.0), PointerButtons::PRIMARY);
-                    tap.add_pointer(PointerId(0), &down);
+                    tap.add_pointer(PointerId(0), de(&down));
                     assert_eq!(
-                        tap.handle_event(&down, window, cx),
+                        tap.handle_event(de(&down), window, cx),
                         GestureDisposition::Possible,
                         "Down stays Possible until Up"
                     );
                     let up = pe(PointerPhase::Up, p(11.0, 11.0), PointerButtons::default());
                     assert_eq!(
-                        tap.handle_event(&up, window, cx),
+                        tap.handle_event(de(&up), window, cx),
                         GestureDisposition::Accepted,
                         "Up within slop eagerly Accepts"
                     );
@@ -364,12 +372,12 @@ mod tests {
                 .update(cx, |_, window, cx| {
                     let mut tap = TapGestureRecognizer::new(&GestureSettings::default());
                     let down = pe(PointerPhase::Down, p(0.0, 0.0), PointerButtons::PRIMARY);
-                    tap.add_pointer(PointerId(0), &down);
-                    let _ = tap.handle_event(&down, window, cx);
+                    tap.add_pointer(PointerId(0), de(&down));
+                    let _ = tap.handle_event(de(&down), window, cx);
                     // Move beyond touch_slop (default 18px); 100 > 18 on x.
                     let mv = pe(PointerPhase::Move, p(100.0, 0.0), PointerButtons::PRIMARY);
                     assert_eq!(
-                        tap.handle_event(&mv, window, cx),
+                        tap.handle_event(de(&mv), window, cx),
                         GestureDisposition::Rejected,
                         "Move past slop yields Rejected"
                     );
@@ -393,11 +401,11 @@ mod tests {
                         }));
                     }
                     let down = pe(PointerPhase::Down, p(0.0, 0.0), PointerButtons::PRIMARY);
-                    tap.add_pointer(PointerId(0), &down);
-                    let _ = tap.handle_event(&down, window, cx);
+                    tap.add_pointer(PointerId(0), de(&down));
+                    let _ = tap.handle_event(de(&down), window, cx);
                     let cancel = pe(PointerPhase::Cancel, p(0.0, 0.0), PointerButtons::default());
                     assert_eq!(
-                        tap.handle_event(&cancel, window, cx),
+                        tap.handle_event(de(&cancel), window, cx),
                         GestureDisposition::Rejected,
                     );
                     assert_eq!(cancels.get(), 1, "on_tap_cancel fired once");
@@ -423,12 +431,12 @@ mod tests {
                     // Default `tap.button` is PRIMARY; SECONDARY-only Down
                     // must not arm the recognizer.
                     let down = pe(PointerPhase::Down, p(0.0, 0.0), PointerButtons::SECONDARY);
-                    tap.add_pointer(PointerId(0), &down);
+                    tap.add_pointer(PointerId(0), de(&down));
                     let up = pe(PointerPhase::Up, p(0.0, 0.0), PointerButtons::default());
                     // pointer is None → recognizer ignores the event
                     // (returns Possible, no callback).
                     assert_eq!(
-                        tap.handle_event(&up, window, cx),
+                        tap.handle_event(de(&up), window, cx),
                         GestureDisposition::Possible,
                     );
                     assert_eq!(fired.get(), 0, "PRIMARY-only tap ignored SECONDARY Down");
@@ -458,7 +466,7 @@ mod tests {
                     // `sweep_accepted` — Copilot-G/H reset tightened the
                     // contract so an unrequested sweep is a no-op.
                     let down = pe(PointerPhase::Down, p(0.0, 0.0), PointerButtons::PRIMARY);
-                    tap.add_pointer(PointerId(0), &down);
+                    tap.add_pointer(PointerId(0), de(&down));
                     tap.sweep_accepted(PointerId(0), window, cx);
                     assert_eq!(fired.get(), 1, "sweep_accepted fires on_tap once");
                     // After sweep, the recognizer is back at Idle, so a

@@ -188,7 +188,7 @@ Check at T23 bench that the larger `PointerEvent` doesn't push any allocation of
 
 ### Phase B — Hit-test surface (D5, D6, D7)
 
-- [ ] **T9:** Define `Affine2` in `crates/flui-core/src/geometry.rs` as a custom struct (not `euclid::Transform2D`):
+- [x] **T9:** Define `Affine2` in `crates/flui-core/src/geometry.rs` as a custom struct (not `euclid::Transform2D`):
 
   ```rust
   /// 2D affine transform stored as a 2×3 row-major matrix.
@@ -210,9 +210,9 @@ Check at T23 bench that the larger `PointerEvent` doesn't push any allocation of
 
   ~50 lines incl. tests. Add explicit `pub use` line to `lib.rs`. **DO NOT** add `euclid` to `[dependencies]` — the workspace's transitive `euclid` via `etagere` is unsuitable as a direct dep without explicit pinning.
 
-- [ ] **T10:** Extend `HitTestEntry` with `transform: Option<Affine2>` (default `None`, identity). Document in rustdoc that `transform` is the affine from window-local to entry-local; `local_position = transform.unwrap_or(IDENTITY).inverse().unwrap().transform_point(position)`. **Constraint for S09:** when paint starts populating real transforms, it must drive `local_position` consistently — recognisers read `local_position`, never `position`, for in-target geometry.
+- [x] **T10:** Extend `HitTestEntry` with `transform: Option<Affine2>` (default `None`, identity). Document in rustdoc that `transform` is the affine from window-local to entry-local; `local_position = transform.unwrap_or(IDENTITY).inverse().unwrap().transform_point(position)`. **Constraint for S09:** when paint starts populating real transforms, it must drive `local_position` consistently — recognisers read `local_position`, never `position`, for in-target geometry.
 
-- [ ] **T11:** RAII transform-stack API on `HitTestResult`:
+- [x] **T11:** RAII transform-stack API on `HitTestResult`:
 
   ```rust
   pub struct HitTestScope<'r> { result: &'r mut HitTestResult }
@@ -232,9 +232,9 @@ Check at T23 bench that the larger `PointerEvent` doesn't push any allocation of
 
   Internally the result keeps a `SmallVec<[Affine2; 4]>` stack. Unbalanced state is unrepresentable: every push returns a guard, dropping the guard pops. Nested scopes work via `HitTestScope::push_transform` returning a nested guard. **Panic-safety:** unwinding through a scope drops the guard, which pops correctly — no corruption. T19 includes a test that exercises a panic path through a nested scope.
 
-- [ ] **T12:** Wire `Window::hit_test` to use the transform stack. For S07.5b, only `IDENTITY` is pushed (no real transforms yet). One unit test: synthetic `push_transform(rotate_90)`, Down event, manually-added entry has `transform = Some(rotate_90)` and `local_position` correctly inverse-rotated.
+- [x] **T12:** Wire `Window::hit_test` to use the transform stack. For S07.5b, only `IDENTITY` is pushed (no real transforms yet). One unit test: synthetic `push_transform(rotate_90)`, Down event, manually-added entry has `transform = Some(rotate_90)` and `local_position` correctly inverse-rotated.
 
-- [ ] **T13:** Define `DeliveredEvent<'a>`:
+- [x] **T13:** Define `DeliveredEvent<'a>`:
 
   ```rust
   /// A `PointerEvent` as delivered to a specific recognizer, augmented

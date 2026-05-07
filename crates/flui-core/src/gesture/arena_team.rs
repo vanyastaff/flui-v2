@@ -91,7 +91,7 @@ mod tests {
     //! lock the captain-deferral contract.
 
     use super::*;
-    use crate::gesture::{PointerEvent, PointerId};
+    use crate::gesture::{DeliveredEvent, PointerId};
     use proptest::test_runner::{Config, TestRunner};
 
     /// Map a 0..3 selector to a `GestureDisposition`. Stable order so
@@ -115,10 +115,10 @@ mod tests {
         fn name(&self) -> &'static str {
             "stub"
         }
-        fn add_pointer(&mut self, _: PointerId, _: &PointerEvent) {}
+        fn add_pointer(&mut self, _: PointerId, _: DeliveredEvent<'_>) {}
         fn handle_event(
             &mut self,
-            _: &PointerEvent,
+            _: DeliveredEvent<'_>,
             _: &mut crate::Window,
             _: &mut crate::App,
         ) -> GestureDisposition {

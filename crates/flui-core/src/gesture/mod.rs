@@ -248,11 +248,11 @@ pub use arena::{ArenaBackChannel, GestureDisposition};
 pub use arena_team::GestureArenaTeam;
 pub use binding::GestureBinding;
 pub use gesture_settings::GestureSettings;
-pub use hit_test::{HitTestBehavior, HitTestEntry, HitTestResult};
+pub use hit_test::{HitTestBehavior, HitTestEntry, HitTestResult, HitTestScope};
 pub use pan_zoom_event::{PanZoomPhase, PointerPanZoomEvent};
 pub use pointer_event::{
-    PointerButtons, PointerEvent, PointerEventProvenance, PointerId, PointerKind, PointerPhase,
-    PressureSample,
+    DeliveredEvent, PointerButtons, PointerEvent, PointerEventProvenance, PointerId, PointerKind,
+    PointerPhase, PressureSample,
 };
 pub use pointer_signal::PointerSignalEvent;
 pub use recognizer::{GestureRecognizer, RecognizerLifecycle, SemanticAction};

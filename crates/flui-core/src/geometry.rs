@@ -3831,6 +3831,130 @@ where
     }
 }
 
+/// 2D affine transform stored as a 2×3 row-major matrix.
+///
+/// `[[a, b, tx], [c, d, ty]]` represents
+/// `[x', y'] = [a*x + b*y + tx, c*x + d*y + ty]`.
+///
+/// Used by the gesture-layer hit-test substrate (see
+/// [`crate::gesture::HitTestEntry::transform`]) to record the
+/// window-local-to-target-local transform for each hit-test entry.
+/// Recognizers consume the inverse via the `local_position` field on
+/// [`crate::gesture::DeliveredEvent`], so callers rarely invert
+/// `Affine2` by hand.
+///
+/// Implemented as a bespoke primitive rather than depending on
+/// `euclid::Transform2D` because `euclid` is not a direct
+/// `flui-core` dependency: pulling it in would either pollute the
+/// public surface or risk silent breakage on transitive dependency
+/// upgrades. ~50 lines of bespoke code is cheaper than that risk.
+///
+/// # Examples
+///
+/// ```
+/// # use flui_core::{Affine2, Pixels, Point};
+/// let t = Affine2::translation(Point { x: Pixels::from(10.0), y: Pixels::from(20.0) });
+/// let p = Point { x: Pixels::from(0.0), y: Pixels::from(0.0) };
+/// assert_eq!(
+///     t.transform_point(p),
+///     Point { x: Pixels::from(10.0), y: Pixels::from(20.0) },
+/// );
+/// ```
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct Affine2 {
+    /// Row-major 2×3 storage. `rows[0] = [a, b, tx]`, `rows[1] = [c, d, ty]`.
+    pub rows: [[f32; 3]; 2],
+}
+
+impl Affine2 {
+    /// The identity transform: maps every point to itself.
+    pub const IDENTITY: Self = Self {
+        rows: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+    };
+
+    /// Translation by `d`. `transform_point(p) = p + d`.
+    pub fn translation(d: Point<Pixels>) -> Self {
+        Self {
+            rows: [[1.0, 0.0, d.x.0], [0.0, 1.0, d.y.0]],
+        }
+    }
+
+    /// Counter-clockwise rotation by `angle` radians about the origin.
+    pub fn rotation(angle: f32) -> Self {
+        let (s, c) = angle.sin_cos();
+        Self {
+            rows: [[c, -s, 0.0], [s, c, 0.0]],
+        }
+    }
+
+    /// Uniform scale by `factor` about the origin.
+    pub fn scale(factor: f32) -> Self {
+        Self {
+            rows: [[factor, 0.0, 0.0], [0.0, factor, 0.0]],
+        }
+    }
+
+    /// Compose `self` with `other`: returns `self ∘ other`.
+    /// The result applied to a point `p` is equivalent to applying
+    /// `other` first and then `self` (`self.transform_point(other.transform_point(p))`).
+    pub fn composed(self, other: Self) -> Self {
+        let [[a1, b1, tx1], [c1, d1, ty1]] = self.rows;
+        let [[a2, b2, tx2], [c2, d2, ty2]] = other.rows;
+        Self {
+            rows: [
+                [
+                    a1 * a2 + b1 * c2,
+                    a1 * b2 + b1 * d2,
+                    a1 * tx2 + b1 * ty2 + tx1,
+                ],
+                [
+                    c1 * a2 + d1 * c2,
+                    c1 * b2 + d1 * d2,
+                    c1 * tx2 + d1 * ty2 + ty1,
+                ],
+            ],
+        }
+    }
+
+    /// Returns the inverse transform, or `None` if the linear part is
+    /// singular (determinant is zero or near-zero).
+    pub fn inverse(self) -> Option<Self> {
+        let [[a, b, tx], [c, d, ty]] = self.rows;
+        let det = a * d - b * c;
+        if det.abs() <= f32::EPSILON {
+            return None;
+        }
+        let inv_det = 1.0 / det;
+        let ia = d * inv_det;
+        let ib = -b * inv_det;
+        let ic = -c * inv_det;
+        let id = a * inv_det;
+        // Inverse translation: -L^{-1} · t.
+        let itx = -(ia * tx + ib * ty);
+        let ity = -(ic * tx + id * ty);
+        Some(Self {
+            rows: [[ia, ib, itx], [ic, id, ity]],
+        })
+    }
+
+    /// Apply the transform to a point.
+    pub fn transform_point(self, p: Point<Pixels>) -> Point<Pixels> {
+        let [[a, b, tx], [c, d, ty]] = self.rows;
+        let x = a * p.x.0 + b * p.y.0 + tx;
+        let y = c * p.x.0 + d * p.y.0 + ty;
+        Point {
+            x: Pixels(x),
+            y: Pixels(y),
+        }
+    }
+}
+
+impl Default for Affine2 {
+    fn default() -> Self {
+        Self::IDENTITY
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3867,5 +3991,77 @@ mod tests {
 
         // Test Case 3: Bounds intersecting with themselves
         assert!(bounds1.intersects(&bounds1));
+    }
+
+    fn px(x: f32, y: f32) -> Point<Pixels> {
+        Point {
+            x: Pixels(x),
+            y: Pixels(y),
+        }
+    }
+
+    fn approx_eq(a: Point<Pixels>, b: Point<Pixels>, eps: f32) -> bool {
+        (a.x.0 - b.x.0).abs() < eps && (a.y.0 - b.y.0).abs() < eps
+    }
+
+    #[test]
+    fn affine2_identity_is_neutral() {
+        let p = px(7.0, -3.5);
+        assert_eq!(Affine2::IDENTITY.transform_point(p), p);
+        assert_eq!(Affine2::default(), Affine2::IDENTITY);
+    }
+
+    #[test]
+    fn affine2_translation_offsets_point() {
+        let t = Affine2::translation(px(10.0, 20.0));
+        assert_eq!(t.transform_point(px(0.0, 0.0)), px(10.0, 20.0));
+        assert_eq!(t.transform_point(px(1.0, 1.0)), px(11.0, 21.0));
+    }
+
+    #[test]
+    fn affine2_scale_uniform() {
+        let s = Affine2::scale(2.0);
+        assert_eq!(s.transform_point(px(3.0, 4.0)), px(6.0, 8.0));
+    }
+
+    #[test]
+    fn affine2_rotation_quarter_turn() {
+        // Counter-clockwise rotation of 90° maps (1, 0) -> (0, 1).
+        let r = Affine2::rotation(std::f32::consts::FRAC_PI_2);
+        assert!(approx_eq(r.transform_point(px(1.0, 0.0)), px(0.0, 1.0), 1e-5));
+        assert!(approx_eq(r.transform_point(px(0.0, 1.0)), px(-1.0, 0.0), 1e-5));
+    }
+
+    #[test]
+    fn affine2_inverse_round_trip_translation() {
+        let t = Affine2::translation(px(13.0, -7.0));
+        let inv = t.inverse().expect("translation is always invertible");
+        let p = px(2.0, 5.0);
+        assert!(approx_eq(inv.transform_point(t.transform_point(p)), p, 1e-5));
+    }
+
+    #[test]
+    fn affine2_inverse_round_trip_rotation_then_translation() {
+        let t = Affine2::translation(px(5.0, 5.0))
+            .composed(Affine2::rotation(std::f32::consts::FRAC_PI_3));
+        let inv = t.inverse().expect("rigid motion is always invertible");
+        let p = px(11.5, -2.25);
+        assert!(approx_eq(inv.transform_point(t.transform_point(p)), p, 1e-4));
+    }
+
+    #[test]
+    fn affine2_inverse_singular_returns_none() {
+        // Zero linear part is degenerate: collapses every point to (tx, ty).
+        let degenerate = Affine2 {
+            rows: [[0.0, 0.0, 1.0], [0.0, 0.0, 2.0]],
+        };
+        assert!(degenerate.inverse().is_none());
+    }
+
+    #[test]
+    fn affine2_composed_applies_right_to_left() {
+        // First scale by 2, then translate by (5, 0).
+        let combined = Affine2::translation(px(5.0, 0.0)).composed(Affine2::scale(2.0));
+        assert_eq!(combined.transform_point(px(3.0, 4.0)), px(11.0, 8.0));
     }
 }

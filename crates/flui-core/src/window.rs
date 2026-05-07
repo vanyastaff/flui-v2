@@ -560,6 +560,16 @@ pub enum WindowControlArea {
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct HitboxId(u64);
 
+#[cfg(test)]
+impl HitboxId {
+    /// Construct a synthetic [`HitboxId`] for tests in sibling
+    /// modules. Production code receives ids only from
+    /// [`Window::next_hitbox_id`].
+    pub(crate) fn for_test(raw: u64) -> Self {
+        Self(raw)
+    }
+}
+
 impl HitboxId {
     /// Checks if the hitbox with this ID is currently hovered. Returns `false` during keyboard
     /// input modality so that keyboard navigation suppresses hover highlights. Except when handling
@@ -2250,6 +2260,11 @@ impl Window {
     /// `flui-core` consumers.
     pub fn hit_test(&self, position: Point<Pixels>) -> crate::gesture::HitTestResult {
         let mut result = crate::gesture::HitTestResult::default();
+        // S07.5b: open a single identity scope so the transform-stack
+        // path is exercised on every hit-test pass. S09 will replace
+        // this with a per-paint-layer push driven by the rendered
+        // frame's transform tree.
+        let mut scope = result.push_transform(crate::Affine2::IDENTITY);
         let frame_hit = self.rendered_frame.hit_test(position);
         for &hitbox_id in frame_hit.ids.iter() {
             let behavior = self
@@ -2264,12 +2279,14 @@ impl Window {
             //
             // `HitTestEntry` is `#[non_exhaustive]` for downstream
             // consumers; same-crate code can use the struct literal.
-            result.push(crate::gesture::HitTestEntry {
+            scope.add(crate::gesture::HitTestEntry {
                 hitbox_id,
                 position,
                 behavior,
+                transform: None,
             });
         }
+        drop(scope);
         result
     }
 
@@ -4370,8 +4387,21 @@ impl Window {
                     for entry in hit_test.iter() {
                         let recs = self.pending_recognizers.remove(&entry.hitbox_id);
                         if let Some(recs) = recs {
+                            // Compute hit-target-local position for
+                            // this entry. S07.5b: arena entries do not
+                            // yet store inverse transforms, so the
+                            // local position equals `pe.position`.
+                            // S09 will populate this from
+                            // `entry.transform`.
+                            let local_position = entry
+                                .transform
+                                .and_then(|t| t.inverse())
+                                .map(|inv| inv.transform_point(pe.position))
+                                .unwrap_or(pe.position);
+                            let delivered =
+                                crate::gesture::DeliveredEvent::new(pe, local_position);
                             for rec in recs.iter() {
-                                rec.borrow_mut().add_pointer(pe.pointer_id, pe);
+                                rec.borrow_mut().add_pointer(pe.pointer_id, delivered);
                                 let rec_needs_hold = self
                                     .gesture_binding
                                     .register_recognizer(pe.pointer_id, std::rc::Rc::clone(rec));

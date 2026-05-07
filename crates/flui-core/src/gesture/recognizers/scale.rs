@@ -14,7 +14,7 @@
 //! See the design doc § "ScaleGestureRecognizer".
 
 use crate::gesture::{
-    GestureDisposition, GestureRecognizer, GestureSettings, PointerEvent, PointerId, PointerKind,
+    DeliveredEvent, GestureDisposition, GestureRecognizer, GestureSettings, PointerId, PointerKind,
     PointerPhase, RecognizerLifecycle,
 };
 use crate::{Pixels, Point};
@@ -194,7 +194,7 @@ impl GestureRecognizer for ScaleGestureRecognizer {
         "scale"
     }
 
-    fn add_pointer(&mut self, pointer_id: PointerId, event: &PointerEvent) {
+    fn add_pointer(&mut self, pointer_id: PointerId, event: DeliveredEvent<'_>) {
         // Skip duplicate registrations — a pointer that re-enters the
         // arena (e.g. via a sanitizer-synthesized re-Down after orphan
         // detection) keeps its existing position; the next Move
@@ -208,9 +208,9 @@ impl GestureRecognizer for ScaleGestureRecognizer {
         // which made the test trivially false and silently kept
         // `initial_kind` at its `Mouse` default.
         let is_first_pointer = self.pointers.is_empty();
-        self.pointers.push((pointer_id, event.position));
+        self.pointers.push((pointer_id, event.local_position));
         if is_first_pointer {
-            self.initial_kind = event.kind;
+            self.initial_kind = event.kind();
         }
         if self.pointers.len() >= 2 && self.state == ScaleState::Idle {
             self.state = ScaleState::Possible;
@@ -221,13 +221,13 @@ impl GestureRecognizer for ScaleGestureRecognizer {
 
     fn handle_event(
         &mut self,
-        event: &PointerEvent,
+        event: DeliveredEvent<'_>,
         window: &mut crate::Window,
         cx: &mut crate::App,
     ) -> GestureDisposition {
-        match event.phase {
+        match event.phase() {
             PointerPhase::Move => {
-                self.update_pointer(event.pointer_id, event.position);
+                self.update_pointer(event.pointer_id(), event.local_position);
                 if self.pointers.len() < 2 {
                     return GestureDisposition::Possible;
                 }
@@ -294,10 +294,10 @@ impl GestureRecognizer for ScaleGestureRecognizer {
                 // remove the pointer and check whether the gesture is
                 // ending (count < 2) or merely losing one finger of
                 // a > 2 group.
-                let was_tracked = self.pointers.iter().any(|(id, _)| *id == event.pointer_id);
+                let was_tracked = self.pointers.iter().any(|(id, _)| *id == event.pointer_id());
                 let pre_retain_scale = self.current_scale();
                 let pre_retain_rotation = self.pair_angle() - self.initial_angle;
-                self.pointers.retain(|(id, _)| *id != event.pointer_id);
+                self.pointers.retain(|(id, _)| *id != event.pointer_id());
                 if !was_tracked {
                     return GestureDisposition::Possible;
                 }
@@ -364,12 +364,17 @@ mod tests {
 
     use super::*;
     use crate::gesture::{
-        GestureSettings, PointerButtons, PointerEvent, PointerId, PointerKind, PointerPhase,
+        DeliveredEvent, GestureSettings, PointerButtons, PointerEvent, PointerId, PointerKind,
+        PointerPhase,
     };
     use crate::scheduler::Instant;
     use crate::{self as flui_core, AppContext as _, Modifiers, TestAppContext};
     use std::cell::Cell;
     use std::rc::Rc;
+
+    fn de(event: &PointerEvent) -> DeliveredEvent<'_> {
+        DeliveredEvent::at_event_position(event)
+    }
 
     fn pe(
         id: u64,
@@ -424,7 +429,7 @@ mod tests {
                         }));
                     }
                     let d = pe(0, PointerPhase::Down, pt(0.0, 0.0), PointerButtons::PRIMARY);
-                    scale.add_pointer(PointerId(0), &d);
+                    scale.add_pointer(PointerId(0), de(&d));
                     let mv = pe(
                         0,
                         PointerPhase::Move,
@@ -432,7 +437,7 @@ mod tests {
                         PointerButtons::PRIMARY,
                     );
                     assert_eq!(
-                        scale.handle_event(&mv, window, cx),
+                        scale.handle_event(de(&mv), window, cx),
                         GestureDisposition::Possible,
                         "single-pointer scale must not engage"
                     );
@@ -489,8 +494,8 @@ mod tests {
                         pt(100.0, 0.0),
                         PointerButtons::PRIMARY,
                     );
-                    scale.add_pointer(PointerId(0), &d0);
-                    scale.add_pointer(PointerId(1), &d1);
+                    scale.add_pointer(PointerId(0), de(&d0));
+                    scale.add_pointer(PointerId(1), de(&d1));
                     // Move p1 outward to 150 → new distance 150 → delta 50 > slop 18.
                     let m1 = pe(
                         1,
@@ -499,7 +504,7 @@ mod tests {
                         PointerButtons::PRIMARY,
                     );
                     assert_eq!(
-                        scale.handle_event(&m1, window, cx),
+                        scale.handle_event(de(&m1), window, cx),
                         GestureDisposition::Accepted,
                     );
                     assert_eq!(starts.get(), 1);
@@ -529,8 +534,8 @@ mod tests {
                         pt(100.0, 0.0),
                         PointerButtons::PRIMARY,
                     );
-                    scale.add_pointer(PointerId(0), &d0);
-                    scale.add_pointer(PointerId(1), &d1);
+                    scale.add_pointer(PointerId(0), de(&d0));
+                    scale.add_pointer(PointerId(1), de(&d1));
                     // Slop crossing → Accepted (no on_update yet).
                     let m1a = pe(
                         1,
@@ -538,7 +543,7 @@ mod tests {
                         pt(150.0, 0.0),
                         PointerButtons::PRIMARY,
                     );
-                    let _ = scale.handle_event(&m1a, window, cx);
+                    let _ = scale.handle_event(de(&m1a), window, cx);
                     // Now in Accepted; move p1 to 200 → distance 200, ratio 2.0.
                     let m1b = pe(
                         1,
@@ -546,7 +551,7 @@ mod tests {
                         pt(200.0, 0.0),
                         PointerButtons::PRIMARY,
                     );
-                    let _ = scale.handle_event(&m1b, window, cx);
+                    let _ = scale.handle_event(de(&m1b), window, cx);
                     let s = last_scale.get();
                     assert!(
                         (s - 2.0).abs() < 1e-3,
@@ -579,8 +584,8 @@ mod tests {
                         pt(100.0, 0.0),
                         PointerButtons::PRIMARY,
                     );
-                    scale.add_pointer(PointerId(0), &d0);
-                    scale.add_pointer(PointerId(1), &d1);
+                    scale.add_pointer(PointerId(0), de(&d0));
+                    scale.add_pointer(PointerId(1), de(&d1));
                     // Cross slop to enter Accepted.
                     let m1 = pe(
                         1,
@@ -588,7 +593,7 @@ mod tests {
                         pt(150.0, 0.0),
                         PointerButtons::PRIMARY,
                     );
-                    let _ = scale.handle_event(&m1, window, cx);
+                    let _ = scale.handle_event(de(&m1), window, cx);
                     // Lift p1 → pointer_count drops to 1 → on_end fires.
                     let up = pe(
                         1,
@@ -597,7 +602,7 @@ mod tests {
                         PointerButtons::default(),
                     );
                     assert_eq!(
-                        scale.handle_event(&up, window, cx),
+                        scale.handle_event(de(&up), window, cx),
                         GestureDisposition::Accepted,
                     );
                     assert_eq!(ends.get(), 1);

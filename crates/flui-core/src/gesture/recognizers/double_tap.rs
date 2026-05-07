@@ -3,7 +3,7 @@
 //! See the design doc § "DoubleTapGestureRecognizer".
 
 use crate::gesture::{
-    GestureDisposition, GestureRecognizer, GestureSettings, PointerButtons, PointerEvent,
+    DeliveredEvent, GestureDisposition, GestureRecognizer, GestureSettings, PointerButtons,
     PointerId, PointerKind, PointerPhase, RecognizerLifecycle, SemanticAction,
 };
 use crate::scheduler::Instant;
@@ -119,15 +119,15 @@ impl GestureRecognizer for DoubleTapGestureRecognizer {
         "double_tap"
     }
 
-    fn add_pointer(&mut self, pointer_id: PointerId, event: &PointerEvent) {
-        if !event.buttons.contains(self.button) {
+    fn add_pointer(&mut self, pointer_id: PointerId, event: DeliveredEvent<'_>) {
+        if !event.buttons().contains(self.button) {
             return;
         }
         match self.state {
             DoubleTapState::Idle => {
                 self.pointer = Some(pointer_id);
-                self.first_position = event.position;
-                self.last_kind = event.kind;
+                self.first_position = event.local_position;
+                self.last_kind = event.kind();
                 self.state = DoubleTapState::FirstDown;
             }
             DoubleTapState::AwaitSecond => {
@@ -140,7 +140,7 @@ impl GestureRecognizer for DoubleTapGestureRecognizer {
                     .unwrap_or_default();
                 if elapsed < self.double_tap_min_time
                     || elapsed > self.double_tap_timeout
-                    || self.distance_sq(event.position) > (self.touch_slop.0).powi(2)
+                    || self.distance_sq(event.local_position) > (self.touch_slop.0).powi(2)
                 {
                     // Out-of-window or out-of-slop second Down ends
                     // the sequence; reset so the recognizer can start
@@ -149,7 +149,7 @@ impl GestureRecognizer for DoubleTapGestureRecognizer {
                     return;
                 }
                 self.pointer = Some(pointer_id);
-                self.last_kind = event.kind;
+                self.last_kind = event.kind();
                 self.state = DoubleTapState::SecondDown;
             }
             // FirstDown / SecondDown — already mid-sequence, ignore
@@ -161,16 +161,16 @@ impl GestureRecognizer for DoubleTapGestureRecognizer {
 
     fn handle_event(
         &mut self,
-        event: &PointerEvent,
+        event: DeliveredEvent<'_>,
         window: &mut crate::Window,
         cx: &mut crate::App,
     ) -> GestureDisposition {
-        if self.pointer != Some(event.pointer_id) {
+        if self.pointer != Some(event.pointer_id()) {
             return GestureDisposition::Possible;
         }
-        match (self.state, event.phase) {
+        match (self.state, event.phase()) {
             (DoubleTapState::FirstDown, PointerPhase::Move) => {
-                if self.distance_sq(event.position) > (self.touch_slop.0).powi(2) {
+                if self.distance_sq(event.local_position) > (self.touch_slop.0).powi(2) {
                     self.reset();
                     return GestureDisposition::Rejected;
                 }
@@ -197,17 +197,17 @@ impl GestureRecognizer for DoubleTapGestureRecognizer {
                     .unwrap_or_default();
                 if elapsed < self.double_tap_min_time
                     || elapsed > self.double_tap_timeout
-                    || self.distance_sq(event.position) > (self.touch_slop.0).powi(2)
+                    || self.distance_sq(event.local_position) > (self.touch_slop.0).powi(2)
                 {
                     self.reset();
                     return GestureDisposition::Rejected;
                 }
                 self.state = DoubleTapState::SecondDown;
-                self.last_kind = event.kind;
+                self.last_kind = event.kind();
                 GestureDisposition::Possible
             }
             (DoubleTapState::SecondDown, PointerPhase::Move) => {
-                if self.distance_sq(event.position) > (self.touch_slop.0).powi(2) {
+                if self.distance_sq(event.local_position) > (self.touch_slop.0).powi(2) {
                     self.reset();
                     return GestureDisposition::Rejected;
                 }
@@ -217,8 +217,8 @@ impl GestureRecognizer for DoubleTapGestureRecognizer {
                 if let Some(cb) = self.on_double_tap.as_mut() {
                     cb(
                         DoubleTapDetails {
-                            global_position: event.position,
-                            kind: event.kind,
+                            global_position: event.global_position(),
+                            kind: event.kind(),
                         },
                         window,
                         cx,
@@ -292,12 +292,17 @@ mod tests {
 
     use super::*;
     use crate::gesture::{
-        GestureSettings, PointerButtons, PointerEvent, PointerId, PointerKind, PointerPhase,
+        DeliveredEvent, GestureSettings, PointerButtons, PointerEvent, PointerId, PointerKind,
+        PointerPhase,
     };
     use crate::scheduler::Instant;
     use crate::{self as flui_core, AppContext as _, Modifiers, Pixels, Point, TestAppContext};
     use std::cell::Cell;
     use std::rc::Rc;
+
+    fn de(event: &PointerEvent) -> DeliveredEvent<'_> {
+        DeliveredEvent::at_event_position(event)
+    }
 
     fn pe(phase: PointerPhase, pos: Point<Pixels>, buttons: PointerButtons) -> PointerEvent {
         let now = Instant::now();
@@ -361,27 +366,27 @@ mod tests {
                     }
                     // First tap.
                     let d1 = pe(PointerPhase::Down, p(0.0, 0.0), PointerButtons::PRIMARY);
-                    dt.add_pointer(PointerId(0), &d1);
+                    dt.add_pointer(PointerId(0), de(&d1));
                     assert_eq!(
-                        dt.handle_event(&d1, window, cx),
+                        dt.handle_event(de(&d1), window, cx),
                         GestureDisposition::Possible
                     );
                     let u1 = pe(PointerPhase::Up, p(0.0, 0.0), PointerButtons::default());
                     assert_eq!(
-                        dt.handle_event(&u1, window, cx),
+                        dt.handle_event(de(&u1), window, cx),
                         GestureDisposition::Possible,
                         "first Up still Possible (waiting for second tap)"
                     );
                     // Second tap.
                     let d2 = pe(PointerPhase::Down, p(0.0, 0.0), PointerButtons::PRIMARY);
-                    dt.add_pointer(PointerId(0), &d2);
+                    dt.add_pointer(PointerId(0), de(&d2));
                     assert_eq!(
-                        dt.handle_event(&d2, window, cx),
+                        dt.handle_event(de(&d2), window, cx),
                         GestureDisposition::Possible
                     );
                     let u2 = pe(PointerPhase::Up, p(0.0, 0.0), PointerButtons::default());
                     assert_eq!(
-                        dt.handle_event(&u2, window, cx),
+                        dt.handle_event(de(&u2), window, cx),
                         GestureDisposition::Accepted,
                     );
                     assert_eq!(fired.get(), 1, "on_double_tap fired exactly once");
@@ -405,17 +410,17 @@ mod tests {
                         }));
                     }
                     let d1 = pe(PointerPhase::Down, p(0.0, 0.0), PointerButtons::PRIMARY);
-                    dt.add_pointer(PointerId(0), &d1);
-                    let _ = dt.handle_event(&d1, window, cx);
+                    dt.add_pointer(PointerId(0), de(&d1));
+                    let _ = dt.handle_event(de(&d1), window, cx);
                     let u1 = pe(PointerPhase::Up, p(0.0, 0.0), PointerButtons::default());
-                    let _ = dt.handle_event(&u1, window, cx);
+                    let _ = dt.handle_event(de(&u1), window, cx);
                     // Second tap arrives 200px away → outside slop.
                     let d2 = pe(PointerPhase::Down, p(200.0, 0.0), PointerButtons::PRIMARY);
-                    dt.add_pointer(PointerId(0), &d2);
+                    dt.add_pointer(PointerId(0), de(&d2));
                     // Once add_pointer rejected, subsequent events stay
                     // in the rejected state and never fire on_double_tap.
                     let u2 = pe(PointerPhase::Up, p(200.0, 0.0), PointerButtons::default());
-                    let _ = dt.handle_event(&u2, window, cx);
+                    let _ = dt.handle_event(de(&u2), window, cx);
                     assert_eq!(fired.get(), 0, "out-of-slop second tap rejected");
                 });
         });
@@ -442,18 +447,18 @@ mod tests {
                         }));
                     }
                     let d1 = pe(PointerPhase::Down, p(0.0, 0.0), PointerButtons::PRIMARY);
-                    dt.add_pointer(PointerId(0), &d1);
-                    let _ = dt.handle_event(&d1, window, cx);
+                    dt.add_pointer(PointerId(0), de(&d1));
+                    let _ = dt.handle_event(de(&d1), window, cx);
                     let u1 = pe(PointerPhase::Up, p(0.0, 0.0), PointerButtons::default());
-                    let _ = dt.handle_event(&u1, window, cx);
+                    let _ = dt.handle_event(de(&u1), window, cx);
                     // Sleep past the 1ms window. Real-clock sleep on the
                     // test thread is fine — TestAppContext does not pause
                     // wall-clock time.
                     std::thread::sleep(std::time::Duration::from_millis(15));
                     let d2 = pe(PointerPhase::Down, p(0.0, 0.0), PointerButtons::PRIMARY);
-                    dt.add_pointer(PointerId(0), &d2);
+                    dt.add_pointer(PointerId(0), de(&d2));
                     let u2 = pe(PointerPhase::Up, p(0.0, 0.0), PointerButtons::default());
-                    let _ = dt.handle_event(&u2, window, cx);
+                    let _ = dt.handle_event(de(&u2), window, cx);
                     assert_eq!(fired.get(), 0, "second tap past timeout rejected");
                 });
         });

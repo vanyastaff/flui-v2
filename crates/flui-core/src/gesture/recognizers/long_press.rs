@@ -9,7 +9,7 @@
 
 use crate::gesture::arena::ArenaBackChannel;
 use crate::gesture::{
-    GestureDisposition, GestureRecognizer, GestureSettings, PointerButtons, PointerEvent,
+    DeliveredEvent, GestureDisposition, GestureRecognizer, GestureSettings, PointerButtons,
     PointerId, PointerKind, PointerPhase, RecognizerLifecycle, SemanticAction,
 };
 use crate::{AppContext, Pixels, Point, Task};
@@ -123,13 +123,13 @@ impl GestureRecognizer for LongPressGestureRecognizer {
         "long_press"
     }
 
-    fn add_pointer(&mut self, pointer_id: PointerId, event: &PointerEvent) {
-        if !event.buttons.contains(self.button) {
+    fn add_pointer(&mut self, pointer_id: PointerId, event: DeliveredEvent<'_>) {
+        if !event.buttons().contains(self.button) {
             return;
         }
         self.pointer = Some(pointer_id);
-        self.down_position = event.position;
-        self.last_kind = event.kind;
+        self.down_position = event.local_position;
+        self.last_kind = event.kind();
         self.accepted = false;
         // T15 will populate `arena_back_channel` and `pointer_index`
         // from the GestureBinding when the recognizer joins the
@@ -140,14 +140,14 @@ impl GestureRecognizer for LongPressGestureRecognizer {
 
     fn handle_event(
         &mut self,
-        event: &PointerEvent,
+        event: DeliveredEvent<'_>,
         window: &mut crate::Window,
         cx: &mut crate::App,
     ) -> GestureDisposition {
-        if self.pointer != Some(event.pointer_id) {
+        if self.pointer != Some(event.pointer_id()) {
             return GestureDisposition::Possible;
         }
-        match event.phase {
+        match event.phase() {
             PointerPhase::Down => {
                 // Schedule the long-press timer. `cx.spawn` returns a
                 // `Task<()>` we store; dropping it cancels the future.
@@ -161,9 +161,11 @@ impl GestureRecognizer for LongPressGestureRecognizer {
                 // (timer fires after `Window` drops) becomes a no-op
                 // upgrade.
                 let timeout = self.timeout;
-                let pointer_id = event.pointer_id;
-                let entry_position = event.position;
-                let entry_kind = event.kind;
+                let pointer_id = event.pointer_id();
+                // Callback global_position uses window-local because
+                // user code expects window-space coordinates here.
+                let entry_position = event.global_position();
+                let entry_kind = event.kind();
                 let back_channel = self.arena_back_channel.clone();
                 let entry_index = self.pointer_index;
                 let window_handle = window.window_handle();
@@ -247,15 +249,15 @@ impl GestureRecognizer for LongPressGestureRecognizer {
                 GestureDisposition::Possible
             }
             PointerPhase::Move => {
-                if self.distance_sq(event.position) > (self.slop.0).powi(2) {
+                if self.distance_sq(event.local_position) > (self.slop.0).powi(2) {
                     self.timer = None; // drops the task → cancels future
                     GestureDisposition::Rejected
                 } else if self.accepted {
                     if let Some(cb) = self.on_long_press_move.as_mut() {
                         cb(
                             LongPressDetails {
-                                global_position: event.position,
-                                kind: event.kind,
+                                global_position: event.global_position(),
+                                kind: event.kind(),
                             },
                             window,
                             cx,
@@ -273,8 +275,8 @@ impl GestureRecognizer for LongPressGestureRecognizer {
                     if let Some(cb) = self.on_long_press_end.as_mut() {
                         cb(
                             LongPressDetails {
-                                global_position: event.position,
-                                kind: event.kind,
+                                global_position: event.global_position(),
+                                kind: event.kind(),
                             },
                             window,
                             cx,
@@ -366,10 +368,15 @@ mod tests {
 
     use super::*;
     use crate::gesture::{
-        GestureSettings, PointerButtons, PointerEvent, PointerId, PointerKind, PointerPhase,
+        DeliveredEvent, GestureSettings, PointerButtons, PointerEvent, PointerId, PointerKind,
+        PointerPhase,
     };
     use crate::scheduler::Instant;
     use crate::{self as flui_core, Modifiers, Pixels, Point, TestAppContext};
+
+    fn de(event: &PointerEvent) -> DeliveredEvent<'_> {
+        DeliveredEvent::at_event_position(event)
+    }
 
     fn pe(phase: PointerPhase, pos: Point<Pixels>, buttons: PointerButtons) -> PointerEvent {
         let now = Instant::now();
@@ -403,15 +410,15 @@ mod tests {
                 .update(cx, |_, window, cx| {
                     let mut lp = LongPressGestureRecognizer::new(&GestureSettings::default());
                     let down = pe(PointerPhase::Down, p(0.0, 0.0), PointerButtons::PRIMARY);
-                    lp.add_pointer(PointerId(0), &down);
+                    lp.add_pointer(PointerId(0), de(&down));
                     assert_eq!(
-                        lp.handle_event(&down, window, cx),
+                        lp.handle_event(de(&down), window, cx),
                         GestureDisposition::Possible
                     );
                     assert!(lp.timer.is_some(), "Down schedules a timer");
                     let mv = pe(PointerPhase::Move, p(100.0, 0.0), PointerButtons::PRIMARY);
                     assert_eq!(
-                        lp.handle_event(&mv, window, cx),
+                        lp.handle_event(de(&mv), window, cx),
                         GestureDisposition::Rejected,
                     );
                     assert!(
@@ -431,11 +438,11 @@ mod tests {
                 .update(cx, |_, window, cx| {
                     let mut lp = LongPressGestureRecognizer::new(&GestureSettings::default());
                     let down = pe(PointerPhase::Down, p(0.0, 0.0), PointerButtons::PRIMARY);
-                    lp.add_pointer(PointerId(0), &down);
-                    let _ = lp.handle_event(&down, window, cx);
+                    lp.add_pointer(PointerId(0), de(&down));
+                    let _ = lp.handle_event(de(&down), window, cx);
                     let up = pe(PointerPhase::Up, p(0.0, 0.0), PointerButtons::default());
                     assert_eq!(
-                        lp.handle_event(&up, window, cx),
+                        lp.handle_event(de(&up), window, cx),
                         GestureDisposition::Rejected,
                         "Up before timer-accept rejects (no premature acceptance)"
                     );
@@ -452,11 +459,11 @@ mod tests {
                 .update(cx, |_, window, cx| {
                     let mut lp = LongPressGestureRecognizer::new(&GestureSettings::default());
                     let down = pe(PointerPhase::Down, p(0.0, 0.0), PointerButtons::PRIMARY);
-                    lp.add_pointer(PointerId(0), &down);
-                    let _ = lp.handle_event(&down, window, cx);
+                    lp.add_pointer(PointerId(0), de(&down));
+                    let _ = lp.handle_event(de(&down), window, cx);
                     let cancel = pe(PointerPhase::Cancel, p(0.0, 0.0), PointerButtons::default());
                     assert_eq!(
-                        lp.handle_event(&cancel, window, cx),
+                        lp.handle_event(de(&cancel), window, cx),
                         GestureDisposition::Rejected,
                     );
                     assert!(lp.timer.is_none(), "Cancel drops the timer Task");
@@ -491,8 +498,8 @@ mod tests {
                 .update(cx, |_, window, cx| {
                     let mut lp = LongPressGestureRecognizer::new(&GestureSettings::default());
                     let down = pe(PointerPhase::Down, p(0.0, 0.0), PointerButtons::PRIMARY);
-                    lp.add_pointer(PointerId(0), &down);
-                    let _ = lp.handle_event(&down, window, cx);
+                    lp.add_pointer(PointerId(0), de(&down));
+                    let _ = lp.handle_event(de(&down), window, cx);
                     lp.accepted = true; // simulate timer firing
                     GestureRecognizer::rejected(&mut lp, PointerId(0), window, cx);
                     assert!(lp.timer.is_none(), "rejected drops the timer");
