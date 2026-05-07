@@ -1708,8 +1708,13 @@ pub(crate) mod shader_resources {
 
             let mut compile_blob = None;
             let mut error_blob = None;
+            // Shaders live alongside the Windows platform-layer code,
+            // not at the crate-`src/` root. The previous formula
+            // (`src/{shader_name}`) produced a stale path after the
+            // workspace restructure that moved the renderer into
+            // `crates/flui-core/src/platform/windows/`.
             let shader_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join(&format!("src/{}", shader_name))
+                .join(&format!("src/platform/windows/{}", shader_name))
                 .canonicalize()?;
 
             let entry_point = PCSTR::from_raw(entry.as_ptr());
