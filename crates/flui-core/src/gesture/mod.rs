@@ -125,6 +125,72 @@
 //! `docs/superpowers/specs/2026-05-08-recognizer-extension.md`
 //! for the canonical recipe.
 //!
+//! # S07.5b — completed
+//!
+//! S07.5b is the breaking-friendly cleanup that lands ahead of
+//! S07.6's recognizer roster expansion. Running it post-publish
+//! would have cost twelve drip PRs; folding it into one sweep gives
+//! reviewers one architectural pass.
+//!
+//! - **`PointerEvent` surface upgrade.** `pressure: f32` becomes
+//!   `pressure: Option<PressureSample { value, min, max }>` —
+//!   `PressureSample::normalize()` returns a device-agnostic
+//!   `[0.0, 1.0]`. Mouse-class events default to `None`, except
+//!   macOS Force Touch via `MousePressureEvent` which surfaces
+//!   `Some(PressureSample { value, min: 0.0, max: 1.0 })` (Decision
+//!   MM). `synthesized: bool` becomes `provenance:
+//!   PointerEventProvenance` (`#[non_exhaustive]` enum: `Platform`,
+//!   `SanitizerSynthesized`, future `ResamplerSynthesized` /
+//!   `SemanticsSynthesized`). `timestamp` splits into `timestamp` +
+//!   `source_timestamp` (equal for non-synthesised events; resampler
+//!   sets them apart). VelocityTracker callers use
+//!   `source_timestamp`. New `PointerKind` variants: `Trackpad`,
+//!   `InvertedStylus`, `Unknown`.
+//! - **Pan-zoom split.** `PointerPanZoomEvent` lives as a sibling
+//!   type to `PointerSignalEvent` (not as `PointerPhase` variants),
+//!   carrying pan + scale + rotation tuples without bloating every
+//!   PointerEvent.
+//! - **Hit-test transform substrate.** `HitTestEntry.transform:
+//!   Option<Affine2>` records the window-to-target affine for each
+//!   entry. `Affine2` is a bespoke 2x3 row-major primitive
+//!   (`Affine2::IDENTITY`, `translation`, `rotation`, `composed`,
+//!   `inverse`, `transform_point`) — no `euclid` direct dep. The
+//!   RAII guard `HitTestResult::push_transform(t) -> HitTestScope`
+//!   composes onto the current top-of-stack and pops on `Drop`.
+//!   Unbalanced push/pop is a borrow-check error; panic-safety
+//!   follows from standard Rust RAII (locked by a `catch_unwind`
+//!   test). For S07.5b only `IDENTITY` is pushed; S09 will replace
+//!   that with per-paint-layer transforms.
+//! - **`DeliveredEvent<'a>` wrapper.** `GestureRecognizer::add_pointer`
+//!   and `handle_event` take `DeliveredEvent { event:
+//!   &PointerEvent, local_position }` instead of `&PointerEvent`.
+//!   Recognizers read `event.local_position` for slop / distance /
+//!   down_position; accessor methods (`event.global_position()`,
+//!   `event.kind()`, `event.phase()`, ...) cover the other fields.
+//!   Locked by `grep "event\.position"
+//!   crates/flui-core/src/gesture/recognizers/` returning zero hits.
+//! - **Lifecycle hook unification.**
+//!   `RecognizerLifecycle::set_arena_back_channel(pid, bc, idx)` is
+//!   the only back-channel hook (the previous two-arg variant is
+//!   gone). `LongPressGestureRecognizer` now stores
+//!   `pointer_indexes: SmallVec<[(PointerId, usize); 1]>` (single-shot
+//!   keeps inline storage; multi-pointer recognizers built on the
+//!   same hook inherit the shape).
+//! - **Arena hold counter.** `GestureArena.is_held: bool` becomes
+//!   `hold_count: u32`. `hold` increments, `release` decrements
+//!   (saturating-sub), sweep gates on `hold_count == 0`. Fixes the
+//!   latent bug where two recognizers on the same pointer could see
+//!   one's `release` clear the other's hold.
+//! - **`AllowedButtonsFilter` newtype.** `Box<dyn Fn(PointerButtons,
+//!   Modifiers) -> bool + 'static>`-wrapping closure with `new` /
+//!   `call`. Per-recognizer `pub allowed_buttons_filter` field +
+//!   `with_allowed_buttons_filter` builder. Filter check moved to
+//!   `GestureBinding::register_recognizer` *before* `arena.add`
+//!   (Decision D10) — rejecting recognizers never enter the arena
+//!   and never become `Possible`-returning zombies.
+//! - **`GestureDisposition` `#[non_exhaustive]`.** Already true
+//!   pre-S07.5b; pinned by T17 verification.
+//!
 //! # Common pitfalls
 //!
 //! - **Do not call `cx.stop_propagation()` from inside

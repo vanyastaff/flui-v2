@@ -327,7 +327,7 @@ Check at T23 bench that the larger `PointerEvent` doesn't push any allocation of
 
 ### Phase D — Tests, docs, bench, CHANGELOG, ROADMAP
 
-- [ ] **T20:** Update unit tests for every changed surface:
+- [x] **T20:** Update unit tests for every changed surface:
   - `gesture/dispatch.rs::tests` — verify mouse-class events produce `pressure: None` (or `Some(...)` for Force Touch), hover-synthesised events have `provenance: SanitizerSynthesized`, `source_timestamp` propagated.
   - `gesture/recognizers/*::tests` — bump `pe()` helpers; add `*_allowed_buttons_filter_overrides_button` canary per recogniser.
   - `gesture/arena.rs::tests` — bump `pointer_event()` helper; add `prop_hold_count_balance` property test (every hold balanced by exactly one release; sweep iff `hold_count == 0`).
@@ -335,20 +335,20 @@ Check at T23 bench that the larger `PointerEvent` doesn't push any allocation of
   - Add transform-stack panic-safety test (T11): unwinding through a `HitTestScope` drops the guard, popping the stack — no corruption.
   - Add `force_touch_macos_path` test: synthetic `MousePressureEvent` translates to `PointerEvent` with `Some(PressureSample { value: 0.5, min: 0.0, max: 1.0 })` (Decision MM lock).
 
-- [ ] **T21:** Sweep rustdoc on every changed type. Files: `gesture/pointer_event.rs`, `gesture/pan_zoom_event.rs` (new), `gesture/recognizer.rs`, `gesture/arena.rs`, `gesture/hit_test.rs`, `gesture/recognizers/*.rs`, `gesture/mod.rs`, `geometry.rs`. **Also fix the documentation lie at `long_press.rs:3`** — module comment says `smol::Timer::after`, body uses `BackgroundExecutor::timer`. **Module-level "S07.5b — completed" subsection** in `gesture/mod.rs` mirrors the S07.5 pattern.
+- [x] **T21:** Sweep rustdoc on every changed type. Files: `gesture/pointer_event.rs`, `gesture/pan_zoom_event.rs` (new), `gesture/recognizer.rs`, `gesture/arena.rs`, `gesture/hit_test.rs`, `gesture/recognizers/*.rs`, `gesture/mod.rs`, `geometry.rs`. **Also fix the documentation lie at `long_press.rs:3`** — module comment says `smol::Timer::after`, body uses `BackgroundExecutor::timer`. **Module-level "S07.5b — completed" subsection** in `gesture/mod.rs` mirrors the S07.5 pattern.
 
-- [ ] **T22:** Update `docs/superpowers/specs/2026-05-08-recognizer-extension.md`:
+- [x] **T22:** Update `docs/superpowers/specs/2026-05-08-recognizer-extension.md`:
   - "Adding a new recognizer step-by-step" — `handle_event(event: DeliveredEvent<'_>, ...)` is the new signature; reference `event.local_position` for slop/distance, `event.event.<field>` for everything else.
   - "When to use `RecognizerLifecycle`" — table row for `set_arena_back_channel(pid, bc, idx)` updates the signature.
   - New row: `allowed_buttons_filter` — closure-based extension point for advanced gating.
   - "Threshold-field conventions" — `pressure` thresholds operate on `PressureSample::normalize()`, never raw `value`.
   - LongPress worked example updated to use `SmallVec<[(PointerId, usize); 1]>` storage.
 
-- [ ] **T23:** Introduce `CHANGELOG.md` at workspace root. Keep-a-Changelog format. First entry: "Unreleased — S07.5b breaking changes". One line per breaking change with migration note; cross-references the audit + this plan. Addresses R3 prematurely-but-cheaply.
+- [x] **T23:** Introduce `CHANGELOG.md` at workspace root. Keep-a-Changelog format. First entry: "Unreleased — S07.5b breaking changes". One line per breaking change with migration note; cross-references the audit + this plan. Addresses R3 prematurely-but-cheaply.
 
-- [ ] **T24:** Bench regression. `cargo run -p flui-core --release --example gesture_arena_bench`. All three sub-bench budgets pass: `hit_test_8deep < 2 µs`, `arena_tick < 1.25 µs`, `full_frame_120hz < 8 ms p99`. Confirm `PointerEvent`'s growth doesn't push allocation off-stack.
+- [x] **T24:** Bench regression. `cargo run -p flui-core --release --example gesture_arena_bench`. All three sub-bench budgets pass: `hit_test_8deep < 2 µs`, `arena_tick < 1.25 µs`, `full_frame_120hz < 8 ms p99`. Confirm `PointerEvent`'s growth doesn't push allocation off-stack.
 
-- [ ] **T25:** Update `.ai-factory/ROADMAP.md`: add `S07.5b GestureArena — pre-roster cleanup` between S07.5 and S07.6 entries; add to Completed table on merge. Update `DESCRIPTION.md` Input pipeline bullet.
+- [x] **T25:** Update `.ai-factory/ROADMAP.md`: add `S07.5b GestureArena — pre-roster cleanup` between S07.5 and S07.6 entries; add to Completed table on merge. Update `DESCRIPTION.md` Input pipeline bullet.
 
 > **Commit checkpoint D — after T20–T25:** `test(flui-core): S07.5b regression locks + rustdoc + recognizer-extension doc + CHANGELOG + ROADMAP`
 

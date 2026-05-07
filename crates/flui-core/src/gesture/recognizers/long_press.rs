@@ -1,8 +1,13 @@
 //! `LongPressGestureRecognizer` + `LongPressDetails`.
 //!
-//! Async timer via `cx.spawn(async { smol::Timer::after(d).await })`.
-//! Async back-channel to the arena via
-//! `Weak<RefCell<GestureArenaManager>>` plus `pointer_index`. Drop
+//! Async timer via
+//! `cx.spawn(async move |_| { cx.background_executor().timer(d).await })`
+//! — the test scheduler's virtual clock (driven by
+//! `TestAppContext::executor().advance_clock`) wakes the timer.
+//! `smol::Timer::after` would observe wall-clock time and never
+//! fire under `advance_clock`. Async back-channel to the arena via
+//! `Weak<RefCell<GestureArenaManager>>` plus per-pointer
+//! `(PointerId, entry_index)` slots in `pointer_indexes`. Drop
 //! cancels the timer task.
 //!
 //! See the design doc § "LongPressGestureRecognizer".

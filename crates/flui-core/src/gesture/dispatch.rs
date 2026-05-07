@@ -601,4 +601,52 @@ mod tests {
         // delta from the last known position (matches Flutter).
         assert_eq!(state.last_mouse_position, px(20.0, 30.0));
     }
+
+    /// T20 / Decision MM lock — macOS Force Touch flows through
+    /// `MousePressureEvent` and must surface as
+    /// `Some(PressureSample { value, min: 0.0, max: 1.0 })` on the
+    /// translated `PointerEvent`. Mapping it to `None` would silently
+    /// break Force Touch consumers; this test pins the contract.
+    #[test]
+    fn force_touch_macos_path_translates_to_some_pressure_sample() {
+        let mut state = WindowPointerState::default();
+        state.last_mouse_position = px(0.0, 0.0);
+        let pressure = MousePressureEvent {
+            position: px(50.0, 60.0),
+            pressure: 0.5,
+            stage: crate::PressureStage::Normal,
+            modifiers: Modifiers::default(),
+        };
+        let pe = translate_mouse_pressure(&pressure, &mut state);
+        let sample = pe.pressure.expect(
+            "Force Touch path must surface Some(PressureSample); None silently breaks recognizers",
+        );
+        assert!((sample.value - 0.5).abs() < 1e-6);
+        assert_eq!(sample.min, 0.0);
+        assert_eq!(sample.max, 1.0);
+        assert!((sample.normalize() - 0.5).abs() < 1e-6, "normalize round-trips Force Touch midpoint");
+        // State also captures the sample for the next translation step.
+        assert!(state.last_pressure.is_some(), "state.last_pressure carries the same sample");
+    }
+
+    /// T20 — non-pressure mouse-class events (Down/Up/Move) keep
+    /// `pressure: None`. This is the cross-axis half of Decision MM:
+    /// only the explicit `MousePressureEvent` path opts into a
+    /// `Some` sample. A regression that defaulted Move events to
+    /// `Some(PressureSample { value: 0.0, ... })` would arm
+    /// pressure-gated recognizers (S07.6 ForcePress) on every
+    /// regular cursor movement.
+    #[test]
+    fn non_pressure_mouse_events_have_pressure_none() {
+        let mut state = WindowPointerState::default();
+        let down = MouseDownEvent {
+            position: px(0.0, 0.0),
+            button: crate::MouseButton::Left,
+            modifiers: Modifiers::default(),
+            click_count: 1,
+            first_mouse: false,
+        };
+        let pe = translate_mouse_down(&down, &mut state);
+        assert!(pe.pressure.is_none(), "non-pressure Down must surface None");
+    }
 }

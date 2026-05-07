@@ -238,11 +238,82 @@ pub enum SemanticAction {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Modifiers;
+    use crate::gesture::{
+        AllowedButtonsFilter, PointerButtons, recognizers::DoubleTapGestureRecognizer,
+        recognizers::HorizontalDragGestureRecognizer, recognizers::LongPressGestureRecognizer,
+        recognizers::PanGestureRecognizer, recognizers::ScaleGestureRecognizer,
+        recognizers::TapGestureRecognizer, recognizers::VerticalDragGestureRecognizer,
+    };
 
     /// Compile-time assertion that `GestureRecognizer` is object-safe.
     /// Will fail to compile if a future change makes the trait
     /// non-`dyn`-compatible.
     fn _assert_object_safe(_: &dyn GestureRecognizer) {}
+
+    /// T20 canary — every recognizer that ships
+    /// `with_allowed_buttons_filter` must surface the closure through
+    /// `GestureRecognizer::allowed_buttons_filter`. The default trait
+    /// method returns `None`; overrides return `Some(self.<field>)`.
+    /// Without that override, `register_recognizer` would never see
+    /// the filter and Decision D10's gating becomes a silent no-op.
+    #[test]
+    fn every_recognizer_surfaces_allowed_buttons_filter() {
+        use crate::gesture::GestureSettings;
+
+        let s = GestureSettings::default();
+        let always_false = || AllowedButtonsFilter::new(|_, _| false);
+
+        // Each recognizer family is exercised: install the filter via
+        // the builder, then read it back through the trait method and
+        // call it.
+        let mut tap = TapGestureRecognizer::new(&s);
+        tap.allowed_buttons_filter = Some(always_false());
+        assert!(tap.allowed_buttons_filter().is_some(), "tap surfaces filter");
+        assert!(
+            !tap.allowed_buttons_filter()
+                .unwrap()
+                .call(PointerButtons::PRIMARY, Modifiers::default())
+        );
+
+        let mut dt = DoubleTapGestureRecognizer::new(&s);
+        dt.allowed_buttons_filter = Some(always_false());
+        assert!(dt.allowed_buttons_filter().is_some(), "double_tap surfaces filter");
+
+        let mut lp = LongPressGestureRecognizer::new(&s);
+        lp.allowed_buttons_filter = Some(always_false());
+        assert!(lp.allowed_buttons_filter().is_some(), "long_press surfaces filter");
+
+        let pan = PanGestureRecognizer::new(&s)
+            .with_allowed_buttons_filter(|_, _| false);
+        assert!(pan.allowed_buttons_filter().is_some(), "pan surfaces filter");
+
+        let hdrag = HorizontalDragGestureRecognizer::new(&s)
+            .with_allowed_buttons_filter(|_, _| false);
+        assert!(hdrag.allowed_buttons_filter().is_some(), "hdrag surfaces filter");
+
+        let vdrag = VerticalDragGestureRecognizer::new(&s)
+            .with_allowed_buttons_filter(|_, _| false);
+        assert!(vdrag.allowed_buttons_filter().is_some(), "vdrag surfaces filter");
+
+        let mut scale = ScaleGestureRecognizer::new(&s);
+        scale.allowed_buttons_filter = Some(always_false());
+        assert!(scale.allowed_buttons_filter().is_some(), "scale surfaces filter");
+    }
+
+    /// Default trait body returns `None` — recognizers that opt out
+    /// of `allowed_buttons_filter` (the common case) keep the
+    /// register-recognizer fast-path.
+    #[test]
+    fn allowed_buttons_filter_default_is_none() {
+        use crate::gesture::GestureSettings;
+        let s = GestureSettings::default();
+
+        // No filter installed → `allowed_buttons_filter()` returns
+        // `None`.
+        let tap = TapGestureRecognizer::new(&s);
+        assert!(tap.allowed_buttons_filter().is_none());
+    }
 }
 
 /// Compile-time assertion that `GestureRecognizer` is object-safe.
