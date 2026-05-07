@@ -110,6 +110,25 @@ pub use flui_macros::{
     test,
 };
 pub use geometry::*;
+// Gesture / pointer / hit-test (S07) — core types and arena facade.
+// `GestureArena`, `GestureArenaEntry`, `GestureArenaManager`, and
+// `PointerSanitizer` are deliberately omitted (pub(crate)-only per
+// the S07 T2 review). Per-symbol re-exports follow the S01a.3 flat
+// path discipline; do NOT introduce `pub use gesture::*;` glob.
+pub use gesture::{
+    GestureArenaTeam, GestureBinding, GestureDisposition, GestureRecognizer, GestureSettings,
+    HitTestBehavior, HitTestEntry, HitTestResult, PointerButtons, PointerEvent, PointerId,
+    PointerKind, PointerPhase, PointerSignalEvent, PositionSample, SemanticAction, Velocity,
+    VelocityTracker,
+};
+// Gesture concrete recognizers (S07).
+pub use gesture::recognizers::{
+    DoubleTapDetails, DoubleTapGestureRecognizer, DragEndDetails, DragStartDetails,
+    DragUpdateDetails, HorizontalDragGestureRecognizer, LongPressDetails,
+    LongPressGestureRecognizer, PanGestureRecognizer, ScaleEndDetails, ScaleGestureRecognizer,
+    ScaleStartDetails, ScaleUpdateDetails, TapDetails, TapDownDetails, TapGestureRecognizer,
+    TapUpDetails, VerticalDragGestureRecognizer,
+};
 pub use global::*;
 pub use http_client;
 pub use input::*;
