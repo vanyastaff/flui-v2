@@ -274,8 +274,13 @@ impl GestureBinding {
             timeout_ms = timeout.as_millis() as u64;
             "scheduling arena release timer"
         );
+        // Use `BackgroundExecutor::timer` (not `smol::Timer::after`) so
+        // the test-scheduler's virtual clock — driven by
+        // `TestAppContext::executor().advance_clock` — wakes the timer
+        // deterministically. Mirrors the LongPress timer pattern.
+        let timer_future = cx.background_executor().timer(timeout);
         let task = cx.spawn(async move |async_cx| {
-            smol::Timer::after(timeout).await;
+            timer_future.await;
             let Some(arena_rc) = arena_weak.upgrade() else {
                 log::trace!(
                     target: "flui::gesture::binding",

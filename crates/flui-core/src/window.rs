@@ -4413,12 +4413,36 @@ impl Window {
                 match pe.phase {
                     crate::gesture::PointerPhase::Up => {
                         arena.sweep(pe.pointer_id, self, cx);
-                        // Successful sweep on a held arena: the second
-                        // tap landed and DoubleTap fired. Drop the
-                        // pending release timer so its future cancels.
-                        self.gesture_binding.cancel_arena_hold(pe.pointer_id);
+                        // Cancel the held-arena release timer ONLY
+                        // when the arena has actually resolved on this
+                        // event (a winner was declared, or the arena
+                        // was gc'd entirely). DoubleTap's first `Up`
+                        // transitions the recognizer to `AwaitSecond`
+                        // and the held arena returns no winner — in
+                        // that case the timer must keep running so a
+                        // missing second tap eventually triggers
+                        // `arena.release` after `double_tap_timeout`.
+                        // Cancelling unconditionally on every `Up`
+                        // (the previous behaviour) dropped the timer
+                        // after the first tap and left the arena held
+                        // forever, defeating the whole point of T6.
+                        let resolved = !arena.arenas.iter().any(|(pid, a)| {
+                            *pid == pe.pointer_id && a.winner.is_none() && a.is_open
+                        });
+                        if resolved {
+                            self.gesture_binding.cancel_arena_hold(pe.pointer_id);
+                        }
                     }
                     crate::gesture::PointerPhase::Cancel => {
+                        arena.cancel(pe.pointer_id, self, cx);
+                        self.gesture_binding.cancel_arena_hold(pe.pointer_id);
+                    }
+                    // Device-leave (`MouseExit` translated by
+                    // `dispatch::translate_mouse_exited` after S07.5
+                    // T8). The pointer is gone — cancel any in-flight
+                    // gesture and drop the held-arena timer alongside,
+                    // mirroring the `Cancel` branch.
+                    crate::gesture::PointerPhase::Removed => {
                         arena.cancel(pe.pointer_id, self, cx);
                         self.gesture_binding.cancel_arena_hold(pe.pointer_id);
                     }

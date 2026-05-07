@@ -262,4 +262,18 @@ fn double_tap_timeout_releases_held_arena_without_firing(cx: &mut TestAppContext
         0,
         "timer-driven release must NOT fire on_double_tap (no second tap arrived)"
     );
+    // The previous version of this test only asserted that the
+    // callback did not fire, which would also be satisfied by a
+    // regression where the timer is dropped too early at the first
+    // `Up` (the held arena would just stay held forever, callback
+    // wouldn't fire — wrong reason). Locking the *post-timeout
+    // arena state* ensures the release timer actually ran and
+    // resolved the arena.
+    let active_after_timeout =
+        cx.update(|window, _| window.gesture_binding().active_pointer_count());
+    assert_eq!(
+        active_after_timeout, 0,
+        "release timer must have fired and resolved the held arena \
+         (active_pointer_count drops back to 0)"
+    );
 }
