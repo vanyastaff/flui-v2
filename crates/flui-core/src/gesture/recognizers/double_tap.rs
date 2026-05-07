@@ -32,6 +32,14 @@ enum DoubleTapState {
 }
 
 /// Two-tap recognizer.
+///
+/// Threshold fields ([`Self::touch_slop`], [`Self::double_tap_timeout`],
+/// [`Self::double_tap_min_time`]) are public for symmetry with
+/// [`super::TapGestureRecognizer`] — they can be tuned post-construction.
+/// Honour the documented invariant `double_tap_min_time <
+/// double_tap_timeout`; violating it will silently make the recognizer
+/// reject every Down (the Down arrives within `min_time`, not within
+/// the window). The recognizer does not validate this at runtime.
 #[non_exhaustive]
 pub struct DoubleTapGestureRecognizer {
     /// Fires when both taps complete within the configured window.
@@ -39,9 +47,21 @@ pub struct DoubleTapGestureRecognizer {
         Option<Box<dyn FnMut(DoubleTapDetails, &mut crate::Window, &mut crate::App)>>,
     /// Which button this recognizer accepts. Default primary.
     pub button: PointerButtons,
-    pub(crate) touch_slop: Pixels,
-    pub(crate) double_tap_timeout: Duration,
-    pub(crate) double_tap_min_time: Duration,
+    /// Maximum movement (in logical pixels) between the first Down
+    /// and the second Up before the gesture is rejected. Read from
+    /// [`crate::gesture::GestureSettings::touch_slop`] at construction.
+    pub touch_slop: Pixels,
+    /// Maximum interval between the first Up and the second Down for
+    /// a double-tap to be accepted. Read from
+    /// [`crate::gesture::GestureSettings::double_tap_timeout`] at
+    /// construction. Must be `>` [`Self::double_tap_min_time`].
+    pub double_tap_timeout: Duration,
+    /// Minimum interval between the first Up and the second Down — a
+    /// debounce against jittery hardware that fires two Downs faster
+    /// than a human can intend. Read from
+    /// [`crate::gesture::GestureSettings::double_tap_min_time`] at
+    /// construction. Must be `<` [`Self::double_tap_timeout`].
+    pub double_tap_min_time: Duration,
 
     state: DoubleTapState,
     pointer: Option<PointerId>,
@@ -237,6 +257,19 @@ mod tests {
         s.double_tap_min_time = std::time::Duration::from_millis(0);
         s.double_tap_timeout = std::time::Duration::from_secs(10);
         DoubleTapGestureRecognizer::new(&s)
+    }
+
+    /// Compile-time lock for B2 — threshold fields stay `pub` so
+    /// downstream code can tune them post-construction.
+    #[test]
+    fn double_tap_threshold_fields_are_settable() {
+        let s = GestureSettings::default();
+        let mut r = DoubleTapGestureRecognizer::new(&s);
+        r.touch_slop = crate::Pixels(10.0);
+        r.double_tap_timeout = std::time::Duration::from_millis(400);
+        r.double_tap_min_time = std::time::Duration::from_millis(50);
+        r.button = PointerButtons::SECONDARY;
+        assert_eq!(r.touch_slop.0, 10.0);
     }
 
     #[flui_core::test]

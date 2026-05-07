@@ -35,6 +35,13 @@ pub struct LongPressDetails {
 /// `Up` before timer expires cancels; timer fire calls
 /// `arena.declare_winner` via the stored
 /// `Weak<RefCell<GestureArenaManager>>` back-channel.
+///
+/// Threshold fields ([`Self::timeout`], [`Self::slop`],
+/// [`Self::timer_budget`]) are public for symmetry with
+/// [`super::TapGestureRecognizer`] — they can be tuned
+/// post-construction. The on_* callback fields and these threshold
+/// fields are the full configurable surface; mutating them is
+/// supported and idiomatic.
 #[non_exhaustive]
 pub struct LongPressGestureRecognizer {
     /// Fires when the long-press timer expires (after acceptance).
@@ -48,9 +55,20 @@ pub struct LongPressGestureRecognizer {
         Option<Box<dyn FnMut(LongPressDetails, &mut crate::Window, &mut crate::App)>>,
     /// Which button this recognizer accepts. Default primary.
     pub button: PointerButtons,
-    pub(crate) timeout: Duration,
-    pub(crate) slop: Pixels,
-    pub(crate) timer_budget: Duration,
+    /// Hold duration before the long-press fires. Read from
+    /// [`crate::gesture::GestureSettings::long_press_timeout`] at
+    /// construction (default: 500 ms).
+    pub timeout: Duration,
+    /// Maximum movement (in logical pixels) before the long-press
+    /// gesture is rejected. Read from
+    /// [`crate::gesture::GestureSettings::long_press_slop`] at
+    /// construction (default: 18 logical px).
+    pub slop: Pixels,
+    /// Maximum spawn-to-flush latency budget for the async timer —
+    /// the recognizer warns if exceeded. Read from
+    /// [`crate::gesture::GestureSettings::long_press_timer_budget`] at
+    /// construction (default: 16 ms / one 60 Hz frame).
+    pub timer_budget: Duration,
 
     pointer: Option<PointerId>,
     down_position: Point<Pixels>,
@@ -337,6 +355,24 @@ mod tests {
                     assert!(lp.timer.is_none(), "Cancel drops the timer Task");
                 });
         });
+    }
+
+    /// Compile-time lock for B2 — threshold fields stay `pub` so
+    /// downstream code can tune them post-construction. Changing any
+    /// of these to `pub(crate)` makes this test fail to compile,
+    /// which is the intended canary.
+    #[test]
+    fn long_press_threshold_fields_are_settable() {
+        // GestureSettings::default() is platform-agnostic; this test
+        // does not need a TestAppContext.
+        let s = GestureSettings::default();
+        let mut r = LongPressGestureRecognizer::new(&s);
+        r.timeout = std::time::Duration::from_millis(1000);
+        r.slop = crate::Pixels(10.0);
+        r.timer_budget = std::time::Duration::from_millis(8);
+        r.button = PointerButtons::SECONDARY;
+        // Read back to silence the unused-field-write lint.
+        assert_eq!(r.timeout, std::time::Duration::from_millis(1000));
     }
 
     #[flui_core::test]

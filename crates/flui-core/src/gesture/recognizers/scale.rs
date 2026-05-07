@@ -69,6 +69,10 @@ enum ScaleState {
 }
 
 /// Multi-pointer scale recognizer.
+///
+/// Threshold field [`Self::slop`] is public for symmetry with
+/// [`super::TapGestureRecognizer::touch_slop`] — it can be tuned
+/// post-construction.
 #[non_exhaustive]
 pub struct ScaleGestureRecognizer {
     /// Fires when the gesture is accepted (≥ 2 pointers crossed slop).
@@ -83,7 +87,10 @@ pub struct ScaleGestureRecognizer {
     /// gesture cannot continue without a pair). Carries the final
     /// scale and rotation snapshot.
     pub on_end: Option<Box<dyn FnMut(ScaleEndDetails, &mut crate::Window, &mut crate::App)>>,
-    pub(crate) slop: Pixels,
+    /// Minimum pointer-pair distance change (in logical pixels) before
+    /// the gesture is accepted. Read from
+    /// [`crate::gesture::GestureSettings::touch_slop`] at construction.
+    pub slop: Pixels,
 
     state: ScaleState,
     /// Active pointers, indexed by `PointerId`.
@@ -163,10 +170,21 @@ impl GestureRecognizer for ScaleGestureRecognizer {
         if self.state == ScaleState::Rejected {
             return;
         }
-        if !self.pointers.iter().any(|(id, _)| *id == pointer_id) {
-            self.pointers.push((pointer_id, event.position));
+        // Skip duplicate registrations — a pointer that re-enters the
+        // arena (e.g. via a sanitizer-synthesized re-Down after orphan
+        // detection) keeps its existing position; the next Move
+        // updates it.
+        if self.pointers.iter().any(|(id, _)| *id == pointer_id) {
+            return;
         }
-        if self.pointers.is_empty() {
+        // Single atomic transition: capture the "this is the first
+        // pointer" signal *before* the push so it stays meaningful.
+        // The previous version checked `is_empty()` after the push,
+        // which made the test trivially false and silently kept
+        // `initial_kind` at its `Mouse` default.
+        let is_first_pointer = self.pointers.is_empty();
+        self.pointers.push((pointer_id, event.position));
+        if is_first_pointer {
             self.initial_kind = event.kind;
         }
         if self.pointers.len() >= 2 && self.state == ScaleState::Idle {
@@ -332,6 +350,15 @@ mod tests {
         Point::new(Pixels(x), Pixels(y))
     }
 
+    /// Compile-time lock for B2 — threshold field `slop` stays `pub`.
+    #[test]
+    fn scale_threshold_fields_are_settable() {
+        let s = GestureSettings::default();
+        let mut r = ScaleGestureRecognizer::new(&s);
+        r.slop = Pixels(25.0);
+        assert_eq!(r.slop.0, 25.0);
+    }
+
     #[flui_core::test]
     fn scale_single_pointer_does_not_engage(cx: &mut TestAppContext) {
         let _ = cx.update(|cx| {
@@ -380,6 +407,22 @@ mod tests {
                                 d.focal_point.x.0
                             );
                             assert_eq!(d.pointer_count, 2);
+                            // Regression lock for the scale
+                            // `initial_kind` bug: the recognizer must
+                            // carry the kind of the first pointer
+                            // through to `ScaleStartDetails.kind`.
+                            // The previous `is_empty()` check after
+                            // `pointers.push(...)` was unreachable, so
+                            // `initial_kind` stayed at its `Mouse`
+                            // default for any device.
+                            assert_eq!(
+                                d.kind,
+                                PointerKind::Touch,
+                                "ScaleStartDetails.kind must mirror the \
+                                 first pointer (Touch in this test); the \
+                                 default Mouse means the initial_kind \
+                                 atomic-write fix regressed",
+                            );
                         }));
                     }
                     // p0 at (0,0), p1 at (100,0) → initial distance 100.

@@ -162,17 +162,34 @@
 //! `PointerSignalEvent` via the conversions in
 //! [`dispatch`](self::dispatch).
 
-pub mod arena;
-pub mod arena_team;
-pub mod binding;
+// Submodules are `pub(crate)` so the public surface is **only** the
+// per-symbol `pub use` block below (mirrored by the canonical flat
+// path in `lib.rs`). Without this discipline, downstream code could
+// reach `flui_core::gesture::arena::GestureDisposition` and
+// `flui_core::gesture::recognizers::TapGestureRecognizer` via the
+// module namespace, doubling the public path-set and pulling future
+// `pub` items inside these modules into the semver surface for free.
+pub(crate) mod arena;
+pub(crate) mod arena_team;
+pub(crate) mod binding;
 pub(crate) mod dispatch;
-pub mod gesture_settings;
-pub mod hit_test;
-pub mod pointer_event;
-pub mod pointer_signal;
-pub mod recognizer;
+pub(crate) mod gesture_settings;
+pub(crate) mod hit_test;
+pub(crate) mod pointer_event;
+pub(crate) mod pointer_signal;
+pub(crate) mod recognizer;
+// `recognizers` stays `pub` because the canonical fluent-builder
+// methods on `InteractiveElement` reference recognizer types via
+// `crate::gesture::recognizers::TapDetails` — those references are
+// inside the crate, so `pub(crate)` would also work. We keep `pub`
+// here so the curated `pub use gesture::recognizers::{...}` block in
+// `lib.rs` remains a stable canonical path and downstream consumers
+// have one — and only one — module-qualified alternative
+// (`flui_core::gesture::recognizers::TapGestureRecognizer`) for the
+// `*Details` and recognizer types. The flat `flui_core::*` path is
+// the recommended canonical form.
 pub mod recognizers;
-pub mod velocity_tracker;
+pub(crate) mod velocity_tracker;
 
 // Per-symbol re-exports — kept in sync with the explicit `pub use
 // gesture::{ … }` block in `crates/flui-core/src/lib.rs`. New

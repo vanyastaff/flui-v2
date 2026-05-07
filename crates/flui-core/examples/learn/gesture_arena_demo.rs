@@ -23,12 +23,12 @@
 //!    route `MediaQuery` updates here.)
 //!
 //! 4. **GestureArenaTeam (informational)** — the
-//!    `flui_core::gesture::arena_team::GestureArenaTeam` type
-//!    implements captain-deferred resolution; it does not yet have a
-//!    public registration API on `InteractiveElement` (deferred to a
-//!    future spec — `GestureDetector` / `RawGestureDetector` will
-//!    surface it). The demo shows a placeholder card explaining the
-//!    contract. Property test P6 in `arena_team.rs` covers the rule.
+//!    `flui_core::GestureArenaTeam` type implements captain-deferred
+//!    resolution; it does not yet have a public registration API on
+//!    `InteractiveElement` (deferred to a future spec —
+//!    `GestureDetector` / `RawGestureDetector` will surface it). The
+//!    demo shows a placeholder card explaining the contract. Property
+//!    test P6 in `arena_team.rs` covers the rule.
 //!
 //! Run interactively:
 //!

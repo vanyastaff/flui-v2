@@ -124,6 +124,14 @@ impl DragImpl {
 macro_rules! impl_drag_recognizer {
     ($name:ident, $name_str:expr, $axis:expr) => {
         /// Drag recognizer (axis is determined by the type).
+        ///
+        /// Configure callbacks via [`Self::on_start`] /
+        /// [`Self::on_update`] / [`Self::on_end`]; configure
+        /// thresholds via [`Self::with_pan_slop`] /
+        /// [`Self::with_button`]. The internal `DragImpl` storage is
+        /// `pub(crate)` to keep the field set out of the public
+        /// semver surface — settings flow through these builder
+        /// methods instead.
         #[non_exhaustive]
         pub struct $name {
             inner: DragImpl,
@@ -162,6 +170,22 @@ macro_rules! impl_drag_recognizer {
                 f: impl FnMut(DragEndDetails, &mut crate::Window, &mut crate::App) + 'static,
             ) -> Self {
                 self.inner.on_end = Some(Box::new(f));
+                self
+            }
+
+            /// Override the slop (in logical pixels) at which the
+            /// drag is accepted. Default comes from the
+            /// [`GestureSettings`] passed to [`Self::new`] — typically
+            /// 18 logical pixels.
+            pub fn with_pan_slop(mut self, slop: crate::Pixels) -> Self {
+                self.inner.pan_slop = slop;
+                self
+            }
+
+            /// Override which button arms this recognizer. Default
+            /// [`PointerButtons::PRIMARY`].
+            pub fn with_button(mut self, button: PointerButtons) -> Self {
+                self.inner.button = button;
                 self
             }
         }
@@ -349,6 +373,40 @@ mod tests {
 
     fn pt(x: f32, y: f32) -> Point<Pixels> {
         Point::new(Pixels(x), Pixels(y))
+    }
+
+    /// Compile-time + behaviour lock for B2 — drag-family thresholds
+    /// must be configurable through `with_pan_slop` / `with_button`
+    /// builder methods. Changing those to non-`pub` (or removing
+    /// them) breaks this test. Behaviour: the configured slop wins
+    /// over the `GestureSettings` default.
+    #[flui_core::test]
+    fn drag_threshold_builders_override_default_slop(cx: &mut TestAppContext) {
+        let _ = cx.update(|cx| {
+            cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+                .unwrap()
+                .update(cx, |_, window, cx| {
+                    // Default slop is 18 logical px. Override to 100 px
+                    // — a 50-px move that *would* cross default slop
+                    // should now stay Possible.
+                    let mut pan = PanGestureRecognizer::new(&GestureSettings::default())
+                        .with_pan_slop(crate::Pixels(100.0))
+                        .with_button(PointerButtons::PRIMARY);
+                    let down = pe(PointerPhase::Down, pt(0.0, 0.0), PointerButtons::PRIMARY);
+                    pan.add_pointer(PointerId(0), &down);
+                    let _ = pan.handle_event(&down, window, cx);
+                    let mv = pe(
+                        PointerPhase::Move,
+                        pt(50.0, 50.0),
+                        PointerButtons::PRIMARY,
+                    );
+                    assert_eq!(
+                        pan.handle_event(&mv, window, cx),
+                        GestureDisposition::Possible,
+                        "with_pan_slop(100) keeps a 50-px move below threshold",
+                    );
+                });
+        });
     }
 
     #[flui_core::test]

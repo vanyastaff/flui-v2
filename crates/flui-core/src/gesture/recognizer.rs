@@ -12,7 +12,7 @@ use crate::FocusHandle;
 ///
 /// **Object-safety:** the trait is `dyn`-compatible — verified by use
 /// in `GestureArenaEntry`'s `Rc<RefCell<dyn GestureRecognizer>>` and
-/// by [`assert_object_safe`] below.
+/// by [`__assert_object_safe`] below.
 ///
 /// **Threading:** `?Sync` (and `?Send`) — recognizers self-mutate
 /// from inside arena callbacks on the main thread only.
@@ -123,5 +123,13 @@ mod tests {
 /// Compile-time assertion that `GestureRecognizer` is object-safe.
 /// `Box<dyn GestureRecognizer>` would fail to typecheck if a future
 /// signature change broke object-safety.
+///
+/// The `__` prefix marks this as an internal helper that happens to
+/// be `pub` only because trait-method default bodies in
+/// `crates/flui-core/src/elements/div.rs` reach it across the module
+/// boundary. The function is `#[doc(hidden)]`, but the prefix makes
+/// the intent visible in IDE autocomplete listings — match the
+/// `__internal_*` convention used by the fluent-builder helpers in
+/// `gesture/mod.rs`.
 #[doc(hidden)]
-pub fn assert_object_safe(_: Box<dyn GestureRecognizer>) {}
+pub fn __assert_object_safe(_: Box<dyn GestureRecognizer>) {}

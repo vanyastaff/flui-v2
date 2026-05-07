@@ -106,9 +106,18 @@ pub use element::*;
 pub use elements::*;
 pub use executor::*;
 pub use flui_macros::{
-    AppContext, IntoElement, Render, VisualContext, derive_inspector_reflection, property_test,
-    register_action, test,
+    AppContext, IntoElement, Render, VisualContext, derive_inspector_reflection, register_action,
+    test,
 };
+// `flui_macros::property_test` is intentionally NOT re-exported here.
+// The macro expansion emits `::flui_core::proptest::property_test`,
+// which does not exist in the `proptest = "1"` crate's default
+// feature set — that proc-macro attribute lives in `test-strategy` /
+// `proptest-attr-macro` and is not yet a workspace dependency. Until
+// then, downstream property tests should call `proptest::TestRunner`
+// directly (see the T23 properties in `gesture/arena.rs::tests` for
+// the working pattern). Adding the re-export back is a one-line
+// change once the macro source is wired.
 pub use geometry::*;
 // Gesture / pointer / hit-test (S07) — core types and arena facade.
 // `GestureArena`, `GestureArenaEntry`, `GestureArenaManager`, and

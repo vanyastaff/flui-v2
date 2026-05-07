@@ -23,6 +23,12 @@ use super::{GestureSettings, PointerId};
 /// Per-`Window` types are main-thread-only by construction; do
 /// **not** wrap a `GestureBinding` in `Arc` — the borrow-check
 /// failure points at the `Rc` directly.
+///
+/// `#[non_exhaustive]` for forward-compatibility — future
+/// per-`Window` gesture state (e.g. an explicit
+/// `GestureArenaTeam` registry, an A4-driven `tracing::Span`
+/// handle) can be added without a breaking change.
+#[non_exhaustive]
 pub struct GestureBinding {
     arena: GestureArenaManager,
     settings: GestureSettings,
