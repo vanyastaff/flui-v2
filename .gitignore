@@ -2,6 +2,7 @@
 **/target
 **/cargo-target
 *.wasm
+*.rlib
 
 # IDE and editor
 .DS_Store

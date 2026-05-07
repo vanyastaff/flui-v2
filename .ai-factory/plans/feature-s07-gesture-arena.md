@@ -160,18 +160,44 @@ This makes the `on_tap` / `on_pan_*` / `on_horizontal_drag_*` /
 through the production dispatch path — the public API is no longer
 purely decorative.
 
-### T15.5 follow-up backlog (Copilot review — deferred)
+### T15.5 follow-up backlog (Copilot review — closed by S07.5)
 
-The remaining wiring items are architecturally larger and intentionally
-deferred to a separate PR so this one does not balloon. Each is
-isolated and documented; none of them blocks the runtime path that
-T15 above unlocked.
+All five items below were closed in the S07.5 follow-up PR. See
+`.ai-factory/plans/feature-gesture-s07-t15-followup.md` for the
+implementation plan and `docs/superpowers/specs/2026-05-08-recognizer-extension.md`
+for the contributor-facing recipe that codifies the seam.
 
-- **D — `arena::dispatch` `mem::take` merge.** `arena.arenas.extend(live.arenas.drain(..))` can introduce duplicate `(PointerId, GestureArena)` entries if a recognizer callback adds a sibling registration on the same pointer mid-dispatch. T15's paint-time registration runs **before** dispatch (not from inside a callback), so the duplicate path is currently unreachable in practice — but the merge logic is fragile and should be tightened to merge-by-`PointerId` before any in-callback registration ever lands.
-- **I — DoubleTap `arena.hold` / `arena.release`.** `Window::dispatch_event` sweeps the arena on every `Up`. The first `Up` triggers a sweep that closes the arena before the second `Down` arrives, so `DoubleTapGestureRecognizer` cannot win in the production path. Fix: detect `DoubleTap` participation in dispatch and `arena.hold` after the first `Up`, release on either second tap acceptance or `double_tap_timeout`. (The recognizer itself is correct; only the dispatcher integration is missing.)
-- **K — `MouseExit` → `Removed` semantics.** `dispatch.rs::convert` translates `MouseExitEvent` ("mouse leaves the window") to `PointerPhase::Exit`, but `Exit` is documented as leaving a *hit-test target* (synthesized via `diff_hover`). Retranslate window exit to `PointerPhase::Removed` and let `diff_hover` synthesize per-target `Exit`s on its own. Touch / Stylus integration also passes through this rework.
-- **End-to-end integration test through `Window::dispatch_event`.** A test that drives synthetic `MouseDown`/`MouseUp` `PlatformInput` events through the production path and asserts `on_tap` fires would lock T15. It needs `VisualTestContext` (currently gated behind `test-support`, which transitively requires `wayland` / `x11` features that do not build on Windows). The test will land alongside the workspace-level fix that decouples `test-support` from platform features.
-- **LongPress arena back-channel.** The recognizer's `arena_back_channel` (Weak<RefCell<GestureArenaManager>>) is still unwired — the timer fires but cannot call `arena.declare_winner`. Wiring requires the registration bridge to thread a `Weak<RefCell<...>>` from `GestureBinding` into each `LongPressGestureRecognizer` at registration time.
+- [x] **D — `arena::dispatch` `mem::take` merge.** Replaced
+  `arenas.extend(live.arenas.drain(..))` with
+  `GestureArenaManager::merge_by_pointer_id`, which deduplicates by
+  `PointerId` with an explicit collision policy (entries append,
+  incoming winner wins, `is_open` AND, `is_held` OR). Locked by the
+  `prop_merge_by_pointer_id_no_duplicates` property test.
+- [x] **I — DoubleTap `arena.hold` / `arena.release`.** The
+  dispatcher in `Window::dispatch_event` now calls `arena.hold` on
+  `Down` for any recognizer that opts into
+  `RecognizerLifecycle::needs_arena_hold`, and
+  `GestureBinding::schedule_arena_release` schedules a per-pointer
+  `Task<()>` that calls `arena.release` after `double_tap_timeout`.
+  Cancellation paths drop the timer on second-tap acceptance, on
+  `Cancel` events, and on binding teardown.
+- [x] **K — `MouseExit` → `Removed` semantics.** `translate_mouse_exited`
+  now emits `PointerPhase::Removed`. Per-target leave events stay
+  synthesized via `diff_hover` as `Exit`. Locked by
+  `dispatch::tests::translate_mouse_exit_emits_removed_phase`.
+- [x] **End-to-end integration test through `Window::dispatch_event`.**
+  Lives in `crates/flui-core/tests/gesture_dispatch_integration.rs`,
+  cfg-gated on `test-support`, covers `on_tap`, `on_pan_start`,
+  `on_long_press_start`, and `on_double_tap`. The S07.5 T1 fix that
+  decoupled `test-support` from `wayland`/`x11` unblocked this test
+  on Windows.
+- [x] **LongPress arena back-channel.** `LongPressGestureRecognizer`
+  now stores an opaque `ArenaBackChannel` (Weak-backed handle to the
+  per-window `GestureArenaManager`). The timer task — driven by
+  `BackgroundExecutor::timer` rather than `smol::Timer::after` so
+  test-scheduler `advance_clock` works — upgrades the handle, marks
+  the recognizer accepted, fires `on_long_press_start`, and calls
+  `back_channel.declare_winner`.
 
 ### Closed items
 

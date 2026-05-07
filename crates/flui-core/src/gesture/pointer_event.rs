@@ -71,7 +71,15 @@ pub enum PointerPhase {
     /// The platform / sanitizer cancelled this gesture sequence (e.g.
     /// focus loss, modal switch, orphan-`Down` sanitization).
     Cancel,
-    /// The pointer device left the application.
+    /// The pointer device left the application surface (mouse cursor
+    /// exited the window, multi-touch finger lifted off, stylus left
+    /// the digitizer area). **Per-target** leave events are
+    /// synthesized as [`Self::Exit`] instead — the two phases are
+    /// orthogonal and recognizers must distinguish them:
+    /// - `Removed` = "the device is gone"; recognizers should drop
+    ///   any in-flight gesture for this pointer.
+    /// - `Exit`    = "the pointer moved off this target"; the device
+    ///   is still present, possibly hovering a sibling.
     Removed,
     /// Hover-only motion; no contact, no buttons. Mouse-class only.
     Hover,
@@ -79,7 +87,9 @@ pub enum PointerPhase {
     /// Synthesized from `Hover` by `crate::gesture::dispatch` (frame-to-frame diff).
     Enter,
     /// The pointer left a hit-test target during hover. Synthesized
-    /// from `Hover` by `crate::gesture::dispatch`.
+    /// from `Hover` by `crate::gesture::dispatch`. Distinct from
+    /// [`Self::Removed`] — see that variant's note for the per-target
+    /// vs per-device distinction.
     Exit,
 }
 

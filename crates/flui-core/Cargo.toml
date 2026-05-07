@@ -18,6 +18,13 @@ test-support = [
     "collections/test-support",
     "util/test-support",
     "http_client/test-support",
+]
+# Opt-in superset of `test-support` that also pulls platform feature flags.
+# Use this for integration tests that need real platform code (Linux wayland/x11,
+# etc.). Pure `test-support` stays platform-agnostic so it builds on Windows CI.
+# See `.ai-factory/plans/feature-gesture-s07-t15-followup.md` (T1) for context.
+test-support-with-platform = [
+    "test-support",
     "wayland",
     "x11",
 ]

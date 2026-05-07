@@ -125,10 +125,10 @@ pub use geometry::*;
 // the S07 T2 review). Per-symbol re-exports follow the S01a.3 flat
 // path discipline; do NOT introduce `pub use gesture::*;` glob.
 pub use gesture::{
-    GestureArenaTeam, GestureBinding, GestureDisposition, GestureRecognizer, GestureSettings,
-    HitTestBehavior, HitTestEntry, HitTestResult, PointerButtons, PointerEvent, PointerId,
-    PointerKind, PointerPhase, PointerSignalEvent, PositionSample, SemanticAction, Velocity,
-    VelocityTracker,
+    ArenaBackChannel, GestureArenaTeam, GestureBinding, GestureDisposition, GestureRecognizer,
+    GestureSettings, HitTestBehavior, HitTestEntry, HitTestResult, PointerButtons, PointerEvent,
+    PointerId, PointerKind, PointerPhase, PointerSignalEvent, PositionSample, RecognizerLifecycle,
+    SemanticAction, Velocity, VelocityTracker,
 };
 // Gesture concrete recognizers (S07).
 pub use gesture::recognizers::{

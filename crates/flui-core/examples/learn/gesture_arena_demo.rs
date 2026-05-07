@@ -1,4 +1,13 @@
-//! T18 — `GestureArena` interactive demo (S07).
+//! T18 — `GestureArena` interactive demo (S07 + S07.5).
+//!
+//! After the S07.5 wiring landed, every fluent recognizer in this
+//! demo (`on_tap`, `on_double_tap`, `on_long_press_*`, `on_pan_*`)
+//! actually fires through the production dispatch path:
+//! `Interactivity::paint` → `pending_recognizers` →
+//! `GestureBinding::register_recognizer` → `arena.dispatch` →
+//! callback. Earlier revisions of the demo carried "T15-followup
+//! wiring lands separately" caveats on LongPress / DoubleTap / per-window
+//! settings; those are stale after S07.5 and have been removed.
 //!
 //! Four scenarios share the demo window:
 //!
@@ -373,16 +382,12 @@ impl Render for ArenaTeamCard {
                     .text_color(colors.text)
                     .child("4. GestureArenaTeam (informational)"),
             )
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(colors.disabled)
-                    .child(
-                        "Captain-deferred resolution: members defer Accepted to the captain. \
-                         Public registration via InteractiveElement is deferred (T15 future-work) — \
-                         the contract is locked by property P6 in arena_team.rs.",
-                    ),
-            )
+            .child(div().text_xs().text_color(colors.disabled).child(
+                "Captain-deferred resolution: members defer Accepted to the captain. \
+                         Public registration via InteractiveElement is deferred (a future \
+                         GestureDetector spec will surface it) — the contract is locked by \
+                         property P6 in arena_team.rs.",
+            ))
             .child(
                 div()
                     .px_3()

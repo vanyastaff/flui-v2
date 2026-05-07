@@ -77,6 +77,54 @@
 //! Allocations on the dispatch hot path: zero. `VelocityTracker`
 //! amortizes via a bounded `VecDeque` (max 20 samples by default).
 //!
+//! # S07.5 — completed
+//!
+//! S07.5 closed out the T15.5 backlog the merged S07 PR deferred:
+//!
+//! - **DoubleTap hold/release wired through dispatch.** `arena.hold`
+//!   runs on `Down` for any recognizer that opts into
+//!   [`recognizer::RecognizerLifecycle::needs_arena_hold`]; a
+//!   per-pointer `Task<()>` stored on [`binding::GestureBinding`]
+//!   schedules the deferred `arena.release` after
+//!   `double_tap_timeout`. Cancellation paths drop the timer when
+//!   the second tap accepts, when the arena is cancelled, or when
+//!   the binding itself drops.
+//! - **LongPress timer-driven acceptance.** `LongPress` registers a
+//!   [`arena::ArenaBackChannel`] (a `Weak`-backed handle to the
+//!   per-window `GestureArenaManager`) and the spawned timer task
+//!   upgrades it to call `arena.declare_winner` on expiry. Window
+//!   teardown is a silent no-op via the `Weak` upgrade contract.
+//! - **`merge_by_pointer_id`.** The dispatcher's `mem::take`/restore
+//!   dance now folds callback-time registrations back into the
+//!   snapshot without producing duplicate `(PointerId, GestureArena)`
+//!   pairs. Locked by P-T15.5-A property test.
+//! - **`MouseExit` → `PointerPhase::Removed`.** Per-target leave
+//!   events stay synthesized via [`dispatch::PointerSanitizer::diff_hover`]
+//!   as `Exit`; device-leave is `Removed`. See
+//!   [`pointer_event::PointerPhase`] for the distinction.
+//! - **Per-window settings flow.** `GestureBinding::register_recognizer`
+//!   invokes [`recognizer::RecognizerLifecycle::configure_settings`]
+//!   so `window.gesture_settings_mut()` overrides actually take
+//!   effect for recognizers built via fluent `__internal_on_*`
+//!   helpers (which run inside `render()` and thus previously baked
+//!   in `GestureSettings::default()` at construction).
+//! - **State consolidation.** `Window::gesture_sanitizer` and
+//!   `Window::gesture_pointer_state` are gone; both live inside
+//!   `GestureBinding` now, accessed via `pub(crate)` accessors.
+//! - **`test-support` decoupling.** The feature no longer pulls
+//!   `wayland` + `x11` transitively; opt into
+//!   `test-support-with-platform` for those. Locks Windows CI on
+//!   `cargo check -p flui-core --features test-support`.
+//! - **End-to-end integration test.** Paints a `div()` with each
+//!   public recognizer family and drives `simulate_*` through
+//!   `Window::dispatch_event`, locking the
+//!   `paint → pending_recognizers → register_recognizer →
+//!   arena.dispatch → callback` chain.
+//!
+//! Adding a new recognizer? See
+//! `docs/superpowers/specs/2026-05-08-recognizer-extension.md`
+//! for the canonical recipe.
+//!
 //! # Common pitfalls
 //!
 //! - **Do not call `cx.stop_propagation()` from inside
@@ -195,14 +243,14 @@ pub(crate) mod velocity_tracker;
 // gesture::{ … }` block in `crates/flui-core/src/lib.rs`. New
 // pub items added under `gesture::` MUST be enumerated here.
 
-pub use arena::GestureDisposition;
+pub use arena::{ArenaBackChannel, GestureDisposition};
 pub use arena_team::GestureArenaTeam;
 pub use binding::GestureBinding;
 pub use gesture_settings::GestureSettings;
 pub use hit_test::{HitTestBehavior, HitTestEntry, HitTestResult};
 pub use pointer_event::{PointerButtons, PointerEvent, PointerId, PointerKind, PointerPhase};
 pub use pointer_signal::PointerSignalEvent;
-pub use recognizer::{GestureRecognizer, SemanticAction};
+pub use recognizer::{GestureRecognizer, RecognizerLifecycle, SemanticAction};
 pub use velocity_tracker::{PositionSample, Velocity, VelocityTracker};
 
 // =====================================================================

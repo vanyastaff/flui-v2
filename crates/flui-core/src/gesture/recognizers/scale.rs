@@ -15,7 +15,7 @@
 
 use crate::gesture::{
     GestureDisposition, GestureRecognizer, GestureSettings, PointerEvent, PointerId, PointerKind,
-    PointerPhase,
+    PointerPhase, RecognizerLifecycle,
 };
 use crate::{Pixels, Point};
 use smallvec::SmallVec;
@@ -345,6 +345,16 @@ impl GestureRecognizer for ScaleGestureRecognizer {
         _cx: &mut crate::App,
     ) {
         self.reset();
+    }
+
+    fn lifecycle(&mut self) -> Option<&mut dyn RecognizerLifecycle> {
+        Some(self)
+    }
+}
+
+impl RecognizerLifecycle for ScaleGestureRecognizer {
+    fn configure_settings(&mut self, settings: &GestureSettings) {
+        self.slop = settings.touch_slop;
     }
 }
 

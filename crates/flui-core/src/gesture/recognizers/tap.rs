@@ -8,8 +8,8 @@
 //! See the design doc § "TapGestureRecognizer".
 
 use crate::gesture::{
-    GestureDisposition, GestureRecognizer, PointerButtons, PointerEvent, PointerId, PointerKind,
-    PointerPhase, SemanticAction,
+    GestureDisposition, GestureRecognizer, GestureSettings, PointerButtons, PointerEvent,
+    PointerId, PointerKind, PointerPhase, RecognizerLifecycle, SemanticAction,
 };
 use crate::{FocusHandle, Pixels, Point};
 
@@ -272,6 +272,16 @@ impl GestureRecognizer for TapGestureRecognizer {
 
     fn on_focus_request(&self) -> Option<FocusHandle> {
         self.request_focus_on_tap_down.clone()
+    }
+
+    fn lifecycle(&mut self) -> Option<&mut dyn RecognizerLifecycle> {
+        Some(self)
+    }
+}
+
+impl RecognizerLifecycle for TapGestureRecognizer {
+    fn configure_settings(&mut self, settings: &GestureSettings) {
+        self.touch_slop = settings.touch_slop;
     }
 }
 
