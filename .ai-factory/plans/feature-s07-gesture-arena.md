@@ -150,7 +150,7 @@ Verified by **T22** bench fixture (`cargo run -p flui-core --release --example g
 
 ### Phase F — Tests, bench, demo, rustdoc, roadmap
 
-- [ ] **T16:** Unit tests for arena lifecycle (`crates/flui-core/tests/gesture_arena_lifecycle.rs`): single accept, eager accept, sweep, dispose mid-sequence, hold/release, team captain semantics.
+- [x] **T16:** Unit tests for arena lifecycle (inline `#[cfg(test)] mod tests` in `crates/flui-core/src/gesture/arena.rs` — `pub(crate)` arena types not reachable from `tests/`). 5 lifecycle tests: eager-accept short-circuits, sweep declares first-registered, cancel rejects all, rejected disposition drops entry, hold blocks sweep / release runs deferred sweep. All 5 + the existing 164 lib tests pass.
 - [ ] **T17:** Unit tests per recognizer (`crates/flui-core/tests/gesture_recognizers.rs`): tap variants, double-tap window, long-press timing (synthetic clock), drag slop + axis rejection + velocity, scale focal/zoom math.
 - [ ] **T22:** Performance bench fixture (`crates/flui-core/examples/bench/gesture_arena_bench.rs`) with three sub-benchmarks (`hit_test_8deep`, `arena_tick`, `full_frame_120hz`) and explicit pass/fail thresholds.
 - [ ] **T23:** Property-based tests with `proptest` (`crates/flui-core/tests/gesture_arena_proptest.rs`) — six properties over arena and team state machines.

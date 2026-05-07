@@ -344,3 +344,254 @@ impl GestureArenaManager {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    //! T16 — Arena lifecycle tests.
+    //!
+    //! Each test constructs a real `TestAppContext` + `Window`,
+    //! wires `MockRecognizer`s into a `GestureArenaManager`, and
+    //! verifies state transitions via the recorded `handle_calls`,
+    //! `sweep_calls`, and `rejected_calls` vectors on each mock.
+
+    use super::*;
+    use crate::gesture::{PointerButtons, PointerEvent, PointerId, PointerKind, PointerPhase};
+    use crate::scheduler::Instant;
+    use crate::{
+        self as flui_core, AppContext as _, Context as _, Modifiers, Point, TestAppContext,
+    };
+
+    /// A scriptable mock recognizer. Pops dispositions off
+    /// `script` per `handle_event` call; falls back to `Possible`.
+    /// Records every call to `handle_event`, `sweep_accepted`,
+    /// `rejected` for assertion.
+    struct MockRecognizer {
+        name: &'static str,
+        script: std::collections::VecDeque<GestureDisposition>,
+        handle_calls: Vec<(PointerId, PointerPhase)>,
+        sweep_calls: Vec<PointerId>,
+        rejected_calls: Vec<PointerId>,
+    }
+
+    impl MockRecognizer {
+        fn new(name: &'static str) -> Self {
+            Self {
+                name,
+                script: Default::default(),
+                handle_calls: Vec::new(),
+                sweep_calls: Vec::new(),
+                rejected_calls: Vec::new(),
+            }
+        }
+
+        fn with_script(name: &'static str, script: &[GestureDisposition]) -> Self {
+            let mut r = Self::new(name);
+            r.script = script.iter().copied().collect();
+            r
+        }
+    }
+
+    impl GestureRecognizer for MockRecognizer {
+        fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+            self
+        }
+        fn name(&self) -> &'static str {
+            self.name
+        }
+        fn add_pointer(&mut self, _: PointerId, _: &PointerEvent) {}
+        fn handle_event(
+            &mut self,
+            event: &PointerEvent,
+            _: &mut crate::Window,
+            _: &mut crate::App,
+        ) -> GestureDisposition {
+            self.handle_calls.push((event.pointer_id, event.phase));
+            self.script.pop_front().unwrap_or(GestureDisposition::Possible)
+        }
+        fn sweep_accepted(
+            &mut self,
+            pointer_id: PointerId,
+            _: &mut crate::Window,
+            _: &mut crate::App,
+        ) {
+            self.sweep_calls.push(pointer_id);
+        }
+        fn rejected(
+            &mut self,
+            pointer_id: PointerId,
+            _: &mut crate::Window,
+            _: &mut crate::App,
+        ) {
+            self.rejected_calls.push(pointer_id);
+        }
+    }
+
+    fn pointer_event(phase: PointerPhase) -> PointerEvent {
+        PointerEvent {
+            pointer_id: PointerId(0),
+            kind: PointerKind::Mouse,
+            phase,
+            position: Point::default(),
+            delta: Point::default(),
+            buttons: PointerButtons::PRIMARY,
+            modifiers: Modifiers::default(),
+            timestamp: Instant::now(),
+            pressure: 1.0,
+            tilt: 0.0,
+            orientation: 0.0,
+        }
+    }
+
+    /// Wrap a `MockRecognizer` in the `Rc<RefCell<Box<...>>>` shape
+    /// the arena expects. Returns the wrapped entry plus a shared
+    /// handle for post-dispatch assertion.
+    fn boxed_mock(
+        m: MockRecognizer,
+    ) -> Rc<RefCell<Box<dyn GestureRecognizer>>> {
+        Rc::new(RefCell::new(Box::new(m) as Box<dyn GestureRecognizer>))
+    }
+
+    /// Borrow the mock back out of the arena entry for assertion.
+    fn with_mock<R>(
+        entry: &Rc<RefCell<Box<dyn GestureRecognizer>>>,
+        f: impl FnOnce(&MockRecognizer) -> R,
+    ) -> R {
+        let mut e = entry.borrow_mut();
+        let m = e
+            .as_any_mut()
+            .downcast_mut::<MockRecognizer>()
+            .expect("entry is a MockRecognizer");
+        f(m)
+    }
+
+    #[flui_core::test]
+    fn arena_eager_accept_short_circuits_others(cx: &mut TestAppContext) {
+        let _ = cx.update(|cx| {
+            cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+                .unwrap()
+                .update(cx, |_, window, cx| {
+                    let mut arena = GestureArenaManager::default();
+                    let p = PointerId(0);
+                    let r0 =
+                        boxed_mock(MockRecognizer::with_script("r0", &[GestureDisposition::Accepted]));
+                    let r1 = boxed_mock(MockRecognizer::new("r1"));
+                    arena.add(p, Rc::clone(&r0));
+                    arena.add(p, Rc::clone(&r1));
+                    let evt = pointer_event(PointerPhase::Down);
+                    arena.dispatch(p, &evt, window, cx);
+                    with_mock(&r0, |m| {
+                        assert_eq!(m.handle_calls.len(), 1, "winner saw the event");
+                        assert!(m.rejected_calls.is_empty(), "winner not rejected");
+                    });
+                    with_mock(&r1, |m| {
+                        // Loser may or may not have seen the event before
+                        // r0 accepted (depends on iteration order).
+                        // `dispatch` snapshots in registration order, so
+                        // r0 (idx 0) runs first → r1 doesn't see it.
+                        assert_eq!(
+                            m.rejected_calls,
+                            vec![p],
+                            "loser notified rejected"
+                        );
+                    });
+                });
+        });
+    }
+
+    #[flui_core::test]
+    fn arena_sweep_first_registered_wins_on_up(cx: &mut TestAppContext) {
+        let _ = cx.update(|cx| {
+            cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+                .unwrap()
+                .update(cx, |_, window, cx| {
+                    let mut arena = GestureArenaManager::default();
+                    let p = PointerId(0);
+                    let r0 = boxed_mock(MockRecognizer::new("r0"));
+                    let r1 = boxed_mock(MockRecognizer::new("r1"));
+                    arena.add(p, Rc::clone(&r0));
+                    arena.add(p, Rc::clone(&r1));
+                    arena.sweep(p, window, cx);
+                    with_mock(&r0, |m| {
+                        assert_eq!(m.sweep_calls, vec![p], "first registered swept");
+                        assert!(m.rejected_calls.is_empty());
+                    });
+                    with_mock(&r1, |m| {
+                        assert!(m.sweep_calls.is_empty());
+                        assert_eq!(m.rejected_calls, vec![p], "loser rejected");
+                    });
+                });
+        });
+    }
+
+    #[flui_core::test]
+    fn arena_cancel_rejects_all_entries(cx: &mut TestAppContext) {
+        let _ = cx.update(|cx| {
+            cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+                .unwrap()
+                .update(cx, |_, window, cx| {
+                    let mut arena = GestureArenaManager::default();
+                    let p = PointerId(0);
+                    let r0 = boxed_mock(MockRecognizer::new("r0"));
+                    let r1 = boxed_mock(MockRecognizer::new("r1"));
+                    arena.add(p, Rc::clone(&r0));
+                    arena.add(p, Rc::clone(&r1));
+                    arena.cancel(p, window, cx);
+                    with_mock(&r0, |m| {
+                        assert_eq!(m.rejected_calls, vec![p]);
+                        assert!(m.sweep_calls.is_empty());
+                    });
+                    with_mock(&r1, |m| {
+                        assert_eq!(m.rejected_calls, vec![p]);
+                        assert!(m.sweep_calls.is_empty());
+                    });
+                });
+        });
+    }
+
+    #[flui_core::test]
+    fn arena_rejected_disposition_drops_entry(cx: &mut TestAppContext) {
+        let _ = cx.update(|cx| {
+            cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+                .unwrap()
+                .update(cx, |_, window, cx| {
+                    let mut arena = GestureArenaManager::default();
+                    let p = PointerId(0);
+                    let r0 =
+                        boxed_mock(MockRecognizer::with_script("r0", &[GestureDisposition::Rejected]));
+                    let r1 = boxed_mock(MockRecognizer::new("r1"));
+                    arena.add(p, Rc::clone(&r0));
+                    arena.add(p, Rc::clone(&r1));
+                    let evt = pointer_event(PointerPhase::Move);
+                    arena.dispatch(p, &evt, window, cx);
+                    assert_eq!(
+                        arena.entry_count(p),
+                        1,
+                        "rejected entry dropped from arena"
+                    );
+                });
+        });
+    }
+
+    #[flui_core::test]
+    fn arena_hold_blocks_sweep(cx: &mut TestAppContext) {
+        let _ = cx.update(|cx| {
+            cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+                .unwrap()
+                .update(cx, |_, window, cx| {
+                    let mut arena = GestureArenaManager::default();
+                    let p = PointerId(0);
+                    let r0 = boxed_mock(MockRecognizer::new("r0"));
+                    arena.add(p, Rc::clone(&r0));
+                    arena.hold(p);
+                    arena.sweep(p, window, cx); // no-op while held
+                    with_mock(&r0, |m| {
+                        assert!(m.sweep_calls.is_empty(), "held arena did not sweep");
+                    });
+                    arena.release(p, window, cx); // release runs deferred sweep
+                    with_mock(&r0, |m| {
+                        assert_eq!(m.sweep_calls, vec![p], "released arena swept");
+                    });
+                });
+        });
+    }
+}
