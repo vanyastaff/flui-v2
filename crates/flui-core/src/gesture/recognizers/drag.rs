@@ -15,7 +15,6 @@ use crate::gesture::{
     GestureDisposition, GestureRecognizer, GestureSettings, PointerButtons, PointerEvent,
     PointerId, PointerKind, PointerPhase, PositionSample, Velocity, VelocityTracker,
 };
-use crate::scheduler::Instant;
 use crate::{Pixels, Point};
 
 /// Payload for `on_*_drag_start` callbacks.
@@ -60,12 +59,16 @@ enum DragAxis {
     Vertical,
 }
 
+/// Drag state machine. The previous design carried a terminal
+/// `Rejected` variant, but the recognizer must reset to `Idle`
+/// after every resolution so the same instance can serve subsequent
+/// gestures (Copilot review G/H). Rejection is now expressed by
+/// transitioning to `Idle` together with clearing `pointer`.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum DragState {
     Idle,
     Possible,
     Accepted,
-    Rejected,
 }
 
 struct DragImpl {
@@ -118,6 +121,16 @@ impl DragImpl {
             DragAxis::Horizontal => dy.abs() > slop && dy.abs() > 2.0 * dx.abs(),
             DragAxis::Vertical => dx.abs() > slop && dx.abs() > 2.0 * dy.abs(),
         }
+    }
+
+    /// Internal — drop tracked pointer state and return to `Idle` so
+    /// the recognizer is ready for a fresh drag. Called from every
+    /// terminal path (Up after Accepted, Up before slop crossed,
+    /// axis rejection, Cancel/Removed, arena `rejected`).
+    fn reset(&mut self) {
+        self.state = DragState::Idle;
+        self.pointer = None;
+        self.velocity_tracker.reset();
     }
 }
 
@@ -214,7 +227,7 @@ macro_rules! impl_drag_recognizer {
                 self.inner.velocity_tracker.reset();
                 self.inner
                     .velocity_tracker
-                    .add_position(PositionSample::new(event.position, Instant::now()));
+                    .add_position(PositionSample::new(event.position, event.timestamp));
             }
 
             fn handle_event(
@@ -232,11 +245,11 @@ macro_rules! impl_drag_recognizer {
                         let dy = event.position.y.0 - self.inner.down_position.y.0;
                         self.inner
                             .velocity_tracker
-                            .add_position(PositionSample::new(event.position, Instant::now()));
+                            .add_position(PositionSample::new(event.position, event.timestamp));
 
                         if self.inner.state == DragState::Possible {
                             if self.inner.axis_rejected(dx, dy) {
-                                self.inner.state = DragState::Rejected;
+                                self.inner.reset();
                                 return GestureDisposition::Rejected;
                             }
                             if self.inner.axis_passes_slop(dx, dy) {
@@ -290,15 +303,19 @@ macro_rules! impl_drag_recognizer {
                                     cx,
                                 );
                             }
-                            self.inner.state = DragState::Idle;
+                            // Eager-accept resolves the gesture; reset
+                            // for the next drag.
+                            self.inner.reset();
                             GestureDisposition::Accepted
                         } else {
-                            self.inner.state = DragState::Rejected;
+                            // Up before slop crossed — never won the
+                            // arena. Reset so the next Down works.
+                            self.inner.reset();
                             GestureDisposition::Rejected
                         }
                     }
                     PointerPhase::Cancel | PointerPhase::Removed => {
-                        self.inner.state = DragState::Rejected;
+                        self.inner.reset();
                         GestureDisposition::Rejected
                     }
                     _ => GestureDisposition::Possible,
@@ -312,7 +329,9 @@ macro_rules! impl_drag_recognizer {
                 _cx: &mut crate::App,
             ) {
                 // Drag wins by eager-accept; sweep means slop was
-                // never crossed — no callbacks to fire.
+                // never crossed — no callbacks to fire. Still reset
+                // so we are ready for the next pointer.
+                self.inner.reset();
             }
 
             fn rejected(
@@ -321,7 +340,7 @@ macro_rules! impl_drag_recognizer {
                 _window: &mut crate::Window,
                 _cx: &mut crate::App,
             ) {
-                self.inner.state = DragState::Rejected;
+                self.inner.reset();
             }
         }
     };

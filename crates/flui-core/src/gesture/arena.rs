@@ -353,12 +353,26 @@ impl GestureArenaManager {
         self.gc(pointer_id);
     }
 
-    /// Garbage-collect closed, empty arenas.
+    /// Garbage-collect resolved arenas.
+    ///
+    /// An arena is removed when it is **closed** (`is_open == false`)
+    /// and **not held** (`is_held == false`). The previous version
+    /// only removed empty closed arenas, so a closed-but-non-empty
+    /// arena (the normal post-resolution shape — winners and losers
+    /// stay in `entries` until something explicit clears them, plus
+    /// the post-`cancel` shape that keeps entries while
+    /// `winner == None`) leaked into
+    /// `GestureBinding::active_pointer_count` forever (Copilot
+    /// review E).
+    ///
+    /// Held arenas (`is_held == true`) stay alive past `Up` for
+    /// `DoubleTap`-style multi-Down sequences and only resolve via
+    /// [`Self::release`].
     fn gc(&mut self, pointer_id: PointerId) {
         if let Some(idx) = self
             .arenas
             .iter()
-            .position(|(id, a)| *id == pointer_id && !a.is_open && a.entries.is_empty())
+            .position(|(id, a)| *id == pointer_id && !a.is_open && !a.is_held)
         {
             self.arenas.remove(idx);
         }

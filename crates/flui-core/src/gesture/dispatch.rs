@@ -196,6 +196,13 @@ impl PointerSanitizer {
     /// Translate one `PlatformInput` into a [`PointerSignalEvent`] if
     /// it is a non-competitive signal (scroll, magnify); returns
     /// `None` otherwise.
+    ///
+    /// Currently uncalled from the live dispatch path because the
+    /// legacy `on_scroll_wheel` / `on_pinch` listener chain still
+    /// owns scroll/magnify routing; T15 will introduce a typed
+    /// listener API on `InteractiveElement` and call this method
+    /// from `Window::dispatch_event` (Copilot review C).
+    #[allow(dead_code, reason = "T15 typed scroll/magnify listener target")]
     pub(crate) fn convert_signal(
         &mut self,
         input: &PlatformInput,

@@ -144,6 +144,16 @@ Verified by **T22** bench fixture (`cargo run -p flui-core --release --example g
 ### Phase E — Element + dispatch integration
 
 - [x] **T14:** Extend `Interactivity` with `gesture_recognizers: SmallVec<[Box<dyn GestureRecognizer>; 4]>` AND `hit_test_behavior: HitTestBehavior` (default `Opaque`). Fluent builders on `InteractiveElement`: `with_hit_test_behavior`, `on_tap`, `on_double_tap`, `on_long_press_{start,move,end}`, `on_pan_{start,update,end}`, `on_horizontal_drag_{start,update,end}`, `on_vertical_drag_{start,update,end}`, `on_scale_{start,update,end}`.
+### T15 follow-up backlog (Copilot review)
+
+These deferred items must land together because they all depend on a unified paint-time recognizer-registration bridge:
+
+- **D — `arena::dispatch` `mem::take` merge.** `arena.arenas.extend(live.arenas.drain(..))` can introduce duplicate `(PointerId, GestureArena)` entries if a recognizer callback adds a sibling registration on the same pointer mid-dispatch. Bench shows it cannot happen today (no live caller of `arena.add` from a callback), but T15 paint-time registration *is* a live caller. Fix: merge by `PointerId` (append entries into an existing arena for that pointer) when restoring after `mem::take`. Co-land with T15 wiring.
+- **I — DoubleTap `arena.hold` / `arena.release`.** `Window::dispatch_event` sweeps the arena on every `Up`. With current dispatch, `DoubleTapGestureRecognizer` cannot win because the first `Up` triggers a sweep that closes the arena before the second `Down` arrives. Fix: in T15 paint-time wiring, mark the arena as `held` after a `DoubleTap` recognizer's first `Up` and release on either successful second tap or `double_tap_timeout`. Architectural twin of D — both depend on the registration bridge knowing per-recognizer arena participation.
+- **K — `MouseExit` → `Removed` semantics.** `dispatch.rs::convert` translates `MouseExitEvent` ("mouse leaves the window") to `PointerPhase::Exit`, but `Exit` is documented as leaving a *hit-test target* (synthesized via `diff_hover`). T15 should retranslate window exit to `PointerPhase::Removed` (the documented "device left the application" phase) and let `diff_hover` synthesize per-target `Exit`s on its own. Touch / Stylus integration also goes through this rework.
+
+### Closed items
+
 - [x] **T15 (partial):** Wire arena dispatch into `Window::dispatch_event` after T6 hit-test and T20 sanitization. Call sites for `arena.dispatch` / `arena.sweep` / `arena.cancel` are in place plus the explicit `cx.propagate_event = true;` boundary reset that preserves the `cx.active_drag` / `AnyDrag` contract. **Recognizer registration via `Interactivity::paint`** (the per-element bridge that moves recognizers from `Interactivity::gesture_recognizers` into the arena keyed by hitbox) is a documented T15-follow-up — the `mem::take` dispatch dance is structured so the registration patch lands without touching `dispatch_event`. Raw `on_mouse_*`/`on_click` listeners keep firing in parallel; `PointerSignalEvent` bypasses the arena; all 164 existing tests stay green.
 
 > **Commit checkpoint E — after T14, T15:** `feat(flui-core): wire gesture arena into Interactivity + window dispatch (S07)`

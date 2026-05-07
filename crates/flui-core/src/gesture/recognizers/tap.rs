@@ -51,15 +51,21 @@ pub struct TapDetails {
     pub global_position: Point<Pixels>,
 }
 
-/// State machine: tap starts on `Down`; rejects on `Move > slop` or
-/// `Up` of a different `pointer_id`; eagerly accepts on `Up` within
-/// slop.
+/// State machine — two states only. The previous design carried
+/// terminal `Accepted` / `Rejected` variants, but the recognizer
+/// must reset to `Idle` after any resolution so the same instance
+/// can serve subsequent gestures (Copilot review G/H). Keeping
+/// terminal states stuck the recognizer permanently.
+///
+/// Lifecycle:
+/// - `Idle` — waiting for a `Down` (via `add_pointer`).
+/// - `Down` — observing the in-flight tap; transitions back to
+///   `Idle` on slop reject, on `Up` (eager-accept), or on
+///   `arena.rejected` / `Cancel` / `Removed`.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum TapState {
     Idle,
     Down,
-    Accepted,
-    Rejected,
 }
 
 /// Single-tap recognizer.
@@ -111,6 +117,15 @@ impl TapGestureRecognizer {
             down_position: Point::default(),
             last_kind: PointerKind::Mouse,
         }
+    }
+
+    /// Internal — drop tracked pointer state and return to `Idle` so
+    /// the recognizer is ready for a fresh `add_pointer`. Called from
+    /// every terminal path inside `handle_event`, `sweep_accepted`,
+    /// and `rejected`.
+    fn reset(&mut self) {
+        self.state = TapState::Idle;
+        self.pointer = None;
     }
 }
 
@@ -166,7 +181,9 @@ impl GestureRecognizer for TapGestureRecognizer {
                 let dist_sq = dx * dx + dy * dy;
                 let slop = self.touch_slop.0;
                 if dist_sq > slop * slop {
-                    self.state = TapState::Rejected;
+                    // Self-declared rejection: arena will not call
+                    // `rejected` back on us, so we own the reset.
+                    self.reset();
                     GestureDisposition::Rejected
                 } else {
                     GestureDisposition::Possible
@@ -194,14 +211,17 @@ impl GestureRecognizer for TapGestureRecognizer {
                         cx,
                     );
                 }
-                self.state = TapState::Accepted;
+                // Eager-accept resolves the gesture; arena declares us
+                // winner without further calls. Reset so the recognizer
+                // can serve the next tap on the same element.
+                self.reset();
                 GestureDisposition::Accepted
             }
             PointerPhase::Cancel | PointerPhase::Removed => {
                 if let Some(cb) = self.on_tap_cancel.as_mut() {
                     cb(window, cx);
                 }
-                self.state = TapState::Rejected;
+                self.reset();
                 GestureDisposition::Rejected
             }
             _ => GestureDisposition::Possible,
@@ -214,9 +234,12 @@ impl GestureRecognizer for TapGestureRecognizer {
         window: &mut crate::Window,
         cx: &mut crate::App,
     ) {
-        // Sweep — last competitor on Up. Fire callbacks as if we
-        // accepted (the arena declared us winner).
-        if self.state != TapState::Accepted {
+        // Sweep — last competitor on Up that did not eager-accept
+        // earlier. The arena declared us winner via sweep semantics;
+        // fire `on_tap` once and reset. Guard against double-fire
+        // by checking that we are still tracking a pointer (an
+        // eager-accept Up would have reset us already).
+        if self.pointer.is_some() {
             if let Some(cb) = self.on_tap.as_mut() {
                 cb(
                     TapDetails {
@@ -227,8 +250,8 @@ impl GestureRecognizer for TapGestureRecognizer {
                     cx,
                 );
             }
-            self.state = TapState::Accepted;
         }
+        self.reset();
     }
 
     fn rejected(
@@ -240,7 +263,7 @@ impl GestureRecognizer for TapGestureRecognizer {
         if let Some(cb) = self.on_tap_cancel.as_mut() {
             cb(window, cx);
         }
-        self.state = TapState::Rejected;
+        self.reset();
     }
 
     fn semantic_actions(&self) -> &'static [SemanticAction] {
@@ -418,11 +441,19 @@ mod tests {
                             fired.set(fired.get() + 1);
                         }));
                     }
-                    // Sweep without prior Up — simulates the arena declaring
-                    // us winner via competing-recognizer fallout.
+                    // Realistic flow: arena registers the recognizer via
+                    // `add_pointer` on the Down, then sweeps on Up if
+                    // no other recognizer eager-accepted. The recognizer
+                    // expects `add_pointer` to have run before
+                    // `sweep_accepted` — Copilot-G/H reset tightened the
+                    // contract so an unrequested sweep is a no-op.
+                    let down = pe(PointerPhase::Down, p(0.0, 0.0), PointerButtons::PRIMARY);
+                    tap.add_pointer(PointerId(0), &down);
                     tap.sweep_accepted(PointerId(0), window, cx);
                     assert_eq!(fired.get(), 1, "sweep_accepted fires on_tap once");
-                    // Idempotent — second sweep does not double-fire.
+                    // After sweep, the recognizer is back at Idle, so a
+                    // second sweep without a fresh add_pointer is a
+                    // no-op (no double-fire).
                     tap.sweep_accepted(PointerId(0), window, cx);
                     assert_eq!(fired.get(), 1, "second sweep does not refire");
                 });

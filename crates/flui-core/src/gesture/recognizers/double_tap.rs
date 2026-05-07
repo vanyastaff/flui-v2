@@ -22,13 +22,18 @@ pub struct DoubleTapDetails {
     pub kind: PointerKind,
 }
 
+/// State machine for the two-tap sequence. The previous design
+/// carried a terminal `Rejected` variant, but the recognizer must
+/// reset back to `Idle` after every resolution so the same instance
+/// can serve subsequent gestures (Copilot review G/H). Terminal
+/// rejection is now expressed by transitioning to `Idle` together
+/// with clearing `pointer` / `first_up_time` / `first_position`.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum DoubleTapState {
     Idle,
     FirstDown,
     AwaitSecond,
     SecondDown,
-    Rejected,
 }
 
 /// Two-tap recognizer.
@@ -92,6 +97,17 @@ impl DoubleTapGestureRecognizer {
         let dy = p.y.0 - self.first_position.y.0;
         dx * dx + dy * dy
     }
+
+    /// Internal — drop tracked pointer state and return to `Idle` so
+    /// the recognizer is ready for the next double-tap sequence.
+    /// Called from every terminal path (success, slop reject, timeout
+    /// reject, Cancel, arena `rejected`).
+    fn reset(&mut self) {
+        self.state = DoubleTapState::Idle;
+        self.pointer = None;
+        self.first_up_time = None;
+        self.first_position = Point::default();
+    }
 }
 
 impl GestureRecognizer for DoubleTapGestureRecognizer {
@@ -126,14 +142,20 @@ impl GestureRecognizer for DoubleTapGestureRecognizer {
                     || elapsed > self.double_tap_timeout
                     || self.distance_sq(event.position) > (self.touch_slop.0).powi(2)
                 {
-                    self.state = DoubleTapState::Rejected;
+                    // Out-of-window or out-of-slop second Down ends
+                    // the sequence; reset so the recognizer can start
+                    // fresh on the next first Down.
+                    self.reset();
                     return;
                 }
                 self.pointer = Some(pointer_id);
                 self.last_kind = event.kind;
                 self.state = DoubleTapState::SecondDown;
             }
-            _ => {}
+            // FirstDown / SecondDown — already mid-sequence, ignore
+            // additional `add_pointer` calls (the dispatcher does not
+            // re-add the same pointer mid-gesture).
+            DoubleTapState::FirstDown | DoubleTapState::SecondDown => {}
         }
     }
 
@@ -149,7 +171,7 @@ impl GestureRecognizer for DoubleTapGestureRecognizer {
         match (self.state, event.phase) {
             (DoubleTapState::FirstDown, PointerPhase::Move) => {
                 if self.distance_sq(event.position) > (self.touch_slop.0).powi(2) {
-                    self.state = DoubleTapState::Rejected;
+                    self.reset();
                     return GestureDisposition::Rejected;
                 }
                 GestureDisposition::Possible
@@ -161,7 +183,7 @@ impl GestureRecognizer for DoubleTapGestureRecognizer {
             }
             (DoubleTapState::SecondDown, PointerPhase::Move) => {
                 if self.distance_sq(event.position) > (self.touch_slop.0).powi(2) {
-                    self.state = DoubleTapState::Rejected;
+                    self.reset();
                     return GestureDisposition::Rejected;
                 }
                 GestureDisposition::Possible
@@ -177,11 +199,13 @@ impl GestureRecognizer for DoubleTapGestureRecognizer {
                         cx,
                     );
                 }
-                self.state = DoubleTapState::Idle;
+                // Eager-accept resolves the gesture; reset for the
+                // next double-tap sequence.
+                self.reset();
                 GestureDisposition::Accepted
             }
             (_, PointerPhase::Cancel) => {
-                self.state = DoubleTapState::Rejected;
+                self.reset();
                 GestureDisposition::Rejected
             }
             _ => GestureDisposition::Possible,
@@ -194,10 +218,11 @@ impl GestureRecognizer for DoubleTapGestureRecognizer {
         _window: &mut crate::Window,
         _cx: &mut crate::App,
     ) {
-        // Sweep on Up of the first tap is meaningless for DoubleTap —
-        // we need the second tap. The arena will hold the arena
-        // open via `arena.hold` in T15 wiring; sweep without held
-        // means we missed our chance.
+        // Sweep without a successful second tap means we missed our
+        // chance (single-tap took the win on the first Up because
+        // the arena was not held). Cleanly reset rather than leaking
+        // partial state.
+        self.reset();
     }
 
     fn rejected(
@@ -206,7 +231,7 @@ impl GestureRecognizer for DoubleTapGestureRecognizer {
         _window: &mut crate::Window,
         _cx: &mut crate::App,
     ) {
-        self.state = DoubleTapState::Rejected;
+        self.reset();
     }
 
     fn semantic_actions(&self) -> &'static [SemanticAction] {

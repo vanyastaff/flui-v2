@@ -2221,28 +2221,28 @@ impl Window {
         self.gesture_binding.settings_mut()
     }
 
-    /// Walk the existing committed hit-test list and produce a typed
-    /// `HitTestResult` paired with the recorded `HitTestBehavior` of
-    /// each entry.
+    /// Compute a typed `HitTestResult` for `position` against the
+    /// rendered frame, paired with each entry's `HitTestBehavior`
+    /// from the per-frame [`Self::hit_test_behaviors`] map.
     ///
-    /// Walks `mouse_hit_test.ids` (committed during paint) front-to-back
-    /// (deepest first); each `HitboxId` is paired with its
-    /// `HitTestBehavior` from the per-frame `hit_test_behaviors` map
-    /// (populated by `Interactivity::paint` in T14 of the S07 plan;
-    /// until T14 lands, every entry defaults to
-    /// `HitTestBehavior::Opaque`). The `position` argument is stamped
-    /// on each returned [`HitTestEntry`] without being used to
-    /// re-do the hit test — the existing committed list is the source
-    /// of truth for "which hitboxes are under the pointer".
+    /// Always honours `position`: walks `rendered_frame.hit_test(position)`
+    /// rather than relying on the cached `mouse_hit_test` (which is
+    /// only fresh for the current `mouse_position` and is updated
+    /// downstream inside `dispatch_mouse_event`). This matters in the
+    /// gesture pass that runs **before** `dispatch_mouse_event`:
+    /// recognizers receive a `HitTestResult` for the actual event
+    /// position, not for the previous frame's mouse position
+    /// (Copilot review A).
     ///
-    /// Cost: O(n) over the committed `mouse_hit_test.ids`. Spatial
+    /// Cost: O(n) over hitboxes in the rendered frame. Spatial
     /// indexing (BVH/quadtree) is deferred to a P-track perf
-    /// milestone — current `SmallVec<[HitboxId; 8]>` is sufficient
-    /// for trees of up to ~16 hitboxes typical of `flui-core`
-    /// consumers.
+    /// milestone — current linear scan over `SmallVec<[HitboxId; 8]>`
+    /// is sufficient for trees of up to ~16 hitboxes typical of
+    /// `flui-core` consumers.
     pub fn hit_test(&self, position: Point<Pixels>) -> crate::gesture::HitTestResult {
         let mut result = crate::gesture::HitTestResult::default();
-        for &hitbox_id in self.mouse_hit_test.ids.iter() {
+        let frame_hit = self.rendered_frame.hit_test(position);
+        for &hitbox_id in frame_hit.ids.iter() {
             let behavior = self
                 .hit_test_behaviors
                 .get(&hitbox_id)
@@ -2317,6 +2317,12 @@ impl Window {
         debug_assert!(self.rendered_entity_stack.is_empty());
         self.invalidator.set_dirty(false);
         self.requested_autoscroll = None;
+
+        // Clear the per-frame `HitTestBehavior` map before painting
+        // refills it from `Interactivity::paint` (T14). Without this,
+        // entries from previous frames accumulate forever and stale
+        // behaviors leak across hitbox reuse — Copilot review B.
+        self.hit_test_behaviors.clear();
 
         // Restore the previously-used input handler.
         if let Some(input_handler) = self.platform_window.take_input_handler() {
@@ -4286,13 +4292,24 @@ impl Window {
             let bounds = self.bounds();
             self.gesture_pointer_state.window_bounds = bounds;
 
+            // PointerSignalEvent (Scroll / Magnify) explicitly bypasses
+            // the gesture arena per the design — those events have no
+            // competition semantics. Today the legacy `on_scroll_wheel`
+            // / `on_pinch` listener chain in `dispatch_mouse_event`
+            // below still handles them; T15 will surface a typed
+            // listener API on `InteractiveElement` and dispatch from
+            // this site. Until then we deliberately do not call
+            // `gesture_sanitizer.convert_signal(...)` — Copilot review
+            // C flagged the old `let _signal = ...` as unused work.
+            // The translator method itself stays `pub(crate)` and
+            // covered by `dispatch.rs::tests` so T15 can flip the
+            // wiring in one site without re-discovering its shape.
             let pointer_events = {
                 let Window {
                     gesture_sanitizer,
                     gesture_pointer_state,
                     ..
                 } = self;
-                let _signal = gesture_sanitizer.convert_signal(&event, gesture_pointer_state);
                 gesture_sanitizer.convert(&event, gesture_pointer_state)
             };
 
@@ -4313,7 +4330,18 @@ impl Window {
                         gesture_pointer_state,
                         ..
                     } = self;
-                    let _hover_diff =
+                    // Hover Enter/Exit synthesis. The call mutates
+                    // `state.prior_hover_hitboxes` so the next frame's
+                    // diff is correct, but the returned synthetic
+                    // events are not yet dispatched: T15 will route
+                    // them through arena/hover-listeners in the same
+                    // pass it wires recognizer registration. Leaving
+                    // the state-mutation in place keeps the diff
+                    // bootstrapped — removing it would force the
+                    // first dispatched frame after T15 to compare
+                    // against an empty set and emit a flood of
+                    // spurious Enters. (Copilot review C.)
+                    let _hover_events =
                         gesture_sanitizer.diff_hover(pe, &hit_test, gesture_pointer_state);
                 }
 

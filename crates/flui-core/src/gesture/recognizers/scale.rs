@@ -60,12 +60,16 @@ pub struct ScaleEndDetails {
     pub rotation: f32,
 }
 
+/// Scale state machine. The previous design carried a terminal
+/// `Rejected` variant, but the recognizer must reset to `Idle`
+/// after every resolution so the same instance can serve subsequent
+/// gestures (Copilot review G/H). Rejection now expresses itself by
+/// transitioning to `Idle` together with clearing pointer storage.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum ScaleState {
     Idle,
     Possible,
     Accepted,
-    Rejected,
 }
 
 /// Multi-pointer scale recognizer.
@@ -155,6 +159,30 @@ impl ScaleGestureRecognizer {
             slot.1 = position;
         }
     }
+
+    /// Snapshot the current scale ratio from the active pointer pair.
+    /// Reads `self.pointers` directly (not a snapshot copy), so call
+    /// **before** removing a lifted pointer when constructing
+    /// [`ScaleEndDetails`] — Copilot review F.
+    fn current_scale(&self) -> f32 {
+        if self.initial_distance > f32::EPSILON {
+            self.pair_distance() / self.initial_distance
+        } else {
+            1.0
+        }
+    }
+
+    /// Internal — drop tracked pointers and return to `Idle` so the
+    /// recognizer is ready for a fresh multi-pointer gesture. Called
+    /// from every terminal path (gesture-end, slop fail, Cancel,
+    /// arena `rejected`).
+    fn reset(&mut self) {
+        self.state = ScaleState::Idle;
+        self.pointers.clear();
+        self.initial_distance = 0.0;
+        self.initial_angle = 0.0;
+        self.initial_kind = PointerKind::Mouse;
+    }
 }
 
 impl GestureRecognizer for ScaleGestureRecognizer {
@@ -167,9 +195,6 @@ impl GestureRecognizer for ScaleGestureRecognizer {
     }
 
     fn add_pointer(&mut self, pointer_id: PointerId, event: &PointerEvent) {
-        if self.state == ScaleState::Rejected {
-            return;
-        }
         // Skip duplicate registrations — a pointer that re-enters the
         // arena (e.g. via a sanitizer-synthesized re-Down after orphan
         // detection) keeps its existing position; the next Move
@@ -260,24 +285,40 @@ impl GestureRecognizer for ScaleGestureRecognizer {
                 GestureDisposition::Possible
             }
             PointerPhase::Up | PointerPhase::Cancel | PointerPhase::Removed => {
+                // Detect "the lifted pointer is one of the active
+                // pair" *before* mutating `self.pointers`, then
+                // snapshot `scale`/`rotation` *before* the retain so
+                // the end callback reports the final values rather
+                // than the post-retain `pair_distance() = 0` (Copilot
+                // review F). After the snapshot is captured we
+                // remove the pointer and check whether the gesture is
+                // ending (count < 2) or merely losing one finger of
+                // a > 2 group.
+                let was_tracked = self.pointers.iter().any(|(id, _)| *id == event.pointer_id);
+                let pre_retain_scale = self.current_scale();
+                let pre_retain_rotation = self.pair_angle() - self.initial_angle;
                 self.pointers.retain(|(id, _)| *id != event.pointer_id);
+                if !was_tracked {
+                    return GestureDisposition::Possible;
+                }
                 if self.state == ScaleState::Accepted && self.pointers.len() < 2 {
-                    let cur_distance = self.pair_distance();
-                    let cur_angle = self.pair_angle();
-                    let scale = if self.initial_distance > f32::EPSILON {
-                        cur_distance / self.initial_distance
-                    } else {
-                        1.0
-                    };
-                    let rotation = cur_angle - self.initial_angle;
                     if let Some(cb) = self.on_end.as_mut() {
-                        cb(ScaleEndDetails { scale, rotation }, window, cx);
+                        cb(
+                            ScaleEndDetails {
+                                scale: pre_retain_scale,
+                                rotation: pre_retain_rotation,
+                            },
+                            window,
+                            cx,
+                        );
                     }
-                    self.state = ScaleState::Idle;
+                    // Resolve via reset so the recognizer is ready
+                    // for the next multi-pointer sequence.
+                    self.reset();
                     return GestureDisposition::Accepted;
                 }
                 if self.pointers.is_empty() {
-                    self.state = ScaleState::Idle;
+                    self.reset();
                 }
                 GestureDisposition::Possible
             }
@@ -292,7 +333,9 @@ impl GestureRecognizer for ScaleGestureRecognizer {
         _cx: &mut crate::App,
     ) {
         // Scale wins via eager-accept on slop-crossing; sweep means
-        // we never crossed slop — no callbacks.
+        // we never crossed slop — no callbacks. Reset so the next
+        // multi-pointer sequence starts clean.
+        self.reset();
     }
 
     fn rejected(
@@ -301,8 +344,7 @@ impl GestureRecognizer for ScaleGestureRecognizer {
         _window: &mut crate::Window,
         _cx: &mut crate::App,
     ) {
-        self.state = ScaleState::Rejected;
-        self.pointers.clear();
+        self.reset();
     }
 }
 
