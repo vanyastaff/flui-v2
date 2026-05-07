@@ -104,6 +104,12 @@ pub struct TapGestureRecognizer {
     pointer: Option<PointerId>,
     down_position: Point<Pixels>,
     last_kind: PointerKind,
+    /// `Up`-event details captured when the pointer is released so
+    /// they can be replayed to `on_tap_up` / `on_tap` from
+    /// [`Self::sweep_accepted`] after the arena resolves. `None`
+    /// before any `Up` and after a sweep fires (cleared by
+    /// `reset()`).
+    pending_up: Option<(Point<Pixels>, Point<Pixels>, PointerKind)>,
 }
 
 impl TapGestureRecognizer {
@@ -123,6 +129,7 @@ impl TapGestureRecognizer {
             pointer: None,
             down_position: Point::default(),
             last_kind: PointerKind::Mouse,
+            pending_up: None,
         }
     }
 
@@ -145,6 +152,7 @@ impl TapGestureRecognizer {
     fn reset(&mut self) {
         self.state = TapState::Idle;
         self.pointer = None;
+        self.pending_up = None;
     }
 }
 
@@ -213,32 +221,23 @@ impl GestureRecognizer for TapGestureRecognizer {
                 }
             }
             PointerPhase::Up => {
-                if let Some(cb) = self.on_tap_up.as_mut() {
-                    cb(
-                        TapUpDetails {
-                            global_position: event.global_position(),
-                            local_position: event.local_position,
-                            kind: event.kind(),
-                        },
-                        window,
-                        cx,
-                    );
-                }
-                if let Some(cb) = self.on_tap.as_mut() {
-                    cb(
-                        TapDetails {
-                            kind: event.kind(),
-                            global_position: event.global_position(),
-                        },
-                        window,
-                        cx,
-                    );
-                }
-                // Eager-accept resolves the gesture; arena declares us
-                // winner without further calls. Reset so the recognizer
-                // can serve the next tap on the same element.
-                self.reset();
-                GestureDisposition::Accepted
+                // **Flutter-parity contract.** Tap MUST NOT eagerly
+                // accept on `Up`. If it did, a competing
+                // `DoubleTapGestureRecognizer` on the same element
+                // could never observe the second `Down` — the arena
+                // would have already declared Tap the winner and
+                // `rejected` the DoubleTap. Instead we stash the Up
+                // event here, return `Possible`, and let the arena
+                // resolve via `sweep` (immediate when no recognizer
+                // holds the arena, deferred until
+                // `arena.release` fires when DoubleTap is in play).
+                // `sweep_accepted` replays this stored payload to
+                // `on_tap_up` / `on_tap`. `rejected` (which fires
+                // when DoubleTap wins the second-tap race) clears
+                // it instead.
+                self.pending_up =
+                    Some((event.global_position(), event.local_position, event.kind()));
+                GestureDisposition::Possible
             }
             PointerPhase::Cancel | PointerPhase::Removed => {
                 if let Some(cb) = self.on_tap_cancel.as_mut() {
@@ -257,17 +256,35 @@ impl GestureRecognizer for TapGestureRecognizer {
         window: &mut crate::Window,
         cx: &mut crate::App,
     ) {
-        // Sweep — last competitor on Up that did not eager-accept
-        // earlier. The arena declared us winner via sweep semantics;
-        // fire `on_tap` once and reset. Guard against double-fire
-        // by checking that we are still tracking a pointer (an
-        // eager-accept Up would have reset us already).
-        if self.pointer.is_some() {
+        // Arena declared us the winner via sweep semantics — either
+        // the immediate sweep right after `Up` (no recognizer holds
+        // the arena) or a deferred sweep triggered by
+        // `arena.release` after a `DoubleTap` competitor's
+        // `double_tap_timeout` expires without a second tap.
+        //
+        // We fire `on_tap_up` and `on_tap` with the payload we
+        // stashed in [`Self::handle_event`]'s `Up` branch. If
+        // `pending_up` is `None`, the recognizer was registered but
+        // never saw a corresponding `Up` (e.g. arena cancelled
+        // mid-flight) — fire nothing rather than synthesizing a
+        // bogus position from `down_position`.
+        if let Some((global, local, kind)) = self.pending_up.take() {
+            if let Some(cb) = self.on_tap_up.as_mut() {
+                cb(
+                    TapUpDetails {
+                        global_position: global,
+                        local_position: local,
+                        kind,
+                    },
+                    window,
+                    cx,
+                );
+            }
             if let Some(cb) = self.on_tap.as_mut() {
                 cb(
                     TapDetails {
-                        kind: self.last_kind,
-                        global_position: self.down_position,
+                        kind,
+                        global_position: global,
                     },
                     window,
                     cx,
@@ -354,7 +371,13 @@ mod tests {
     }
 
     #[flui_core::test]
-    fn tap_down_then_up_within_slop_eagerly_accepts(cx: &mut TestAppContext) {
+    fn tap_down_then_up_stays_possible_until_sweep(cx: &mut TestAppContext) {
+        // Flutter-parity contract: Tap does NOT eager-accept on `Up`
+        // — it returns `Possible` and waits for the arena's sweep to
+        // declare it the winner. `on_tap_up` / `on_tap` only fire
+        // from `sweep_accepted`. Eager acceptance would lock out a
+        // competing `DoubleTap` recognizer from ever seeing the
+        // second `Down`.
         let _ = cx.update(|cx| {
             let _ = cx
                 .open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
@@ -378,10 +401,68 @@ mod tests {
                     let up = pe(PointerPhase::Up, p(11.0, 11.0), PointerButtons::default());
                     assert_eq!(
                         tap.handle_event(de(&up), window, cx),
-                        GestureDisposition::Accepted,
-                        "Up within slop eagerly Accepts"
+                        GestureDisposition::Possible,
+                        "Up within slop stays Possible — arena sweep decides the winner",
                     );
-                    assert_eq!(fired.get(), 1, "on_tap fires exactly once");
+                    assert_eq!(fired.get(), 0, "on_tap does not fire from handle_event");
+                    tap.sweep_accepted(PointerId(0), window, cx);
+                    assert_eq!(
+                        fired.get(),
+                        1,
+                        "on_tap fires exactly once from sweep_accepted with the stored Up payload"
+                    );
+                });
+        });
+    }
+
+    /// Regression lock for the user-reported "double_tap never
+    /// fires, every gesture goes to tap" bug. Before this fix Tap
+    /// eagerly accepted on `Up`, which made the arena declare Tap
+    /// the winner and `rejected` the DoubleTap — DoubleTap could
+    /// never observe the second `Down`. After the fix Tap returns
+    /// `Possible`, the arena holds for `double_tap_timeout`, and
+    /// `rejected` (called when DoubleTap eager-accepts the second
+    /// Up) clears the pending payload so `on_tap` never fires.
+    #[flui_core::test]
+    fn tap_rejected_after_pending_up_does_not_fire_callback(cx: &mut TestAppContext) {
+        let _ = cx.update(|cx| {
+            let _ = cx
+                .open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+                .unwrap()
+                .update(cx, |_, window, cx| {
+                    let fired = Rc::new(Cell::new(0u32));
+                    let cancels = Rc::new(Cell::new(0u32));
+                    let mut tap = TapGestureRecognizer::new(&GestureSettings::default());
+                    {
+                        let fired = Rc::clone(&fired);
+                        tap.on_tap = Some(Box::new(move |_d, _w, _c| {
+                            fired.set(fired.get() + 1);
+                        }));
+                    }
+                    {
+                        let cancels = Rc::clone(&cancels);
+                        tap.on_tap_cancel = Some(Box::new(move |_w, _c| {
+                            cancels.set(cancels.get() + 1);
+                        }));
+                    }
+
+                    // Tap registers + sees Up + would-be winner if not
+                    // for a competing recognizer.
+                    let down = pe(PointerPhase::Down, p(0.0, 0.0), PointerButtons::PRIMARY);
+                    tap.add_pointer(PointerId(0), de(&down));
+                    let _ = tap.handle_event(de(&down), window, cx);
+                    let up = pe(PointerPhase::Up, p(0.0, 0.0), PointerButtons::default());
+                    let _ = tap.handle_event(de(&up), window, cx);
+
+                    // DoubleTap eats the second Up — arena calls
+                    // `rejected` on Tap. on_tap MUST NOT fire from
+                    // a subsequent `sweep_accepted` because there
+                    // is no pending payload anymore.
+                    GestureRecognizer::rejected(&mut tap, PointerId(0), window, cx);
+                    tap.sweep_accepted(PointerId(0), window, cx);
+
+                    assert_eq!(fired.get(), 0, "on_tap must NOT fire after rejection");
+                    assert_eq!(cancels.get(), 1, "on_tap_cancel fires on rejection");
                 });
         });
     }
@@ -482,19 +563,23 @@ mod tests {
                             fired.set(fired.get() + 1);
                         }));
                     }
-                    // Realistic flow: arena registers the recognizer via
-                    // `add_pointer` on the Down, then sweeps on Up if
-                    // no other recognizer eager-accepted. The recognizer
-                    // expects `add_pointer` to have run before
-                    // `sweep_accepted` — Copilot-G/H reset tightened the
-                    // contract so an unrequested sweep is a no-op.
+                    // Realistic flow: arena registers the recognizer
+                    // via `add_pointer` on the `Down`, the `Up`
+                    // stashes `pending_up` and returns `Possible`,
+                    // then sweep declares Tap the winner — either
+                    // immediately (no DoubleTap competitor) or
+                    // deferred via `arena.release` after
+                    // `double_tap_timeout` if there was one.
                     let down = pe(PointerPhase::Down, p(0.0, 0.0), PointerButtons::PRIMARY);
                     tap.add_pointer(PointerId(0), de(&down));
+                    let up = pe(PointerPhase::Up, p(0.0, 0.0), PointerButtons::default());
+                    let _ = tap.handle_event(de(&up), window, cx);
                     tap.sweep_accepted(PointerId(0), window, cx);
                     assert_eq!(fired.get(), 1, "sweep_accepted fires on_tap once");
-                    // After sweep, the recognizer is back at Idle, so a
-                    // second sweep without a fresh add_pointer is a
-                    // no-op (no double-fire).
+                    // After sweep, the recognizer is back at Idle and
+                    // `pending_up` is cleared, so a second sweep
+                    // without a fresh add_pointer + Up is a no-op
+                    // (no double-fire).
                     tap.sweep_accepted(PointerId(0), window, cx);
                     assert_eq!(fired.get(), 1, "second sweep does not refire");
                 });

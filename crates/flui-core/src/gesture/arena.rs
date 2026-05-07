@@ -420,6 +420,41 @@ impl GestureArenaManager {
     /// the per-pointer `Weak<RefCell<GestureArenaManager>>` injected
     /// at registration time and calls this method through the
     /// resulting `Rc<RefCell<…>>` borrow.
+    ///
+    /// Force-close a resolved arena. Called by `Window::dispatch_event`
+    /// on the `Up` of a gesture whose winner was declared *outside*
+    /// the synchronous arena dispatch loop — typically via a
+    /// timer-driven `declare_winner` from
+    /// [`super::ArenaBackChannel`] (e.g.
+    /// `LongPressGestureRecognizer`'s timer accepting before `Up`
+    /// arrives).
+    ///
+    /// **Why this exists.** The natural close-on-Up path inside
+    /// `arena.dispatch`'s `accepted_index` block only sets
+    /// `is_open = false` when `hold_count == 0`. When a
+    /// `DoubleTap` (or any `needs_arena_hold = true` recognizer)
+    /// shares the arena, its release timer keeps `hold_count > 0`
+    /// past the gesture's resolution — leaving the arena alive in
+    /// `manager.arenas` even though its winner has been declared
+    /// and every entry is logically dead. Subsequent `Down`s on
+    /// the same `pointer_id` then *append* a fresh batch of
+    /// recognizers to that stale arena, and the user sees stacked
+    /// callbacks (e.g. two `on_long_press_start` firings for what
+    /// is perceptually a single hold).
+    ///
+    /// Call this method when the dispatcher already established
+    /// that the gesture is resolved (winner set, no entry waiting
+    /// for further input). It zeroes `hold_count`, marks the arena
+    /// closed, and gc's it from `manager.arenas` so the next
+    /// `Down` starts a fresh arena.
+    pub(crate) fn close_resolved(&mut self, pointer_id: PointerId) {
+        if let Some((_, arena)) = self.arenas.iter_mut().find(|(id, _)| *id == pointer_id) {
+            arena.is_open = false;
+            arena.hold_count = 0;
+        }
+        self.gc(pointer_id);
+    }
+
     pub(crate) fn declare_winner(
         &mut self,
         pointer_id: PointerId,
@@ -653,6 +688,56 @@ mod tests {
             .downcast_mut::<MockRecognizer>()
             .expect("entry is a MockRecognizer");
         f(m)
+    }
+
+    /// Regression lock for the "long_press fires twice on the second
+    /// long-press" / "tap stops working after a few gestures" bug:
+    /// without `close_resolved`, an arena whose winner was declared
+    /// out-of-band (via a timer-driven `declare_winner` from
+    /// [`super::ArenaBackChannel`]) lingered in `manager.arenas`
+    /// past `Up` because a `DoubleTap`-class recognizer kept
+    /// `hold_count > 0`. Subsequent `Down`s on the same pointer
+    /// then *appended* fresh recognizer entries to that stale
+    /// arena, stacking callbacks for every later gesture.
+    #[flui_core::test]
+    fn close_resolved_evicts_arena_with_pending_hold(cx: &mut TestAppContext) {
+        let _ = cx.update(|cx| {
+            let _ = cx
+                .open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+                .unwrap()
+                .update(cx, |_, _window, _cx| {
+                    let mut arena = GestureArenaManager::default();
+                    let p = PointerId(0);
+                    arena.add(p, boxed_mock(MockRecognizer::new("lp")));
+                    // Simulate a `DoubleTap`-class recognizer that
+                    // pushed `hold_count` and is still waiting on
+                    // its release timer when the gesture resolves.
+                    arena.hold(p);
+                    // Simulate a timer-driven `declare_winner` —
+                    // sets `arena.winner` but cannot drop
+                    // `hold_count` to zero, so `is_open` stays
+                    // `true` under the natural close path.
+                    if let Some((_, a)) = arena.arenas.iter_mut().find(|(id, _)| *id == p) {
+                        a.winner = Some(0);
+                    }
+                    assert_eq!(
+                        arena.arenas.len(),
+                        1,
+                        "pre-condition: arena lingers with hold_count > 0"
+                    );
+
+                    // The dispatcher's `Up`-resolved branch calls
+                    // `close_resolved` after `cancel_arena_hold` to
+                    // force-evict.
+                    arena.close_resolved(p);
+
+                    assert_eq!(
+                        arena.arenas.len(),
+                        0,
+                        "close_resolved must gc the resolved arena even with stale hold_count",
+                    );
+                });
+        });
     }
 
     #[flui_core::test]

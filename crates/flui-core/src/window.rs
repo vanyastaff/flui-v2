@@ -4545,6 +4545,20 @@ impl Window {
                         });
                         if resolved {
                             self.gesture_binding.cancel_arena_hold(pe.pointer_id);
+                            // Force-close arenas that resolved via a
+                            // timer-driven `declare_winner` (LongPress)
+                            // while a `needs_arena_hold` recognizer
+                            // (DoubleTap) was still keeping
+                            // `hold_count > 0`. Without this call the
+                            // arena lingers in `manager.arenas` past
+                            // the gesture's end with `is_open = true`,
+                            // and the next `Down` on the same
+                            // `pointer_id` *appends* fresh recognizer
+                            // entries to it — stacking callbacks for
+                            // every subsequent gesture (e.g. two
+                            // `on_long_press_start` firings for a
+                            // single perceived hold).
+                            arena.close_resolved(pe.pointer_id);
                         }
                     }
                     crate::gesture::PointerPhase::Cancel => {
