@@ -594,4 +594,259 @@ mod tests {
                 });
         });
     }
+
+    // =================================================================
+    // T23 — Property-based tests over the arena state machine.
+    //
+    // Each property samples its strategy via `proptest::TestRunner`
+    // inside a single `#[flui_core::test]` so the recognizers and
+    // arena live in the same `TestAppContext` and `Window`. This is
+    // the workspace-compatible substitute for the `flui_core::
+    // property_test` macro: that macro forwards to
+    // `proptest::property_test`, which is not available in
+    // `proptest = "1"` without an extra crate (`test-strategy` /
+    // `proptest-attr-macro`). Sampling 32 cases per property keeps
+    // CI runtime modest while still exercising the bounded input
+    // space.
+    // =================================================================
+
+    use proptest::test_runner::{Config as ProptestConfig, TestRunner};
+
+    fn proptest_runner() -> TestRunner {
+        TestRunner::new(ProptestConfig {
+            cases: 32,
+            ..ProptestConfig::default()
+        })
+    }
+
+    /// **P1** — `cancel(p)` notifies every entry exactly once with
+    /// `rejected`, regardless of how many recognizers were registered.
+    #[flui_core::test]
+    fn prop_arena_cancel_rejects_all_entries(cx: &mut TestAppContext) {
+        let mut runner = proptest_runner();
+        runner
+            .run(&(1usize..10), |num_entries| {
+                cx.update(|cx| {
+                    cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+                        .unwrap()
+                        .update(cx, |_, window, cx| {
+                            let mut arena = GestureArenaManager::default();
+                            let p = PointerId(0);
+                            let mocks: Vec<_> = (0..num_entries)
+                                .map(|_| boxed_mock(MockRecognizer::new("r")))
+                                .collect();
+                            for m in mocks.iter() {
+                                arena.add(p, Rc::clone(m));
+                            }
+                            arena.cancel(p, window, cx);
+                            for m in mocks.iter() {
+                                with_mock(m, |mock| {
+                                    assert_eq!(
+                                        mock.rejected_calls,
+                                        vec![p],
+                                        "every entry rejected exactly once"
+                                    );
+                                    assert!(mock.sweep_calls.is_empty());
+                                });
+                            }
+                        });
+                });
+                Ok(())
+            })
+            .expect("P1 held for all sampled cases");
+    }
+
+    /// **P2** — eager accept by recognizer at index `accept_idx`
+    /// declares it the winner; every other entry receives `rejected`
+    /// exactly once.
+    #[flui_core::test]
+    fn prop_eager_accept_rejects_all_others(cx: &mut TestAppContext) {
+        let mut runner = proptest_runner();
+        runner
+            .run(&(2usize..8, 0usize..8), |(num_entries, accept_pos)| {
+                let accept_idx = accept_pos % num_entries;
+                cx.update(|cx| {
+                    cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+                        .unwrap()
+                        .update(cx, |_, window, cx| {
+                            let mut arena = GestureArenaManager::default();
+                            let p = PointerId(0);
+                            let mocks: Vec<_> = (0..num_entries)
+                                .map(|i| {
+                                    let script = if i == accept_idx {
+                                        vec![GestureDisposition::Accepted]
+                                    } else {
+                                        vec![]
+                                    };
+                                    boxed_mock(MockRecognizer::with_script("r", &script))
+                                })
+                                .collect();
+                            for m in mocks.iter() {
+                                arena.add(p, Rc::clone(m));
+                            }
+                            let evt = pointer_event(PointerPhase::Down);
+                            arena.dispatch(p, &evt, window, cx);
+                            for (i, m) in mocks.iter().enumerate() {
+                                with_mock(m, |mock| {
+                                    if i == accept_idx {
+                                        assert!(
+                                            mock.rejected_calls.is_empty(),
+                                            "winner is not rejected"
+                                        );
+                                    } else {
+                                        assert_eq!(
+                                            mock.rejected_calls,
+                                            vec![p],
+                                            "loser i={} rejected exactly once",
+                                            i
+                                        );
+                                    }
+                                });
+                            }
+                        });
+                });
+                Ok(())
+            })
+            .expect("P2 held for all sampled cases");
+    }
+
+    /// **P3** — recognizers that return `Rejected` from
+    /// `handle_event` are dropped from the arena's entry list.
+    #[flui_core::test]
+    fn prop_rejected_disposition_drops_entry(cx: &mut TestAppContext) {
+        let mut runner = proptest_runner();
+        runner
+            .run(&(2usize..8, 0usize..8), |(num_entries, reject_pos)| {
+                let reject_idx = reject_pos % num_entries;
+                cx.update(|cx| {
+                    cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+                        .unwrap()
+                        .update(cx, |_, window, cx| {
+                            let mut arena = GestureArenaManager::default();
+                            let p = PointerId(0);
+                            let mocks: Vec<_> = (0..num_entries)
+                                .map(|i| {
+                                    let script = if i == reject_idx {
+                                        vec![GestureDisposition::Rejected]
+                                    } else {
+                                        vec![]
+                                    };
+                                    boxed_mock(MockRecognizer::with_script("r", &script))
+                                })
+                                .collect();
+                            for m in mocks.iter() {
+                                arena.add(p, Rc::clone(m));
+                            }
+                            let evt = pointer_event(PointerPhase::Move);
+                            arena.dispatch(p, &evt, window, cx);
+                            assert_eq!(
+                                arena.entry_count(p),
+                                num_entries - 1,
+                                "exactly one entry dropped after Rejected"
+                            );
+                        });
+                });
+                Ok(())
+            })
+            .expect("P3 held for all sampled cases");
+    }
+
+    /// **P4** — `sweep` declares the first-registered (index 0) entry
+    /// the winner; every other entry receives exactly one `rejected`.
+    #[flui_core::test]
+    fn prop_sweep_first_registered_wins(cx: &mut TestAppContext) {
+        let mut runner = proptest_runner();
+        runner
+            .run(&(1usize..10), |num_entries| {
+                cx.update(|cx| {
+                    cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+                        .unwrap()
+                        .update(cx, |_, window, cx| {
+                            let mut arena = GestureArenaManager::default();
+                            let p = PointerId(0);
+                            let mocks: Vec<_> = (0..num_entries)
+                                .map(|_| boxed_mock(MockRecognizer::new("r")))
+                                .collect();
+                            for m in mocks.iter() {
+                                arena.add(p, Rc::clone(m));
+                            }
+                            arena.sweep(p, window, cx);
+                            for (i, m) in mocks.iter().enumerate() {
+                                with_mock(m, |mock| {
+                                    if i == 0 {
+                                        assert_eq!(
+                                            mock.sweep_calls,
+                                            vec![p],
+                                            "captain sweep_accepted"
+                                        );
+                                        assert!(mock.rejected_calls.is_empty());
+                                    } else {
+                                        assert!(mock.sweep_calls.is_empty());
+                                        assert_eq!(
+                                            mock.rejected_calls,
+                                            vec![p],
+                                            "loser i={} rejected",
+                                            i
+                                        );
+                                    }
+                                });
+                            }
+                        });
+                });
+                Ok(())
+            })
+            .expect("P4 held for all sampled cases");
+    }
+
+    /// **P5** — `hold` blocks `sweep`; `release` runs the deferred
+    /// sweep, declaring the captain.
+    #[flui_core::test]
+    fn prop_hold_blocks_sweep_until_release(cx: &mut TestAppContext) {
+        let mut runner = proptest_runner();
+        runner
+            .run(&(1usize..6), |num_entries| {
+                cx.update(|cx| {
+                    cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+                        .unwrap()
+                        .update(cx, |_, window, cx| {
+                            let mut arena = GestureArenaManager::default();
+                            let p = PointerId(0);
+                            let mocks: Vec<_> = (0..num_entries)
+                                .map(|_| boxed_mock(MockRecognizer::new("r")))
+                                .collect();
+                            for m in mocks.iter() {
+                                arena.add(p, Rc::clone(m));
+                            }
+                            arena.hold(p);
+                            arena.sweep(p, window, cx);
+                            for m in mocks.iter() {
+                                with_mock(m, |mock| {
+                                    assert!(
+                                        mock.sweep_calls.is_empty(),
+                                        "held arena does not sweep"
+                                    );
+                                    assert!(mock.rejected_calls.is_empty());
+                                });
+                            }
+                            arena.release(p, window, cx);
+                            for (i, m) in mocks.iter().enumerate() {
+                                with_mock(m, |mock| {
+                                    if i == 0 {
+                                        assert_eq!(mock.sweep_calls, vec![p]);
+                                    } else {
+                                        assert_eq!(
+                                            mock.rejected_calls,
+                                            vec![p],
+                                            "loser i={} rejected after release",
+                                            i
+                                        );
+                                    }
+                                });
+                            }
+                        });
+                });
+                Ok(())
+            })
+            .expect("P5 held for all sampled cases");
+    }
 }

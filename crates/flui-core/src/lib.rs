@@ -106,8 +106,8 @@ pub use element::*;
 pub use elements::*;
 pub use executor::*;
 pub use flui_macros::{
-    AppContext, IntoElement, Render, VisualContext, derive_inspector_reflection, register_action,
-    test,
+    AppContext, IntoElement, Render, VisualContext, derive_inspector_reflection, property_test,
+    register_action, test,
 };
 pub use geometry::*;
 // Gesture / pointer / hit-test (S07) — core types and arena facade.

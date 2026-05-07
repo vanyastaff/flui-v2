@@ -193,3 +193,155 @@ impl GestureRecognizer for DoubleTapGestureRecognizer {
         DOUBLE_TAP_SEMANTIC_ACTIONS
     }
 }
+
+#[cfg(test)]
+mod tests {
+    //! T17 — Double-tap recognizer unit tests.
+
+    use super::*;
+    use crate::gesture::{
+        GestureSettings, PointerButtons, PointerEvent, PointerId, PointerKind, PointerPhase,
+    };
+    use crate::scheduler::Instant;
+    use crate::{
+        self as flui_core, AppContext as _, Context as _, Modifiers, Pixels, Point,
+        TestAppContext,
+    };
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    fn pe(phase: PointerPhase, pos: Point<Pixels>, buttons: PointerButtons) -> PointerEvent {
+        PointerEvent {
+            pointer_id: PointerId(0),
+            kind: PointerKind::Mouse,
+            phase,
+            position: pos,
+            delta: Point::default(),
+            buttons,
+            modifiers: Modifiers::default(),
+            timestamp: Instant::now(),
+            pressure: 1.0,
+            tilt: 0.0,
+            orientation: 0.0,
+        }
+    }
+
+    fn p(x: f32, y: f32) -> Point<Pixels> {
+        Point::new(Pixels(x), Pixels(y))
+    }
+
+    /// Build a recognizer whose double-tap window is permissive enough
+    /// for synthetic-time tests: `min_time = 0`, `timeout = 10s`.
+    fn permissive_dt() -> DoubleTapGestureRecognizer {
+        let mut s = GestureSettings::default();
+        s.double_tap_min_time = std::time::Duration::from_millis(0);
+        s.double_tap_timeout = std::time::Duration::from_secs(10);
+        DoubleTapGestureRecognizer::new(&s)
+    }
+
+    #[flui_core::test]
+    fn double_tap_two_quick_taps_accept(cx: &mut TestAppContext) {
+        let _ = cx.update(|cx| {
+            cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+                .unwrap()
+                .update(cx, |_, window, cx| {
+                    let fired = Rc::new(Cell::new(0u32));
+                    let mut dt = permissive_dt();
+                    {
+                        let fired = Rc::clone(&fired);
+                        dt.on_double_tap = Some(Box::new(move |_d, _w, _c| {
+                            fired.set(fired.get() + 1);
+                        }));
+                    }
+                    // First tap.
+                    let d1 = pe(PointerPhase::Down, p(0.0, 0.0), PointerButtons::PRIMARY);
+                    dt.add_pointer(PointerId(0), &d1);
+                    assert_eq!(dt.handle_event(&d1, window, cx), GestureDisposition::Possible);
+                    let u1 = pe(PointerPhase::Up, p(0.0, 0.0), PointerButtons::default());
+                    assert_eq!(
+                        dt.handle_event(&u1, window, cx),
+                        GestureDisposition::Possible,
+                        "first Up still Possible (waiting for second tap)"
+                    );
+                    // Second tap.
+                    let d2 = pe(PointerPhase::Down, p(0.0, 0.0), PointerButtons::PRIMARY);
+                    dt.add_pointer(PointerId(0), &d2);
+                    assert_eq!(dt.handle_event(&d2, window, cx), GestureDisposition::Possible);
+                    let u2 = pe(PointerPhase::Up, p(0.0, 0.0), PointerButtons::default());
+                    assert_eq!(
+                        dt.handle_event(&u2, window, cx),
+                        GestureDisposition::Accepted,
+                    );
+                    assert_eq!(fired.get(), 1, "on_double_tap fired exactly once");
+                });
+        });
+    }
+
+    #[flui_core::test]
+    fn double_tap_second_tap_outside_slop_is_rejected(cx: &mut TestAppContext) {
+        let _ = cx.update(|cx| {
+            cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+                .unwrap()
+                .update(cx, |_, window, cx| {
+                    let fired = Rc::new(Cell::new(0u32));
+                    let mut dt = permissive_dt();
+                    {
+                        let fired = Rc::clone(&fired);
+                        dt.on_double_tap = Some(Box::new(move |_d, _w, _c| {
+                            fired.set(fired.get() + 1);
+                        }));
+                    }
+                    let d1 = pe(PointerPhase::Down, p(0.0, 0.0), PointerButtons::PRIMARY);
+                    dt.add_pointer(PointerId(0), &d1);
+                    let _ = dt.handle_event(&d1, window, cx);
+                    let u1 = pe(PointerPhase::Up, p(0.0, 0.0), PointerButtons::default());
+                    let _ = dt.handle_event(&u1, window, cx);
+                    // Second tap arrives 200px away → outside slop.
+                    let d2 = pe(PointerPhase::Down, p(200.0, 0.0), PointerButtons::PRIMARY);
+                    dt.add_pointer(PointerId(0), &d2);
+                    // Once add_pointer rejected, subsequent events stay
+                    // in the rejected state and never fire on_double_tap.
+                    let u2 = pe(PointerPhase::Up, p(200.0, 0.0), PointerButtons::default());
+                    let _ = dt.handle_event(&u2, window, cx);
+                    assert_eq!(fired.get(), 0, "out-of-slop second tap rejected");
+                });
+        });
+    }
+
+    #[flui_core::test]
+    fn double_tap_second_tap_after_timeout_is_rejected(cx: &mut TestAppContext) {
+        let _ = cx.update(|cx| {
+            cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+                .unwrap()
+                .update(cx, |_, window, cx| {
+                    // 1ms timeout — sleeping 5ms guarantees the second
+                    // tap arrives past the window.
+                    let mut s = GestureSettings::default();
+                    s.double_tap_min_time = std::time::Duration::from_millis(0);
+                    s.double_tap_timeout = std::time::Duration::from_millis(1);
+                    let fired = Rc::new(Cell::new(0u32));
+                    let mut dt = DoubleTapGestureRecognizer::new(&s);
+                    {
+                        let fired = Rc::clone(&fired);
+                        dt.on_double_tap = Some(Box::new(move |_d, _w, _c| {
+                            fired.set(fired.get() + 1);
+                        }));
+                    }
+                    let d1 = pe(PointerPhase::Down, p(0.0, 0.0), PointerButtons::PRIMARY);
+                    dt.add_pointer(PointerId(0), &d1);
+                    let _ = dt.handle_event(&d1, window, cx);
+                    let u1 = pe(PointerPhase::Up, p(0.0, 0.0), PointerButtons::default());
+                    let _ = dt.handle_event(&u1, window, cx);
+                    // Sleep past the 1ms window. Real-clock sleep on the
+                    // test thread is fine — TestAppContext does not pause
+                    // wall-clock time.
+                    std::thread::sleep(std::time::Duration::from_millis(15));
+                    let d2 = pe(PointerPhase::Down, p(0.0, 0.0), PointerButtons::PRIMARY);
+                    dt.add_pointer(PointerId(0), &d2);
+                    let u2 = pe(PointerPhase::Up, p(0.0, 0.0), PointerButtons::default());
+                    let _ = dt.handle_event(&u2, window, cx);
+                    assert_eq!(fired.get(), 0, "second tap past timeout rejected");
+                });
+        });
+    }
+}

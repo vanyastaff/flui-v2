@@ -71,8 +71,17 @@ enum ScaleState {
 /// Multi-pointer scale recognizer.
 #[non_exhaustive]
 pub struct ScaleGestureRecognizer {
+    /// Fires when the gesture is accepted (≥ 2 pointers crossed slop).
+    /// Carries the focal point and pointer count at acceptance time.
     pub on_start: Option<Box<dyn FnMut(ScaleStartDetails, &mut crate::Window, &mut crate::App)>>,
+    /// Fires on every pointer-Move while the gesture is active.
+    /// Carries the current scale ratio (relative to the initial
+    /// pointer pair distance) and rotation in radians (always 0.0
+    /// on current desktop platforms).
     pub on_update: Option<Box<dyn FnMut(ScaleUpdateDetails, &mut crate::Window, &mut crate::App)>>,
+    /// Fires when the active pointer count drops below 2 (the
+    /// gesture cannot continue without a pair). Carries the final
+    /// scale and rotation snapshot.
     pub on_end: Option<Box<dyn FnMut(ScaleEndDetails, &mut crate::Window, &mut crate::App)>>,
     pub(crate) slop: Pixels,
 
@@ -280,5 +289,178 @@ impl GestureRecognizer for ScaleGestureRecognizer {
     ) {
         self.state = ScaleState::Rejected;
         self.pointers.clear();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! T17 — Scale recognizer unit tests.
+
+    use super::*;
+    use crate::gesture::{
+        GestureSettings, PointerButtons, PointerEvent, PointerId, PointerKind, PointerPhase,
+    };
+    use crate::scheduler::Instant;
+    use crate::{
+        self as flui_core, AppContext as _, Context as _, Modifiers, TestAppContext,
+    };
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    fn pe(
+        id: u64,
+        phase: PointerPhase,
+        pos: Point<Pixels>,
+        buttons: PointerButtons,
+    ) -> PointerEvent {
+        PointerEvent {
+            pointer_id: PointerId(id),
+            kind: PointerKind::Touch,
+            phase,
+            position: pos,
+            delta: Point::default(),
+            buttons,
+            modifiers: Modifiers::default(),
+            timestamp: Instant::now(),
+            pressure: 1.0,
+            tilt: 0.0,
+            orientation: 0.0,
+        }
+    }
+
+    fn pt(x: f32, y: f32) -> Point<Pixels> {
+        Point::new(Pixels(x), Pixels(y))
+    }
+
+    #[flui_core::test]
+    fn scale_single_pointer_does_not_engage(cx: &mut TestAppContext) {
+        let _ = cx.update(|cx| {
+            cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+                .unwrap()
+                .update(cx, |_, window, cx| {
+                    let starts = Rc::new(Cell::new(0u32));
+                    let mut scale = ScaleGestureRecognizer::new(&GestureSettings::default());
+                    {
+                        let starts = Rc::clone(&starts);
+                        scale.on_start = Some(Box::new(move |_d, _w, _c| {
+                            starts.set(starts.get() + 1);
+                        }));
+                    }
+                    let d = pe(0, PointerPhase::Down, pt(0.0, 0.0), PointerButtons::PRIMARY);
+                    scale.add_pointer(PointerId(0), &d);
+                    let mv = pe(0, PointerPhase::Move, pt(50.0, 50.0), PointerButtons::PRIMARY);
+                    assert_eq!(
+                        scale.handle_event(&mv, window, cx),
+                        GestureDisposition::Possible,
+                        "single-pointer scale must not engage"
+                    );
+                    assert_eq!(starts.get(), 0);
+                });
+        });
+    }
+
+    #[flui_core::test]
+    fn scale_two_pointers_diverging_accepts_after_slop(cx: &mut TestAppContext) {
+        let _ = cx.update(|cx| {
+            cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+                .unwrap()
+                .update(cx, |_, window, cx| {
+                    let starts = Rc::new(Cell::new(0u32));
+                    let mut scale = ScaleGestureRecognizer::new(&GestureSettings::default());
+                    {
+                        let starts = Rc::clone(&starts);
+                        scale.on_start = Some(Box::new(move |d, _w, _c| {
+                            starts.set(starts.get() + 1);
+                            // After Move that crosses slop, focal_point
+                            // is the average of the *current* pointer
+                            // positions: (0,0) and (150,0) → (75,0).
+                            assert!(
+                                (d.focal_point.x.0 - 75.0).abs() < 1e-3,
+                                "expected focal.x=75, got {}",
+                                d.focal_point.x.0
+                            );
+                            assert_eq!(d.pointer_count, 2);
+                        }));
+                    }
+                    // p0 at (0,0), p1 at (100,0) → initial distance 100.
+                    let d0 = pe(0, PointerPhase::Down, pt(0.0, 0.0), PointerButtons::PRIMARY);
+                    let d1 = pe(1, PointerPhase::Down, pt(100.0, 0.0), PointerButtons::PRIMARY);
+                    scale.add_pointer(PointerId(0), &d0);
+                    scale.add_pointer(PointerId(1), &d1);
+                    // Move p1 outward to 150 → new distance 150 → delta 50 > slop 18.
+                    let m1 = pe(1, PointerPhase::Move, pt(150.0, 0.0), PointerButtons::PRIMARY);
+                    assert_eq!(
+                        scale.handle_event(&m1, window, cx),
+                        GestureDisposition::Accepted,
+                    );
+                    assert_eq!(starts.get(), 1);
+                });
+        });
+    }
+
+    #[flui_core::test]
+    fn scale_update_computes_correct_zoom_ratio(cx: &mut TestAppContext) {
+        let _ = cx.update(|cx| {
+            cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+                .unwrap()
+                .update(cx, |_, window, cx| {
+                    let last_scale: Rc<Cell<f32>> = Rc::new(Cell::new(1.0));
+                    let mut scale = ScaleGestureRecognizer::new(&GestureSettings::default());
+                    {
+                        let last = Rc::clone(&last_scale);
+                        scale.on_update = Some(Box::new(move |d, _w, _c| {
+                            last.set(d.scale);
+                        }));
+                    }
+                    let d0 = pe(0, PointerPhase::Down, pt(0.0, 0.0), PointerButtons::PRIMARY);
+                    let d1 = pe(1, PointerPhase::Down, pt(100.0, 0.0), PointerButtons::PRIMARY);
+                    scale.add_pointer(PointerId(0), &d0);
+                    scale.add_pointer(PointerId(1), &d1);
+                    // Slop crossing → Accepted (no on_update yet).
+                    let m1a = pe(1, PointerPhase::Move, pt(150.0, 0.0), PointerButtons::PRIMARY);
+                    let _ = scale.handle_event(&m1a, window, cx);
+                    // Now in Accepted; move p1 to 200 → distance 200, ratio 2.0.
+                    let m1b = pe(1, PointerPhase::Move, pt(200.0, 0.0), PointerButtons::PRIMARY);
+                    let _ = scale.handle_event(&m1b, window, cx);
+                    let s = last_scale.get();
+                    assert!(
+                        (s - 2.0).abs() < 1e-3,
+                        "expected scale = 2.0 after distance 100→200, got {}",
+                        s
+                    );
+                });
+        });
+    }
+
+    #[flui_core::test]
+    fn scale_end_fires_when_pointer_count_drops_below_two(cx: &mut TestAppContext) {
+        let _ = cx.update(|cx| {
+            cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+                .unwrap()
+                .update(cx, |_, window, cx| {
+                    let ends = Rc::new(Cell::new(0u32));
+                    let mut scale = ScaleGestureRecognizer::new(&GestureSettings::default());
+                    {
+                        let ends = Rc::clone(&ends);
+                        scale.on_end = Some(Box::new(move |_d, _w, _c| {
+                            ends.set(ends.get() + 1);
+                        }));
+                    }
+                    let d0 = pe(0, PointerPhase::Down, pt(0.0, 0.0), PointerButtons::PRIMARY);
+                    let d1 = pe(1, PointerPhase::Down, pt(100.0, 0.0), PointerButtons::PRIMARY);
+                    scale.add_pointer(PointerId(0), &d0);
+                    scale.add_pointer(PointerId(1), &d1);
+                    // Cross slop to enter Accepted.
+                    let m1 = pe(1, PointerPhase::Move, pt(150.0, 0.0), PointerButtons::PRIMARY);
+                    let _ = scale.handle_event(&m1, window, cx);
+                    // Lift p1 → pointer_count drops to 1 → on_end fires.
+                    let up = pe(1, PointerPhase::Up, pt(150.0, 0.0), PointerButtons::default());
+                    assert_eq!(
+                        scale.handle_event(&up, window, cx),
+                        GestureDisposition::Accepted,
+                    );
+                    assert_eq!(ends.get(), 1);
+                });
+        });
     }
 }

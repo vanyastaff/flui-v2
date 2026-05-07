@@ -66,3 +66,101 @@ impl GestureArenaTeam {
         self.members.len()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    //! T23 — Property test for the arena-team `resolve_member` rule.
+    //!
+    //! `resolve_member` is a pure function over `(is_captain,
+    //! reported)`; we exercise the whole `(bool × {Accepted, Rejected,
+    //! Possible})` cartesian product via `proptest::TestRunner` to
+    //! lock the captain-deferral contract.
+
+    use super::*;
+    use crate::gesture::{PointerEvent, PointerId};
+    use proptest::test_runner::{Config, TestRunner};
+
+    /// Map a 0..3 selector to a `GestureDisposition`. Stable order so
+    /// proptest's shrinker can converge predictably.
+    fn disposition_from_u8(v: u8) -> GestureDisposition {
+        match v % 3 {
+            0 => GestureDisposition::Accepted,
+            1 => GestureDisposition::Rejected,
+            _ => GestureDisposition::Possible,
+        }
+    }
+
+    /// Minimal recognizer stub used to construct a `GestureArenaTeam`
+    /// in property tests. The captain identity is irrelevant for the
+    /// pure `resolve_member` function under test.
+    struct Stub;
+    impl GestureRecognizer for Stub {
+        fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+            self
+        }
+        fn name(&self) -> &'static str {
+            "stub"
+        }
+        fn add_pointer(&mut self, _: PointerId, _: &PointerEvent) {}
+        fn handle_event(
+            &mut self,
+            _: &PointerEvent,
+            _: &mut crate::Window,
+            _: &mut crate::App,
+        ) -> GestureDisposition {
+            GestureDisposition::Possible
+        }
+        fn sweep_accepted(&mut self, _: PointerId, _: &mut crate::Window, _: &mut crate::App) {}
+        fn rejected(&mut self, _: PointerId, _: &mut crate::Window, _: &mut crate::App) {}
+    }
+
+    /// **P6** — `resolve_member` invariants:
+    ///   - captain reports passthrough (returns the same value)
+    ///   - non-captain `Accepted` → `Possible` (deferred to captain)
+    ///   - non-captain `Rejected` → `Rejected`
+    ///   - non-captain `Possible` → `Possible`
+    #[test]
+    fn prop_team_resolve_member_invariants() {
+        let mut runner = TestRunner::new(Config {
+            cases: 64,
+            ..Config::default()
+        });
+        runner
+            .run(
+                &(proptest::bool::ANY, 0u8..3),
+                |(is_captain, reported_sel)| {
+                    let reported = disposition_from_u8(reported_sel);
+                    let team = GestureArenaTeam::with_captain(Box::new(Stub));
+                    let resolved = team.resolve_member(is_captain, reported);
+
+                    if is_captain {
+                        assert_eq!(
+                            resolved, reported,
+                            "captain disposition must pass through"
+                        );
+                    } else {
+                        match reported {
+                            GestureDisposition::Accepted => assert_eq!(
+                                resolved,
+                                GestureDisposition::Possible,
+                                "member Accepted must coerce to Possible"
+                            ),
+                            GestureDisposition::Rejected => assert_eq!(
+                                resolved,
+                                GestureDisposition::Rejected,
+                                "member Rejected stays Rejected"
+                            ),
+                            GestureDisposition::Possible => assert_eq!(
+                                resolved,
+                                GestureDisposition::Possible,
+                                "member Possible stays Possible"
+                            ),
+                            _ => {}
+                        }
+                    }
+                    Ok(())
+                },
+            )
+            .expect("P6 held for all sampled cases");
+    }
+}

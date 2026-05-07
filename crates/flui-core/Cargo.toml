@@ -313,6 +313,10 @@ path = "examples/learn/animation.rs"
 name = "text"
 path = "examples/learn/text.rs"
 
+[[example]]
+name = "gesture_arena_demo"
+path = "examples/learn/gesture_arena_demo.rs"
+
 # ============================================================================
 # Bench Examples
 # ============================================================================
@@ -332,6 +336,10 @@ path = "examples/bench/pattern.rs"
 [[example]]
 name = "shadow"
 path = "examples/bench/shadow.rs"
+
+[[example]]
+name = "gesture_arena_bench"
+path = "examples/bench/gesture_arena_bench.rs"
 
 # ============================================================================
 # Legacy Examples

@@ -228,3 +228,132 @@ impl Drop for LongPressGestureRecognizer {
         // contract (and so future Drop logic has a place to land).
     }
 }
+
+#[cfg(test)]
+mod tests {
+    //! T17 — Long-press recognizer unit tests.
+    //!
+    //! `LongPressGestureRecognizer` accepts via timer-driven
+    //! `declare_winner` (T15-wired through `arena_back_channel`); these
+    //! tests exercise the synchronous state-machine paths that gate
+    //! whether the timer is allowed to fire.
+
+    use super::*;
+    use crate::gesture::{
+        GestureSettings, PointerButtons, PointerEvent, PointerId, PointerKind, PointerPhase,
+    };
+    use crate::scheduler::Instant;
+    use crate::{
+        self as flui_core, AppContext as _, Context as _, Modifiers, Pixels, Point,
+        TestAppContext,
+    };
+
+    fn pe(phase: PointerPhase, pos: Point<Pixels>, buttons: PointerButtons) -> PointerEvent {
+        PointerEvent {
+            pointer_id: PointerId(0),
+            kind: PointerKind::Mouse,
+            phase,
+            position: pos,
+            delta: Point::default(),
+            buttons,
+            modifiers: Modifiers::default(),
+            timestamp: Instant::now(),
+            pressure: 1.0,
+            tilt: 0.0,
+            orientation: 0.0,
+        }
+    }
+
+    fn p(x: f32, y: f32) -> Point<Pixels> {
+        Point::new(Pixels(x), Pixels(y))
+    }
+
+    #[flui_core::test]
+    fn long_press_move_beyond_slop_rejects_and_cancels_timer(cx: &mut TestAppContext) {
+        let _ = cx.update(|cx| {
+            cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+                .unwrap()
+                .update(cx, |_, window, cx| {
+                    let mut lp = LongPressGestureRecognizer::new(&GestureSettings::default());
+                    let down = pe(PointerPhase::Down, p(0.0, 0.0), PointerButtons::PRIMARY);
+                    lp.add_pointer(PointerId(0), &down);
+                    assert_eq!(
+                        lp.handle_event(&down, window, cx),
+                        GestureDisposition::Possible
+                    );
+                    assert!(lp.timer.is_some(), "Down schedules a timer");
+                    let mv = pe(
+                        PointerPhase::Move,
+                        p(100.0, 0.0),
+                        PointerButtons::PRIMARY,
+                    );
+                    assert_eq!(
+                        lp.handle_event(&mv, window, cx),
+                        GestureDisposition::Rejected,
+                    );
+                    assert!(
+                        lp.timer.is_none(),
+                        "drop-on-cancel pattern: rejecting clears the timer Task"
+                    );
+                });
+        });
+    }
+
+    #[flui_core::test]
+    fn long_press_up_before_accept_rejects(cx: &mut TestAppContext) {
+        let _ = cx.update(|cx| {
+            cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+                .unwrap()
+                .update(cx, |_, window, cx| {
+                    let mut lp = LongPressGestureRecognizer::new(&GestureSettings::default());
+                    let down = pe(PointerPhase::Down, p(0.0, 0.0), PointerButtons::PRIMARY);
+                    lp.add_pointer(PointerId(0), &down);
+                    let _ = lp.handle_event(&down, window, cx);
+                    let up = pe(PointerPhase::Up, p(0.0, 0.0), PointerButtons::default());
+                    assert_eq!(
+                        lp.handle_event(&up, window, cx),
+                        GestureDisposition::Rejected,
+                        "Up before timer-accept rejects (no premature acceptance)"
+                    );
+                });
+        });
+    }
+
+    #[flui_core::test]
+    fn long_press_cancel_phase_rejects_and_drops_timer(cx: &mut TestAppContext) {
+        let _ = cx.update(|cx| {
+            cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+                .unwrap()
+                .update(cx, |_, window, cx| {
+                    let mut lp = LongPressGestureRecognizer::new(&GestureSettings::default());
+                    let down = pe(PointerPhase::Down, p(0.0, 0.0), PointerButtons::PRIMARY);
+                    lp.add_pointer(PointerId(0), &down);
+                    let _ = lp.handle_event(&down, window, cx);
+                    let cancel = pe(PointerPhase::Cancel, p(0.0, 0.0), PointerButtons::default());
+                    assert_eq!(
+                        lp.handle_event(&cancel, window, cx),
+                        GestureDisposition::Rejected,
+                    );
+                    assert!(lp.timer.is_none(), "Cancel drops the timer Task");
+                });
+        });
+    }
+
+    #[flui_core::test]
+    fn long_press_rejected_callback_clears_state(cx: &mut TestAppContext) {
+        let _ = cx.update(|cx| {
+            cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+                .unwrap()
+                .update(cx, |_, window, cx| {
+                    let mut lp = LongPressGestureRecognizer::new(&GestureSettings::default());
+                    let down = pe(PointerPhase::Down, p(0.0, 0.0), PointerButtons::PRIMARY);
+                    lp.add_pointer(PointerId(0), &down);
+                    let _ = lp.handle_event(&down, window, cx);
+                    lp.accepted = true; // simulate timer firing
+                    GestureRecognizer::rejected(&mut lp, PointerId(0), window, cx);
+                    assert!(lp.timer.is_none(), "rejected drops the timer");
+                    assert!(!lp.accepted, "rejected resets the accepted flag");
+                });
+        });
+    }
+}
