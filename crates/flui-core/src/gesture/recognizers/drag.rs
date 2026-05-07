@@ -13,7 +13,8 @@
 
 use crate::gesture::{
     GestureDisposition, GestureRecognizer, GestureSettings, PointerButtons, PointerEvent,
-    PointerId, PointerKind, PointerPhase, PositionSample, Velocity, VelocityTracker,
+    PointerId, PointerKind, PointerPhase, PositionSample, RecognizerLifecycle, Velocity,
+    VelocityTracker,
 };
 use crate::{Pixels, Point};
 
@@ -341,6 +342,18 @@ macro_rules! impl_drag_recognizer {
                 _cx: &mut crate::App,
             ) {
                 self.inner.reset();
+            }
+
+            fn lifecycle(&mut self) -> Option<&mut dyn RecognizerLifecycle> {
+                Some(self)
+            }
+        }
+
+        impl RecognizerLifecycle for $name {
+            fn configure_settings(&mut self, settings: &GestureSettings) {
+                // The private `DragImpl` is the canonical settings home;
+                // reach through `inner` like `with_pan_slop` does.
+                self.inner.pan_slop = settings.pan_slop;
             }
         }
     };

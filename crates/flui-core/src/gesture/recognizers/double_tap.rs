@@ -3,8 +3,8 @@
 //! See the design doc § "DoubleTapGestureRecognizer".
 
 use crate::gesture::{
-    GestureDisposition, GestureRecognizer, PointerButtons, PointerEvent, PointerId, PointerKind,
-    PointerPhase, SemanticAction,
+    GestureDisposition, GestureRecognizer, GestureSettings, PointerButtons, PointerEvent,
+    PointerId, PointerKind, PointerPhase, RecognizerLifecycle, SemanticAction,
 };
 use crate::scheduler::Instant;
 use crate::{Pixels, Point};
@@ -181,6 +181,31 @@ impl GestureRecognizer for DoubleTapGestureRecognizer {
                 self.state = DoubleTapState::AwaitSecond;
                 GestureDisposition::Possible
             }
+            // S07.5 T6 — second-tap arrival via the held arena.
+            // `add_pointer` only runs at registration time, but the
+            // dispatcher routes the second `Down` through the
+            // existing held arena entry (no fresh registration). We
+            // mirror `add_pointer`'s `AwaitSecond` branch here so the
+            // state machine survives the second Down/Up sequence
+            // without needing a re-registration round-trip through
+            // `pending_recognizers`.
+            (DoubleTapState::AwaitSecond, PointerPhase::Down) => {
+                let now = Instant::now();
+                let elapsed = self
+                    .first_up_time
+                    .map(|t| now.saturating_duration_since(t))
+                    .unwrap_or_default();
+                if elapsed < self.double_tap_min_time
+                    || elapsed > self.double_tap_timeout
+                    || self.distance_sq(event.position) > (self.touch_slop.0).powi(2)
+                {
+                    self.reset();
+                    return GestureDisposition::Rejected;
+                }
+                self.state = DoubleTapState::SecondDown;
+                self.last_kind = event.kind;
+                GestureDisposition::Possible
+            }
             (DoubleTapState::SecondDown, PointerPhase::Move) => {
                 if self.distance_sq(event.position) > (self.touch_slop.0).powi(2) {
                     self.reset();
@@ -236,6 +261,28 @@ impl GestureRecognizer for DoubleTapGestureRecognizer {
 
     fn semantic_actions(&self) -> &'static [SemanticAction] {
         DOUBLE_TAP_SEMANTIC_ACTIONS
+    }
+
+    fn lifecycle(&mut self) -> Option<&mut dyn RecognizerLifecycle> {
+        Some(self)
+    }
+}
+
+impl RecognizerLifecycle for DoubleTapGestureRecognizer {
+    /// DoubleTap needs the arena to stay open past the first `Up` so
+    /// the second tap can land. The dispatcher honours this by calling
+    /// `arena.hold(pointer_id)` after registration; a per-pointer
+    /// timeout timer (stored on `GestureBinding`) calls
+    /// `arena.release(pointer_id)` after `double_tap_timeout` if no
+    /// second tap arrives.
+    fn needs_arena_hold(&self) -> bool {
+        true
+    }
+
+    fn configure_settings(&mut self, settings: &GestureSettings) {
+        self.touch_slop = settings.touch_slop;
+        self.double_tap_timeout = settings.double_tap_timeout;
+        self.double_tap_min_time = settings.double_tap_min_time;
     }
 }
 

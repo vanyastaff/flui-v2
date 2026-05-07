@@ -7,14 +7,12 @@
 //!
 //! See the design doc § "LongPressGestureRecognizer".
 
-use crate::gesture::arena::GestureArenaManager;
+use crate::gesture::arena::ArenaBackChannel;
 use crate::gesture::{
-    GestureDisposition, GestureRecognizer, PointerButtons, PointerEvent, PointerId, PointerKind,
-    PointerPhase, SemanticAction,
+    GestureDisposition, GestureRecognizer, GestureSettings, PointerButtons, PointerEvent,
+    PointerId, PointerKind, PointerPhase, RecognizerLifecycle, SemanticAction,
 };
-use crate::{Pixels, Point, Task};
-use std::cell::RefCell;
-use std::rc::Weak;
+use crate::{AppContext, Pixels, Point, Task};
 use std::time::Duration;
 
 const LONG_PRESS_SEMANTIC_ACTIONS: &[SemanticAction] = &[SemanticAction::LongPress];
@@ -77,13 +75,14 @@ pub struct LongPressGestureRecognizer {
     /// Async timer task; dropped on recognizer drop or cancel,
     /// cancelling the underlying future.
     timer: Option<Task<()>>,
-    /// Async back-channel to the arena. T15 wires this from
-    /// `GestureBinding`'s arena `Rc` when `add_pointer` is called.
-    /// `None` until wiring lands.
-    #[allow(dead_code, reason = "T15 LongPress timer wiring populates this")]
-    arena_back_channel: Option<Weak<RefCell<GestureArenaManager>>>,
-    /// Index into `arena.entries` recorded inside `add_pointer`.
-    #[allow(dead_code, reason = "T15 LongPress timer wiring populates this")]
+    /// Async back-channel to the arena. Populated at registration time
+    /// by `GestureBinding::register_recognizer` via the
+    /// [`RecognizerLifecycle::set_arena_back_channel`] hook. Defaults
+    /// to [`ArenaBackChannel::empty`] so a recognizer constructed
+    /// outside the binding (e.g. directly in unit tests) silently
+    /// no-ops the timer's `declare_winner` call instead of panicking.
+    arena_back_channel: ArenaBackChannel,
+    /// Index into `arena.entries` recorded at registration time.
     pointer_index: Option<usize>,
 }
 
@@ -103,7 +102,7 @@ impl LongPressGestureRecognizer {
             last_kind: PointerKind::Mouse,
             accepted: false,
             timer: None,
-            arena_back_channel: None,
+            arena_back_channel: ArenaBackChannel::empty(),
             pointer_index: None,
         }
     }
@@ -152,19 +151,98 @@ impl GestureRecognizer for LongPressGestureRecognizer {
             PointerPhase::Down => {
                 // Schedule the long-press timer. `cx.spawn` returns a
                 // `Task<()>` we store; dropping it cancels the future.
-                // T15 wiring will set up `arena_back_channel` so the
-                // timer's `declare_winner` actually fires.
                 //
-                // For T11-only scope (no T15 wiring yet) the timer
-                // runs but cannot signal acceptance. Tests in T17
-                // exercise the timer path with a synthetic clock.
+                // S07.5 T5: the timer upgrades the per-window arena
+                // back-channel injected at registration time
+                // (`set_arena_back_channel`), looks up its own
+                // `Rc<RefCell<...>>` from the arena to fire the user
+                // callback, and declares itself the winner. The
+                // back-channel is `Weak`, so a window-tear-down race
+                // (timer fires after `Window` drops) becomes a no-op
+                // upgrade.
                 let timeout = self.timeout;
-                let _budget = self.timer_budget;
-                self.timer = Some(cx.spawn(async move |_cx| {
-                    smol::Timer::after(timeout).await;
-                    // T15: upgrade `arena_back_channel` and call
-                    // `declare_winner`. Until then, this future ends
-                    // without effect.
+                let pointer_id = event.pointer_id;
+                let entry_position = event.position;
+                let entry_kind = event.kind;
+                let back_channel = self.arena_back_channel.clone();
+                let entry_index = self.pointer_index;
+                let window_handle = window.window_handle();
+                // S07.5 T5 — use `BackgroundExecutor::timer` so the
+                // test harness's virtual clock (driven by
+                // `cx.executor().advance_clock`) wakes the timer.
+                // `smol::Timer::after` would observe wall-clock time
+                // and never fire under `advance_clock`.
+                let timer_future = cx.background_executor().timer(timeout);
+                self.timer = Some(cx.spawn(async move |async_cx| {
+                    timer_future.await;
+                    let Some(idx) = entry_index else {
+                        log::trace!(
+                            target: "flui::gesture::long_press",
+                            recognizer = "long_press",
+                            phase = "timer_fire",
+                            lifecycle = "cancel";
+                            "long_press timer fired without entry index (registration not via GestureBinding)"
+                        );
+                        return;
+                    };
+                    let Some(arena_rc) = back_channel.upgrade() else {
+                        log::trace!(
+                            target: "flui::gesture::long_press",
+                            recognizer = "long_press",
+                            phase = "timer_fire",
+                            lifecycle = "cancel";
+                            "back-channel upgrade returned None (window dropped)"
+                        );
+                        return;
+                    };
+                    let _ = async_cx.update_window(window_handle, |_, window, cx| {
+                        log::debug!(
+                            target: "flui::gesture::long_press",
+                            recognizer = "long_press",
+                            phase = "timer_fire",
+                            lifecycle = "accept",
+                            pointer_id = format!("{:?}", pointer_id);
+                            "long_press timer fired; declaring winner via back-channel"
+                        );
+                        // Snapshot the recognizer's Rc inside a
+                        // short-lived borrow so we can release the
+                        // arena borrow before calling user code.
+                        let recognizer_rc = {
+                            let arena = arena_rc.borrow();
+                            arena
+                                .arenas
+                                .iter()
+                                .find(|(pid, _)| *pid == pointer_id)
+                                .and_then(|(_, a)| a.entries.get(idx))
+                                .map(|e| std::rc::Rc::clone(&e.recognizer))
+                        };
+                        let Some(rec_rc) = recognizer_rc else {
+                            return;
+                        };
+                        // Mark accepted + fire on_long_press_start.
+                        // Drop the borrow before declare_winner so
+                        // declare_winner's own arena re-borrow does
+                        // not panic.
+                        {
+                            let mut rec = rec_rc.borrow_mut();
+                            if let Some(lp) =
+                                rec.as_any_mut().downcast_mut::<LongPressGestureRecognizer>()
+                            {
+                                lp.accepted = true;
+                                if let Some(cb) = lp.on_long_press_start.as_mut() {
+                                    cb(
+                                        LongPressDetails {
+                                            global_position: entry_position,
+                                            kind: entry_kind,
+                                        },
+                                        window,
+                                        cx,
+                                    );
+                                }
+                            }
+                        }
+                        back_channel.declare_winner(pointer_id, idx, window, cx);
+                    });
                 }));
                 GestureDisposition::Possible
             }
@@ -239,6 +317,34 @@ impl GestureRecognizer for LongPressGestureRecognizer {
     fn semantic_actions(&self) -> &'static [SemanticAction] {
         LONG_PRESS_SEMANTIC_ACTIONS
     }
+
+    fn lifecycle(&mut self) -> Option<&mut dyn RecognizerLifecycle> {
+        Some(self)
+    }
+}
+
+impl RecognizerLifecycle for LongPressGestureRecognizer {
+    fn needs_back_channel(&self) -> bool {
+        true
+    }
+
+    fn set_arena_back_channel(&mut self, back_channel: ArenaBackChannel, entry_index: usize) {
+        log::trace!(
+            target: "flui::gesture::long_press",
+            recognizer = "long_press",
+            lifecycle = "set_back_channel",
+            entry_index = entry_index;
+            "long_press back-channel injected at registration"
+        );
+        self.arena_back_channel = back_channel;
+        self.pointer_index = Some(entry_index);
+    }
+
+    fn configure_settings(&mut self, settings: &GestureSettings) {
+        self.timeout = settings.long_press_timeout;
+        self.slop = settings.long_press_slop;
+        self.timer_budget = settings.long_press_timer_budget;
+    }
 }
 
 impl Drop for LongPressGestureRecognizer {
@@ -263,7 +369,7 @@ mod tests {
         GestureSettings, PointerButtons, PointerEvent, PointerId, PointerKind, PointerPhase,
     };
     use crate::scheduler::Instant;
-    use crate::{self as flui_core, AppContext as _, Modifiers, Pixels, Point, TestAppContext};
+    use crate::{self as flui_core, Modifiers, Pixels, Point, TestAppContext};
 
     fn pe(phase: PointerPhase, pos: Point<Pixels>, buttons: PointerButtons) -> PointerEvent {
         PointerEvent {

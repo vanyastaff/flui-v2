@@ -15,7 +15,7 @@
 use super::{GestureRecognizer, PointerEvent, PointerId};
 use smallvec::SmallVec;
 use std::cell::RefCell;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 
 /// The disposition returned by [`GestureRecognizer::handle_event`]
 /// and recorded by the arena manager.
@@ -66,10 +66,9 @@ pub(crate) struct GestureArena {
 }
 
 impl GestureArena {
-    /// Open a new arena. Used by `GestureArenaManager::add` (T15
-    /// follow-up — paint-time recognizer registration is the active
-    /// caller). Currently only reachable through tests.
-    #[allow(dead_code, reason = "T15 paint-time registration consumer")]
+    /// Open a new arena. Used by `GestureArenaManager::add`, called
+    /// by `GestureBinding::register_recognizer` from the dispatcher's
+    /// `Down` handler.
     fn new() -> Self {
         Self {
             entries: SmallVec::new(),
@@ -77,6 +76,80 @@ impl GestureArena {
             is_open: true,
             is_held: false,
         }
+    }
+}
+
+/// Opaque, `Clone`-able handle a recognizer can hold to call back
+/// into the per-window arena from outside `handle_event` (e.g. from
+/// an async timer task). The handle is internally `Weak`, so:
+///
+/// - Window teardown drops the underlying arena `Rc`, and every
+///   subsequent [`Self::declare_winner`] / [`Self::release`] call
+///   returns silently without dispatching anything.
+/// - Recognizer code never sees the private `GestureArenaManager`
+///   type; the public surface is exactly the methods on this struct.
+///
+/// `#[non_exhaustive]` for forward-compatibility (additional
+/// fire-and-forget arena operations may land in future specs).
+#[derive(Clone)]
+#[non_exhaustive]
+pub struct ArenaBackChannel {
+    /// Weak pointer back to the per-window `GestureArenaManager`.
+    inner: Weak<RefCell<GestureArenaManager>>,
+}
+
+impl ArenaBackChannel {
+    /// Construct an empty back-channel. Convenient for `Default`-style
+    /// initialization in recognizer fields; calling any method on a
+    /// `default()` instance returns silently.
+    ///
+    /// Production code receives the populated handle via
+    /// [`super::recognizer::RecognizerLifecycle::set_arena_back_channel`].
+    pub fn empty() -> Self {
+        Self { inner: Weak::new() }
+    }
+
+    /// Asynchronous winner declaration. Mirrors
+    /// `GestureArenaManager::declare_winner`: if the per-window arena
+    /// is still alive and the entry index is in range, the named
+    /// recognizer wins, every other entry on this pointer is notified
+    /// `rejected`, and the arena is closed (unless held).
+    ///
+    /// Silent no-op if the arena has already been dropped (window
+    /// teardown).
+    pub fn declare_winner(
+        &self,
+        pointer_id: PointerId,
+        entry_index: usize,
+        window: &mut crate::Window,
+        cx: &mut crate::App,
+    ) {
+        if let Some(rc) = self.inner.upgrade() {
+            rc.borrow_mut()
+                .declare_winner(pointer_id, entry_index, window, cx);
+        }
+    }
+
+    /// Internal accessor for `GestureBinding` to look up the arena
+    /// `Rc` and reach `entries[entry_index]` for `Rc::clone`. Hidden
+    /// from downstream because cloning the recognizer `Rc` is an
+    /// implementation detail of the timer/back-channel wiring.
+    pub(crate) fn upgrade(&self) -> Option<Rc<RefCell<GestureArenaManager>>> {
+        self.inner.upgrade()
+    }
+}
+
+impl Default for ArenaBackChannel {
+    fn default() -> Self {
+        Self::empty()
+    }
+}
+
+impl std::fmt::Debug for ArenaBackChannel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ArenaBackChannel")
+            .field("alive", &(self.inner.strong_count() > 0))
+            .finish()
     }
 }
 
@@ -109,10 +182,8 @@ impl GestureArenaManager {
     /// `recognizer` at the back of the entries list (registration
     /// order).
     ///
-    /// Currently called only from tests. T15 paint-time recognizer
-    /// registration is the production caller — until that wiring
-    /// lands, the active arena always starts empty for any pointer.
-    #[allow(dead_code, reason = "T15 paint-time registration target")]
+    /// Production caller is `GestureBinding::register_recognizer`,
+    /// invoked by `Window::dispatch_event` on the `Down` phase.
     pub(crate) fn add(
         &mut self,
         pointer_id: PointerId,
@@ -253,10 +324,12 @@ impl GestureArenaManager {
 
     /// Hold semantics — keep the arena open past `Up` until the
     /// caller calls [`Self::release`]. Used by recognizers like
-    /// `DoubleTap` that span multiple Down/Up sequences. Currently
-    /// only exercised by tests; the production wiring that holds the
-    /// arena on `DoubleTap`'s first Up is part of T15.
-    #[allow(dead_code, reason = "T15 DoubleTap hold/release wiring")]
+    /// `DoubleTap` that span multiple Down/Up sequences.
+    ///
+    /// Production caller is `Window::dispatch_event`'s `Down` handler,
+    /// invoked when a registered recognizer opted into
+    /// [`crate::gesture::recognizer::RecognizerLifecycle::needs_arena_hold`]
+    /// at registration time.
     pub(crate) fn hold(&mut self, pointer_id: PointerId) {
         if let Some((_, arena)) = self.arenas.iter_mut().find(|(id, _)| *id == pointer_id) {
             arena.is_held = true;
@@ -264,9 +337,13 @@ impl GestureArenaManager {
     }
 
     /// Release a held arena; resumes normal sweep semantics on the
-    /// next `Up` (or the call site can call [`Self::sweep`]
-    /// directly). T15 DoubleTap wiring is the production caller.
-    #[allow(dead_code, reason = "T15 DoubleTap hold/release wiring")]
+    /// next `Up` (or runs sweep directly when the arena has no winner
+    /// yet).
+    ///
+    /// Production caller is the per-pointer release task scheduled
+    /// from `GestureBinding::schedule_arena_release` after the
+    /// recognizer that initiated the hold (DoubleTap) does not see
+    /// the second tap within `double_tap_timeout`.
     pub(crate) fn release(
         &mut self,
         pointer_id: PointerId,
@@ -313,11 +390,10 @@ impl GestureArenaManager {
     /// fires from outside `handle_event` (e.g.
     /// `LongPressGestureRecognizer`'s timer).
     ///
-    /// Currently unreachable from the live dispatch path because
-    /// the long-press timer's back-channel (`arena_back_channel`)
-    /// is wired only by T15 paint-time registration. Until then
-    /// this method is API-ready but unused.
-    #[allow(dead_code, reason = "T15 LongPress timer back-channel target")]
+    /// Production caller is the LongPress timer task, which upgrades
+    /// the per-pointer `Weak<RefCell<GestureArenaManager>>` injected
+    /// at registration time and calls this method through the
+    /// resulting `Rc<RefCell<…>>` borrow.
     pub(crate) fn declare_winner(
         &mut self,
         pointer_id: PointerId,
@@ -351,6 +427,63 @@ impl GestureArenaManager {
             loser.borrow_mut().rejected(pointer_id, window, cx);
         }
         self.gc(pointer_id);
+    }
+
+    /// Construct an [`ArenaBackChannel`] handle pointing at this manager.
+    /// Used by `GestureBinding::register_recognizer` to inject a
+    /// back-channel into recognizers that opt into
+    /// [`super::recognizer::RecognizerLifecycle::needs_back_channel`].
+    /// The handle is `Weak`, so a window-tear-down race becomes a
+    /// no-op upgrade.
+    ///
+    /// `manager_rc` MUST be the `Rc` that owns this manager — passing
+    /// a fresh `Rc::new(...)` defeats the purpose. In practice the
+    /// only caller is `GestureBinding`, which stores its arena inside
+    /// an `Rc<RefCell<…>>` for exactly this reason.
+    pub(crate) fn make_back_channel_from(
+        manager_rc: &Rc<RefCell<GestureArenaManager>>,
+    ) -> ArenaBackChannel {
+        ArenaBackChannel {
+            inner: Rc::downgrade(manager_rc),
+        }
+    }
+
+    /// Merge `other` into `self`, deduplicating by `PointerId`.
+    ///
+    /// Used by `Window::dispatch_event` to fold the live arena (which
+    /// may have grown new entries from sibling-element callbacks
+    /// running inside the dispatch loop) back into the snapshot we
+    /// took before dispatching. A naive `arenas.extend(other.arenas)`
+    /// produces a second `(PointerId, GestureArena)` row for every
+    /// callback-time registration on the same pointer; this method
+    /// keeps the invariant "exactly one arena per active pointer"
+    /// across the snapshot/dispatch/restore round-trip (S07.5 T7).
+    ///
+    /// **Collision policy** for the per-pointer scalar fields:
+    /// - `entries`: append (incoming entries land at the back,
+    ///   registration-order semantics preserved).
+    /// - `winner`: incoming wins if `Some` (a callback that declared
+    ///   a winner mid-dispatch wins over the outer pre-take state);
+    ///   otherwise keep the existing.
+    /// - `is_open`: `existing.is_open && incoming.is_open` (closing
+    ///   on either side closes the merged arena — the more
+    ///   conservative choice).
+    /// - `is_held`: `existing.is_held || incoming.is_held` (either
+    ///   side holding holds the merged arena — DoubleTap's hold
+    ///   semantics survive a callback-time merge).
+    pub(crate) fn merge_by_pointer_id(&mut self, mut other: GestureArenaManager) {
+        for (pid, incoming) in other.arenas.drain(..) {
+            if let Some((_, existing)) = self.arenas.iter_mut().find(|(id, _)| *id == pid) {
+                existing.entries.extend(incoming.entries);
+                if incoming.winner.is_some() {
+                    existing.winner = incoming.winner;
+                }
+                existing.is_open = existing.is_open && incoming.is_open;
+                existing.is_held = existing.is_held || incoming.is_held;
+            } else {
+                self.arenas.push((pid, incoming));
+            }
+        }
     }
 
     /// Garbage-collect resolved arenas.
@@ -881,5 +1014,149 @@ mod tests {
                 Ok(())
             })
             .expect("P5 held for all sampled cases");
+    }
+
+    // ============================================================
+    // S07.5 T11 — Arena lifecycle property locks.
+    // ============================================================
+
+    /// **P-T15.5-A** — `merge_by_pointer_id` never produces duplicate
+    /// `PointerId` entries in the merged manager. Generates a random
+    /// pair of arenas (each with up to 4 distinct pointers, up to 4
+    /// entries per pointer), merges them, and asserts every
+    /// `PointerId` appears at most once in the result.
+    #[flui_core::test]
+    fn prop_merge_by_pointer_id_no_duplicates(cx: &mut TestAppContext) {
+        use proptest::collection::vec as pvec;
+        let mut runner = proptest_runner();
+        let strategy = (pvec(0u64..4u64, 0..6), pvec(0u64..4u64, 0..6));
+        runner
+            .run(&strategy, |(left_ids, right_ids)| {
+                cx.update(|cx| {
+                    let _ = cx
+                        .open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+                        .unwrap()
+                        .update(cx, |_, _window, _cx| {
+                            let mut left = GestureArenaManager::default();
+                            let mut right = GestureArenaManager::default();
+                            for raw in left_ids.iter() {
+                                let p = PointerId(*raw);
+                                left.add(p, boxed_mock(MockRecognizer::new("l")));
+                            }
+                            for raw in right_ids.iter() {
+                                let p = PointerId(*raw);
+                                right.add(p, boxed_mock(MockRecognizer::new("r")));
+                            }
+                            left.merge_by_pointer_id(right);
+                            // Invariant: each PointerId appears at
+                            // most once after the merge.
+                            let mut seen: std::collections::HashSet<u64> =
+                                std::collections::HashSet::new();
+                            for (pid, _) in left.arenas.iter() {
+                                assert!(
+                                    seen.insert(pid.0),
+                                    "duplicate PointerId {pid:?} after merge_by_pointer_id"
+                                );
+                            }
+                        });
+                });
+                Ok(())
+            })
+            .expect("P-T15.5-A held for all sampled cases");
+    }
+
+    /// **P-T15.5-B** — `active_pointer_count` is bounded by the number
+    /// of distinct `PointerId`s that have been added (open `add` calls
+    /// on the same pointer collapse into one arena entry; only
+    /// successful `gc` after sweep / cancel decrements the count).
+    /// The invariant: `active_pointer_count() <= distinct_pointers_added`.
+    #[flui_core::test]
+    fn prop_active_pointer_count_upper_bound(cx: &mut TestAppContext) {
+        use proptest::collection::vec as pvec;
+        let mut runner = proptest_runner();
+        let strategy = pvec(0u64..4u64, 1..16);
+        runner
+            .run(&strategy, |adds| {
+                cx.update(|cx| {
+                    let _ = cx
+                        .open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+                        .unwrap()
+                        .update(cx, |_, _window, _cx| {
+                            let mut arena = GestureArenaManager::default();
+                            let mut distinct: std::collections::HashSet<u64> =
+                                std::collections::HashSet::new();
+                            for raw in adds.iter() {
+                                let p = PointerId(*raw);
+                                distinct.insert(p.0);
+                                arena.add(p, boxed_mock(MockRecognizer::new("r")));
+                            }
+                            assert!(
+                                arena.arena_count() <= distinct.len(),
+                                "active_pointer_count {} exceeded distinct pointer count {}",
+                                arena.arena_count(),
+                                distinct.len()
+                            );
+                        });
+                });
+                Ok(())
+            })
+            .expect("P-T15.5-B held for all sampled cases");
+    }
+
+    /// **P-T15.5-C** — `hold` / `release` symmetry: any sequence that
+    /// holds an arena and then either releases it or cancels it leaves
+    /// the arena in a non-held state. Equivalent to "every `hold` is
+    /// followed by exactly one resolving event (release or cancel)".
+    #[flui_core::test]
+    fn prop_hold_release_symmetry(cx: &mut TestAppContext) {
+        let mut runner = proptest_runner();
+        // 0 = release, 1 = cancel
+        let strategy = (1usize..5, 0u8..2);
+        runner
+            .run(&strategy, |(num_entries, resolver)| {
+                cx.update(|cx| {
+                    let _ = cx
+                        .open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+                        .unwrap()
+                        .update(cx, |_, window, cx| {
+                            let mut arena = GestureArenaManager::default();
+                            let p = PointerId(0);
+                            for _ in 0..num_entries {
+                                arena.add(p, boxed_mock(MockRecognizer::new("r")));
+                            }
+                            arena.hold(p);
+                            assert!(
+                                arena
+                                    .arenas
+                                    .iter()
+                                    .find(|(pid, _)| *pid == p)
+                                    .map(|(_, a)| a.is_held)
+                                    .unwrap_or(false),
+                                "hold(p) sets is_held"
+                            );
+                            match resolver {
+                                0 => arena.release(p, window, cx),
+                                _ => arena.cancel(p, window, cx),
+                            }
+                            // Either resolver path drops the held flag
+                            // (release runs sweep which closes; cancel
+                            // closes directly). The arena may have been
+                            // gc'd, in which case it is trivially
+                            // not held.
+                            let still_held = arena
+                                .arenas
+                                .iter()
+                                .find(|(pid, _)| *pid == p)
+                                .map(|(_, a)| a.is_held)
+                                .unwrap_or(false);
+                            assert!(
+                                !still_held,
+                                "hold without matching resolve leaked: arena still held"
+                            );
+                        });
+                });
+                Ok(())
+            })
+            .expect("P-T15.5-C held for all sampled cases");
     }
 }

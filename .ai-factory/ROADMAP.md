@@ -28,6 +28,7 @@ Numbering convention:
 ### Phase II — Flutter-parity core subsystems (active strategic direction)
 
 - [x] **S07 GestureArena** — competing recognizers (tap, double-tap, long-press, drag, scale, horizontal/vertical drag), hit-test protocol [Gap B]
+- [x] **S07.5 GestureArena — T15 wiring follow-up** — `RecognizerLifecycle` extensibility seam, LongPress arena back-channel, DoubleTap arena hold/release, per-window settings flow, `MouseExit → Removed` semantics, gesture-state consolidation, `test-support` decoupling, end-to-end integration test, recognizer-extension contributor doc
 - [ ] **S08 Semantics protocol** — `SemanticsNode` tree, `SemanticsOwner`, actions, roles/hints/labels, hooks for `flui-a11y` [Gap F]
 - [ ] **S09 Canvas facade** — unified `Canvas` API over `scene` + `path_builder`; `saveLayer`, clips, transforms, blend modes [Gap C]
 - [ ] **S10 Image filters** — `ImageFilter` (blur, matrix), `ColorFilter`, `BackdropFilter`, `MaskFilter`. Depends on S09 [Gap C]
@@ -112,6 +113,7 @@ Numbering convention:
 | S01d extraction facades | 2026-04-13 |
 | S02a flui-platform crate skeleton | 2026-04-13 |
 | S07 GestureArena (competing recognizers, hit-test protocol, arena binding, settings, velocity tracker, demo, bench, properties) | 2026-05-07 |
+| S07.5 GestureArena T15 follow-up (RecognizerLifecycle, back-channel, hold/release, per-window settings, end-to-end test, contributor doc) | 2026-05-07 |
 
 ## Cross-track dependencies
 

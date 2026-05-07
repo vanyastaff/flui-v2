@@ -970,16 +970,11 @@ pub struct Window {
             [std::rc::Rc<std::cell::RefCell<Box<dyn crate::gesture::GestureRecognizer>>>; 4],
         >,
     >,
-    /// Per-`Window` pointer-state cache for the gesture dispatch path
-    /// (T6 — wires the existing `dispatch_event` path through
-    /// `gesture::dispatch::translate_*` before the existing
-    /// `dispatch_mouse_event` chain).
-    pub(crate) gesture_pointer_state: crate::gesture::dispatch::WindowPointerState,
-    /// `PointerSanitizer` for the gesture dispatch path. T20 grows
-    /// per-pointer state inside this; T4 ships it stateless.
-    pub(crate) gesture_sanitizer: crate::gesture::dispatch::PointerSanitizer,
-    /// Per-`Window` gesture arena + settings + sanitizer (T21). Owns
-    /// the recognizer-competition machinery.
+    /// Per-`Window` gesture arena + settings + sanitizer + pointer-state
+    /// cache. Single source of truth for the gesture subsystem (S07.5 T2
+    /// consolidated the previously direct `gesture_sanitizer` and
+    /// `gesture_pointer_state` fields into here so there is exactly one
+    /// owner of gesture state per `Window`).
     pub(crate) gesture_binding: crate::gesture::GestureBinding,
     modifiers: Modifiers,
     capslock: Capslock,
@@ -1474,8 +1469,6 @@ impl Window {
             mouse_hit_test: HitTest::default(),
             hit_test_behaviors: collections::FxHashMap::default(),
             pending_recognizers: collections::FxHashMap::default(),
-            gesture_pointer_state: crate::gesture::dispatch::WindowPointerState::default(),
-            gesture_sanitizer: crate::gesture::dispatch::PointerSanitizer,
             gesture_binding: crate::gesture::GestureBinding::default(),
             modifiers,
             capslock,
@@ -4310,7 +4303,7 @@ impl Window {
             // can clamp out-of-bounds positions (Wayland decoration
             // drag).
             let bounds = self.bounds();
-            self.gesture_pointer_state.window_bounds = bounds;
+            self.gesture_binding.pointer_state_mut().window_bounds = bounds;
 
             // PointerSignalEvent (Scroll / Magnify) explicitly bypasses
             // the gesture arena per the design — those events have no
@@ -4319,18 +4312,14 @@ impl Window {
             // below still handles them; T15 will surface a typed
             // listener API on `InteractiveElement` and dispatch from
             // this site. Until then we deliberately do not call
-            // `gesture_sanitizer.convert_signal(...)` — Copilot review
+            // `sanitizer.convert_signal(...)` — Copilot review
             // C flagged the old `let _signal = ...` as unused work.
             // The translator method itself stays `pub(crate)` and
             // covered by `dispatch.rs::tests` so T15 can flip the
             // wiring in one site without re-discovering its shape.
             let pointer_events = {
-                let Window {
-                    gesture_sanitizer,
-                    gesture_pointer_state,
-                    ..
-                } = self;
-                gesture_sanitizer.convert(&event, gesture_pointer_state)
+                let (sanitizer, pointer_state) = self.gesture_binding.dispatch_split_mut();
+                sanitizer.convert(&event, pointer_state)
             };
 
             // Query hit-test for each translated pointer event,
@@ -4341,11 +4330,7 @@ impl Window {
             for pe in pointer_events.iter() {
                 let hit_test = self.hit_test(pe.position);
                 {
-                    let Window {
-                        gesture_sanitizer,
-                        gesture_pointer_state,
-                        ..
-                    } = self;
+                    let (sanitizer, pointer_state) = self.gesture_binding.dispatch_split_mut();
                     // Hover Enter/Exit synthesis. The call mutates
                     // `state.prior_hover_hitboxes` so the next frame's
                     // diff is correct, but the returned synthetic
@@ -4356,8 +4341,7 @@ impl Window {
                     // first dispatched frame after T15 to compare
                     // against an empty set and emit a flood of
                     // spurious Enters. (Copilot review C.)
-                    let _hover_events =
-                        gesture_sanitizer.diff_hover(pe, &hit_test, gesture_pointer_state);
+                    let _hover_events = sanitizer.diff_hover(pe, &hit_test, pointer_state);
                 }
 
                 // S07 T15 — recognizer registration. On `Down`, walk
@@ -4370,20 +4354,44 @@ impl Window {
                 // arena's `dispatch` chain below. `Translucent` /
                 // `DeferToChild` entries forward through to the next
                 // hitbox behind them; `Opaque` ends the walk.
+                //
+                // S07.5 T3+T6 — registration goes through the
+                // `GestureBinding::register_recognizer` seam, which
+                // drives the `RecognizerLifecycle` hooks
+                // (per-window settings, arena back-channel) and
+                // returns `true` when any recognizer for this
+                // hitbox asked the arena to enter `hold` mode
+                // (DoubleTap). When that happens, the dispatcher
+                // calls `arena.hold(pointer_id)` and schedules a
+                // `double_tap_timeout`-deferred `arena.release`.
                 if matches!(pe.phase, crate::gesture::PointerPhase::Down) {
+                    let window_handle = self.handle;
+                    let mut needs_hold = false;
                     for entry in hit_test.iter() {
                         let recs = self.pending_recognizers.remove(&entry.hitbox_id);
                         if let Some(recs) = recs {
-                            let mut arena = std::mem::take(self.gesture_binding.arena_mut());
                             for rec in recs.iter() {
                                 rec.borrow_mut().add_pointer(pe.pointer_id, pe);
-                                arena.add(pe.pointer_id, std::rc::Rc::clone(rec));
+                                let rec_needs_hold = self
+                                    .gesture_binding
+                                    .register_recognizer(pe.pointer_id, std::rc::Rc::clone(rec));
+                                needs_hold = needs_hold || rec_needs_hold;
                             }
-                            *self.gesture_binding.arena_mut() = arena;
                         }
                         if matches!(entry.behavior, crate::gesture::HitTestBehavior::Opaque) {
                             break;
                         }
+                    }
+                    if needs_hold {
+                        self.gesture_binding
+                            .arena_rc()
+                            .borrow_mut()
+                            .hold(pe.pointer_id);
+                        self.gesture_binding.schedule_arena_release(
+                            pe.pointer_id,
+                            window_handle,
+                            cx,
+                        );
                     }
                 }
 
@@ -4393,29 +4401,36 @@ impl Window {
                 // per-pointer; multiple events on the same pointer
                 // funnel through the same arena.
                 //
-                // The `mem::take` dance mirrors `dispatch_mouse_event`'s
-                // handling of `rendered_frame.mouse_listeners`: extract
-                // the arena (replacing with `Default`), dispatch
-                // (which needs `&mut self` for `&mut Window`), then
-                // restore the arena (which may have grown new entries
-                // from sibling element callbacks).
-                let mut arena = std::mem::take(self.gesture_binding.arena_mut());
+                // The `arena_take` / `arena_restore` dance mirrors
+                // `dispatch_mouse_event`'s handling of
+                // `rendered_frame.mouse_listeners`: extract the arena
+                // (replacing with `Default`), dispatch (which needs
+                // `&mut self` for `&mut Window`), then restore the
+                // arena alongside any entries the dispatched callbacks
+                // appended through `GestureBinding::register_recognizer`.
+                let mut arena = self.gesture_binding.arena_take();
                 arena.dispatch(pe.pointer_id, pe, self, cx);
                 match pe.phase {
                     crate::gesture::PointerPhase::Up => {
                         arena.sweep(pe.pointer_id, self, cx);
+                        // Successful sweep on a held arena: the second
+                        // tap landed and DoubleTap fired. Drop the
+                        // pending release timer so its future cancels.
+                        self.gesture_binding.cancel_arena_hold(pe.pointer_id);
                     }
                     crate::gesture::PointerPhase::Cancel => {
                         arena.cancel(pe.pointer_id, self, cx);
+                        self.gesture_binding.cancel_arena_hold(pe.pointer_id);
                     }
                     _ => {}
                 }
-                // Merge back: any entries the dispatched callbacks
-                // added land in the live arena alongside the
-                // restored one.
-                let mut live = std::mem::take(self.gesture_binding.arena_mut());
-                arena.arenas.extend(live.arenas.drain(..));
-                *self.gesture_binding.arena_mut() = arena;
+                // Merge back via `merge_by_pointer_id` so callback-time
+                // registrations on the same pointer extend the
+                // existing arena entry instead of producing a duplicate
+                // `(PointerId, GestureArena)` pair (S07.5 T7).
+                let live = self.gesture_binding.arena_take();
+                arena.merge_by_pointer_id(live);
+                self.gesture_binding.arena_restore(arena);
 
                 // Boundary reset — guarantees that recognizer
                 // `cx.stop_propagation()` calls (forbidden by trait

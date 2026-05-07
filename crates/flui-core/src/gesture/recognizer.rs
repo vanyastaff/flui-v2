@@ -1,11 +1,12 @@
-//! `GestureRecognizer` trait + `SemanticAction` enum.
+//! `GestureRecognizer` trait + `RecognizerLifecycle` trait + `SemanticAction` enum.
 //!
 //! `GestureRecognizer: ?Send + ?Sync`. Per-`Window` callback registry
 //! is main-thread-only; matches the existing `Interactivity` posture.
 //!
 //! See the design doc § "GestureRecognizer trait".
 
-use super::{GestureDisposition, PointerEvent, PointerId};
+use super::arena::ArenaBackChannel;
+use super::{GestureDisposition, GestureSettings, PointerEvent, PointerId};
 use crate::FocusHandle;
 
 /// One competitor in the gesture arena.
@@ -88,6 +89,98 @@ pub trait GestureRecognizer: 'static {
     fn on_focus_request(&self) -> Option<FocusHandle> {
         None
     }
+
+    /// Optional access to per-recognizer lifecycle hooks.
+    ///
+    /// Default returns `None`; recognizers that opt in (e.g. `LongPress`
+    /// for the back-channel, `DoubleTap` for arena hold) override to
+    /// return `Some(self)`. `RecognizerLifecycle` is a sibling trait —
+    /// **not** a supertrait — so existing impls (mocks, third-party
+    /// recognizers, S08/S12 stubs) compile unchanged.
+    ///
+    /// **Why `Option` instead of `Any`-downcast:** zero-cost no-op for
+    /// recognizers that opt out, and the override is one line per impl.
+    /// **Why not a supertrait:** that would force every existing
+    /// `GestureRecognizer` impl to also `impl RecognizerLifecycle`,
+    /// which is a breaking change to the public surface.
+    fn lifecycle(&mut self) -> Option<&mut dyn RecognizerLifecycle> {
+        None
+    }
+}
+
+/// Per-recognizer lifecycle hooks invoked by [`super::GestureBinding`]
+/// at registration time.
+///
+/// Recognizers that need any of:
+/// - the per-window arena back-channel (e.g. `LongPress` to
+///   `arena.declare_winner` on its timer fire),
+/// - arena `hold` semantics (e.g. `DoubleTap` extending past `Up`),
+/// - per-window [`GestureSettings`] applied at registration (rather
+///   than at construction, so `window.gesture_settings_mut()` overrides
+///   take effect),
+///
+/// override the matching method.
+///
+/// The trait is a **sibling** to [`GestureRecognizer`], reachable only
+/// through [`GestureRecognizer::lifecycle`]. Existing impls are
+/// unaffected; new recognizers opt in by overriding `lifecycle` to
+/// return `Some(self)` and implementing this trait. See
+/// `docs/superpowers/specs/2026-05-08-recognizer-extension.md` for the
+/// step-by-step recipe.
+///
+/// All methods have default no-op bodies, so opting in to one method
+/// does not require implementing the others. Adding a new method with
+/// a default body is a non-breaking change for the same reason.
+pub trait RecognizerLifecycle {
+    /// Whether this recognizer wants the per-window arena back-channel
+    /// injected via [`Self::set_arena_back_channel`].
+    ///
+    /// Default `false` — most recognizers (Tap, Drag, Scale) do not
+    /// need to call back into the arena from external state (e.g.
+    /// timers) and so do not need a `Weak` handle.
+    fn needs_back_channel(&self) -> bool {
+        false
+    }
+
+    /// Inject the per-window arena back-channel + the recognizer's
+    /// entry index into the arena. Called only when
+    /// [`Self::needs_back_channel`] returns `true`.
+    ///
+    /// `back_channel` is an opaque [`ArenaBackChannel`] that stays
+    /// valid while the per-window arena is alive and degrades into a
+    /// silent no-op once the `Window` (and its `GestureBinding`)
+    /// drops. This avoids dangling pointers during window-resize /
+    /// window-close races where a recognizer's timer might still fire
+    /// after the window is gone.
+    ///
+    /// `entry_index` is the recognizer's slot in the arena's
+    /// `entries` vec at registration time, suitable for
+    /// `back_channel.declare_winner(pointer_id, entry_index, ...)`
+    /// from a timer callback.
+    fn set_arena_back_channel(&mut self, _back_channel: ArenaBackChannel, _entry_index: usize) {}
+
+    /// Whether this recognizer wants the arena to enter `hold` mode on
+    /// the initial `Down`, deferring the sweep-on-`Up` resolution until
+    /// an explicit `release` (typically from a timer expiry).
+    ///
+    /// Default `false`. `DoubleTap` overrides to `true` so the arena
+    /// stays open after the first `Up` long enough for the second tap
+    /// to land.
+    fn needs_arena_hold(&self) -> bool {
+        false
+    }
+
+    /// Apply the per-window [`GestureSettings`] to the recognizer's
+    /// thresholds. Called at registration time so that
+    /// `window.gesture_settings_mut()` overrides take effect for
+    /// recognizers built via the fluent `__internal_on_*` helpers
+    /// (which run inside `render()` and therefore previously baked in
+    /// `GestureSettings::default()` at construction).
+    ///
+    /// Default no-op. Each recognizer overrides to read the relevant
+    /// fields (`pan_slop`, `long_press_timeout`, `double_tap_timeout`,
+    /// etc.) from `settings`.
+    fn configure_settings(&mut self, _settings: &GestureSettings) {}
 }
 
 /// Semantic-action enum (S08 seam — default-empty here, populated in S08).

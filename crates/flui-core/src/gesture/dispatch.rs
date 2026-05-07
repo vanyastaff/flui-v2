@@ -443,10 +443,20 @@ fn translate_mouse_exited(e: &MouseExitEvent, state: &mut WindowPointerState) ->
     let delta = subtract(e.position, state.last_mouse_position);
     state.last_mouse_position = e.position;
     state.modifiers = e.modifiers;
+    // S07.5 T8 — `MouseExitEvent` translates to `Removed` (device left
+    // the surface), **not** `Exit` (target-leave). Per-target
+    // hover-`Exit` events are synthesized separately by
+    // [`PointerSanitizer::diff_hover`]. Conflating the two would route
+    // device-leave through every recognizer's hover-state diff and
+    // miss the device-leave semantics that recognizers like Drag rely
+    // on for `Drop` cancellation.
+    //
+    // See `gesture/pointer_event.rs` for the `Exit` vs `Removed`
+    // distinction.
     PointerEvent {
         pointer_id: DESKTOP_MOUSE_POINTER,
         kind: PointerKind::Mouse,
-        phase: PointerPhase::Exit,
+        phase: PointerPhase::Removed,
         position: e.position,
         delta,
         buttons: state.buttons,
@@ -514,4 +524,44 @@ fn mouse_button_to_pointer_buttons(button: MouseButton) -> PointerButtons {
 #[inline]
 fn subtract(a: Point<Pixels>, b: Point<Pixels>) -> Point<Pixels> {
     Point::new(a.x - b.x, a.y - b.y)
+}
+
+#[cfg(test)]
+mod tests {
+    //! Tests for the translation paths that produce no recognizer-side
+    //! state on their own (the recognizer path is locked elsewhere by
+    //! T16/T17 + T11). These cover the Copilot-flagged conversions and
+    //! the S07.5 T8 `MouseExit` → `Removed` semantics.
+    use super::*;
+    use crate::Modifiers;
+
+    fn px(x: f32, y: f32) -> Point<Pixels> {
+        Point::new(Pixels(x), Pixels(y))
+    }
+
+    /// Lock for S07.5 T8: a `MouseExitEvent` (the device left the
+    /// window surface) translates to `PointerPhase::Removed`, not
+    /// `Exit`. The latter is reserved for per-target hover-leave
+    /// synthesis from `PointerSanitizer::diff_hover`.
+    #[test]
+    fn translate_mouse_exit_emits_removed_phase() {
+        let mut state = WindowPointerState::default();
+        state.last_mouse_position = px(10.0, 10.0);
+        let exit = MouseExitEvent {
+            position: px(20.0, 30.0),
+            modifiers: Modifiers::default(),
+            pressed_button: None,
+        };
+        let pe = translate_mouse_exited(&exit, &mut state);
+        assert_eq!(
+            pe.phase,
+            PointerPhase::Removed,
+            "MouseExit must translate to Removed (device-leave), not Exit (target-leave)"
+        );
+        assert_eq!(pe.position, px(20.0, 30.0));
+        // Sanitizer side-effects: state advances even though the
+        // device is gone, so a subsequent re-entry computes the
+        // delta from the last known position (matches Flutter).
+        assert_eq!(state.last_mouse_position, px(20.0, 30.0));
+    }
 }

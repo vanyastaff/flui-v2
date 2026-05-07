@@ -61,6 +61,25 @@ jobs:
                  echo 'and commit the updated docs/reports/platform-imports.md.'; \
                  exit 1; }
 
+  check-windows-test-support:
+    name: Check test-support on Windows (S07.5 T1)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # Locks the test-support feature decoupling from S07.5 T1: test-support
+      # must build on Windows without wayland/x11. See
+      # `.ai-factory/plans/feature-gesture-s07-t15-followup.md`.
+      - name: cargo check -p flui-core --features test-support
+        run: cargo check -p flui-core --features test-support
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@cargo-hack
+      # Smoke the new feature combinatorics — depth 2 catches the test-support /
+      # test-support-with-platform pair without exploding into a full powerset.
+      - name: cargo hack feature-powerset (test-support family)
+        run: cargo hack check -p flui-core --feature-powerset --depth 2 --features test-support
+
   clippy:
     name: Clippy (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
