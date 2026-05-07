@@ -214,8 +214,30 @@ impl GestureBinding {
     pub(crate) fn register_recognizer(
         &mut self,
         pointer_id: PointerId,
+        buttons: super::PointerButtons,
+        modifiers: crate::Modifiers,
         recognizer: Rc<RefCell<Box<dyn GestureRecognizer>>>,
     ) -> bool {
+        // Decision D10 — per-recognizer button/modifier filter check
+        // happens *before* arena.add. Rejecting recognizers never
+        // enter the arena, so they never become permanent
+        // `Possible`-returning zombies on a pointer they decline.
+        {
+            let rec = recognizer.borrow();
+            if let Some(filter) = rec.allowed_buttons_filter()
+                && !filter.call(buttons, modifiers)
+            {
+                log::trace!(
+                    target: "flui::gesture::binding",
+                    phase = "register",
+                    arena_state = "filter_rejected",
+                    recognizer = rec.name();
+                    "AllowedButtonsFilter rejected; skipping arena.add"
+                );
+                return false;
+            }
+        }
+
         let entry_index = self.arena.borrow().entry_count(pointer_id);
         let mut needs_hold = false;
         {
@@ -224,7 +246,7 @@ impl GestureBinding {
                 lifecycle.configure_settings(&self.settings);
                 if lifecycle.needs_back_channel() {
                     let back_channel = GestureArenaManager::make_back_channel_from(&self.arena);
-                    lifecycle.set_arena_back_channel(back_channel, entry_index);
+                    lifecycle.set_arena_back_channel(pointer_id, back_channel, entry_index);
                 }
                 needs_hold = lifecycle.needs_arena_hold();
             }

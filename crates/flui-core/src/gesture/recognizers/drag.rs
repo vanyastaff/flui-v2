@@ -11,10 +11,11 @@
 //!
 //! See the design doc § "Drag recognizers".
 
+use crate::Modifiers;
 use crate::gesture::{
-    DeliveredEvent, GestureDisposition, GestureRecognizer, GestureSettings, PointerButtons,
-    PointerId, PointerKind, PointerPhase, PositionSample, RecognizerLifecycle, Velocity,
-    VelocityTracker,
+    AllowedButtonsFilter, DeliveredEvent, GestureDisposition, GestureRecognizer, GestureSettings,
+    PointerButtons, PointerId, PointerKind, PointerPhase, PositionSample, RecognizerLifecycle,
+    Velocity, VelocityTracker,
 };
 use crate::{Pixels, Point};
 
@@ -82,6 +83,7 @@ struct DragImpl {
     last_position: Point<Pixels>,
     last_kind: PointerKind,
     velocity_tracker: VelocityTracker,
+    allowed_buttons_filter: Option<AllowedButtonsFilter>,
 
     on_start: Option<Box<dyn FnMut(DragStartDetails, &mut crate::Window, &mut crate::App)>>,
     on_update: Option<Box<dyn FnMut(DragUpdateDetails, &mut crate::Window, &mut crate::App)>>,
@@ -100,6 +102,7 @@ impl DragImpl {
             last_position: Point::default(),
             last_kind: PointerKind::Mouse,
             velocity_tracker: VelocityTracker::new(settings),
+            allowed_buttons_filter: None,
             on_start: None,
             on_update: None,
             on_end: None,
@@ -202,6 +205,18 @@ macro_rules! impl_drag_recognizer {
                 self.inner.button = button;
                 self
             }
+
+            /// Attach an `AllowedButtonsFilter` evaluated by
+            /// `register_recognizer` before arena admission. On
+            /// rejection (closure returns `false`) the recognizer
+            /// never enters the arena.
+            pub fn with_allowed_buttons_filter(
+                mut self,
+                f: impl Fn(PointerButtons, Modifiers) -> bool + 'static,
+            ) -> Self {
+                self.inner.allowed_buttons_filter = Some(AllowedButtonsFilter::new(f));
+                self
+            }
         }
 
         impl GestureRecognizer for $name {
@@ -211,6 +226,10 @@ macro_rules! impl_drag_recognizer {
 
             fn name(&self) -> &'static str {
                 $name_str
+            }
+
+            fn allowed_buttons_filter(&self) -> Option<&AllowedButtonsFilter> {
+                self.inner.allowed_buttons_filter.as_ref()
             }
 
             fn add_pointer(&mut self, pointer_id: PointerId, event: DeliveredEvent<'_>) {

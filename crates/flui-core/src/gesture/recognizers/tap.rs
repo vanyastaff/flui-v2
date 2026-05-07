@@ -7,9 +7,10 @@
 //!
 //! See the design doc § "TapGestureRecognizer".
 
+use crate::Modifiers;
 use crate::gesture::{
-    DeliveredEvent, GestureDisposition, GestureRecognizer, GestureSettings, PointerButtons,
-    PointerId, PointerKind, PointerPhase, RecognizerLifecycle, SemanticAction,
+    AllowedButtonsFilter, DeliveredEvent, GestureDisposition, GestureRecognizer, GestureSettings,
+    PointerButtons, PointerId, PointerKind, PointerPhase, RecognizerLifecycle, SemanticAction,
 };
 use crate::{FocusHandle, Pixels, Point};
 
@@ -93,6 +94,11 @@ pub struct TapGestureRecognizer {
     /// Optional focus handle to claim on tap-down. Surfaces via
     /// [`GestureRecognizer::on_focus_request`] (S12 seam).
     pub request_focus_on_tap_down: Option<FocusHandle>,
+    /// Optional `(buttons, modifiers) -> bool` predicate evaluated by
+    /// [`crate::gesture::GestureBinding::register_recognizer`] before
+    /// the recognizer joins the arena. `None` (the default) admits
+    /// every event whose `buttons` contain [`Self::button`].
+    pub allowed_buttons_filter: Option<AllowedButtonsFilter>,
 
     state: TapState,
     pointer: Option<PointerId>,
@@ -112,11 +118,24 @@ impl TapGestureRecognizer {
             button: PointerButtons::PRIMARY,
             touch_slop: settings.touch_slop,
             request_focus_on_tap_down: None,
+            allowed_buttons_filter: None,
             state: TapState::Idle,
             pointer: None,
             down_position: Point::default(),
             last_kind: PointerKind::Mouse,
         }
+    }
+
+    /// Fluent setter for [`Self::allowed_buttons_filter`]. The closure
+    /// is evaluated by [`crate::gesture::GestureBinding::register_recognizer`]
+    /// at registration time; on `false` the recognizer never enters
+    /// the arena (Decision D10).
+    pub fn with_allowed_buttons_filter(
+        mut self,
+        f: impl Fn(PointerButtons, Modifiers) -> bool + 'static,
+    ) -> Self {
+        self.allowed_buttons_filter = Some(AllowedButtonsFilter::new(f));
+        self
     }
 
     /// Internal — drop tracked pointer state and return to `Idle` so
@@ -136,6 +155,10 @@ impl GestureRecognizer for TapGestureRecognizer {
 
     fn name(&self) -> &'static str {
         "tap"
+    }
+
+    fn allowed_buttons_filter(&self) -> Option<&AllowedButtonsFilter> {
+        self.allowed_buttons_filter.as_ref()
     }
 
     fn add_pointer(&mut self, pointer_id: PointerId, event: DeliveredEvent<'_>) {

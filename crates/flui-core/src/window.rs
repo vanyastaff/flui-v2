@@ -4402,9 +4402,12 @@ impl Window {
                                 crate::gesture::DeliveredEvent::new(pe, local_position);
                             for rec in recs.iter() {
                                 rec.borrow_mut().add_pointer(pe.pointer_id, delivered);
-                                let rec_needs_hold = self
-                                    .gesture_binding
-                                    .register_recognizer(pe.pointer_id, std::rc::Rc::clone(rec));
+                                let rec_needs_hold = self.gesture_binding.register_recognizer(
+                                    pe.pointer_id,
+                                    pe.buttons,
+                                    pe.modifiers,
+                                    std::rc::Rc::clone(rec),
+                                );
                                 needs_hold = needs_hold || rec_needs_hold;
                             }
                         }

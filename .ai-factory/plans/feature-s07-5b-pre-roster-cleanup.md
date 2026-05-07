@@ -272,15 +272,15 @@ Check at T23 bench that the larger `PointerEvent` doesn't push any allocation of
 
 **Phase C atomicity rule:** T14, T15, T16, and T17 must land as **one atomic commit**. T14 changes the trait method signature; T15 migrates the only impl (LongPress); T16 updates the only call site (`binding.rs:227`); T17 is a no-op verification of `GestureDisposition #[non_exhaustive]`. Between T14 and T16 the tree does not compile. Phase C's commit checkpoint encompasses all four.
 
-- [ ] **T14:** Replace `RecognizerLifecycle::set_arena_back_channel(&mut self, _back_channel: ArenaBackChannel, _entry_index: usize)` with `set_arena_back_channel(&mut self, _pointer_id: PointerId, _back_channel: ArenaBackChannel, _entry_index: usize)`. Same name, three args, default no-op body. Object-safety verified: `PointerId` is `Copy + 'static`, no generics. Update the trait's rustdoc to mention the new pointer_id semantics.
+- [x] **T14:** Replace `RecognizerLifecycle::set_arena_back_channel(&mut self, _back_channel: ArenaBackChannel, _entry_index: usize)` with `set_arena_back_channel(&mut self, _pointer_id: PointerId, _back_channel: ArenaBackChannel, _entry_index: usize)`. Same name, three args, default no-op body. Object-safety verified: `PointerId` is `Copy + 'static`, no generics. Update the trait's rustdoc to mention the new pointer_id semantics.
 
-- [ ] **T15:** Migrate `LongPressGestureRecognizer` (`long_press.rs`):
+- [x] **T15:** Migrate `LongPressGestureRecognizer` (`long_press.rs`):
   - `pointer_index: Option<usize>` → `pointer_indexes: SmallVec<[(PointerId, usize); 1]>` (single-shot inline storage; no allocation in the common case).
   - `set_arena_back_channel(pid, bc, idx)` impl pushes `(pid, idx)` and stores `bc`.
   - Timer closure (currently captures `entry_index = self.pointer_index` at `long_press.rs:168`) now captures `pointer_id` (already in scope at line 164) and looks up `(pid, idx)` in `pointer_indexes`. Drop on rejected/cancel clears the entry.
   - Verify: `cargo check -p flui-core` passes after T15 (against T14's new trait shape).
 
-- [ ] **T16:** Update `GestureBinding::register_recognizer` (`binding.rs:227`):
+- [x] **T16:** Update `GestureBinding::register_recognizer` (`binding.rs:227`):
 
   ```rust
   if lifecycle.needs_back_channel() {
@@ -291,7 +291,7 @@ Check at T23 bench that the larger `PointerEvent` doesn't push any allocation of
 
   Same call site, signature now matches T14. **Also implement Decision D10 here:** check `recognizer.allowed_buttons_filter` (per-recogniser-specific; via a new trait method `GestureRecognizer::allowed_buttons_filter(&self) -> Option<&AllowedButtonsFilter>`) **before** `arena.add(pointer_id, recognizer)`. On filter rejection, `register_recognizer` returns early without adding to the arena. This prevents the zombie-arena bug (recogniser added but never enters `add_pointer`).
 
-- [ ] **T17:** Verify `GestureDisposition` is already `#[non_exhaustive]` (`arena.rs:26`). No code change. Rustdoc note added documenting the future-extension contract.
+- [x] **T17:** Verify `GestureDisposition` is already `#[non_exhaustive]` (`arena.rs:26`). No code change. Rustdoc note added documenting the future-extension contract.
 
 - [ ] **T18 (renamed from earlier T18):** Convert `is_held: bool` to `hold_count: u32` on `GestureArena` (`arena.rs:65`). Update:
   - `GestureArenaManager::hold(pid)` increments.
@@ -300,7 +300,7 @@ Check at T23 bench that the larger `PointerEvent` doesn't push any allocation of
   - All log fields `arena_state = "needs_hold"` etc. switch to `hold_count = N` numeric.
   - The S07.5 P-T15.5-C property test `prop_hold_release_symmetry` extends to verify `hold_count` round-trips correctly under any sequence of `hold`/`release`.
 
-- [ ] **T19:** Define `AllowedButtonsFilter` newtype in `gesture/mod.rs`:
+- [x] **T19:** Define `AllowedButtonsFilter` newtype in `gesture/mod.rs`:
 
   ```rust
   pub struct AllowedButtonsFilter(Box<dyn Fn(PointerButtons, Modifiers) -> bool + 'static>);

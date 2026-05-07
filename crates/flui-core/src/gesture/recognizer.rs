@@ -6,7 +6,7 @@
 //! See the design doc § "GestureRecognizer trait".
 
 use super::arena::ArenaBackChannel;
-use super::{DeliveredEvent, GestureDisposition, GestureSettings, PointerId};
+use super::{AllowedButtonsFilter, DeliveredEvent, GestureDisposition, GestureSettings, PointerId};
 use crate::FocusHandle;
 
 /// One competitor in the gesture arena.
@@ -102,6 +102,19 @@ pub trait GestureRecognizer: 'static {
         None
     }
 
+    /// Optional per-recognizer button + modifier gating predicate.
+    ///
+    /// Returned by recognizers that opt into [`AllowedButtonsFilter`]
+    /// gating (typically via a `with_allowed_buttons_filter`
+    /// builder). [`super::GestureBinding::register_recognizer`]
+    /// evaluates this filter on the registering pointer event before
+    /// `arena.add`; on rejection the recognizer is not added (Decision
+    /// D10). Default `None` — no extra gating beyond the recognizer's
+    /// own `add_pointer` button check.
+    fn allowed_buttons_filter(&self) -> Option<&AllowedButtonsFilter> {
+        None
+    }
+
     /// Optional access to per-recognizer lifecycle hooks.
     ///
     /// Default returns `None`; recognizers that opt in (e.g. `LongPress`
@@ -158,6 +171,12 @@ pub trait RecognizerLifecycle {
     /// entry index into the arena. Called only when
     /// [`Self::needs_back_channel`] returns `true`.
     ///
+    /// `pointer_id` is the pointer for which the recognizer is being
+    /// registered. Multi-pointer recognizers (e.g. `LongPress`,
+    /// future `MultiTap`) MUST keep one `(pointer_id, entry_index)`
+    /// pair per pointer they track — a single boolean / scalar slot
+    /// silently conflates concurrent in-flight presses.
+    ///
     /// `back_channel` is an opaque [`ArenaBackChannel`] that stays
     /// valid while the per-window arena is alive and degrades into a
     /// silent no-op once the `Window` (and its `GestureBinding`)
@@ -169,7 +188,13 @@ pub trait RecognizerLifecycle {
     /// `entries` vec at registration time, suitable for
     /// `back_channel.declare_winner(pointer_id, entry_index, ...)`
     /// from a timer callback.
-    fn set_arena_back_channel(&mut self, _back_channel: ArenaBackChannel, _entry_index: usize) {}
+    fn set_arena_back_channel(
+        &mut self,
+        _pointer_id: PointerId,
+        _back_channel: ArenaBackChannel,
+        _entry_index: usize,
+    ) {
+    }
 
     /// Whether this recognizer wants the arena to enter `hold` mode on
     /// the initial `Down`, deferring the sweep-on-`Up` resolution until

@@ -258,6 +258,56 @@ pub use pointer_signal::PointerSignalEvent;
 pub use recognizer::{GestureRecognizer, RecognizerLifecycle, SemanticAction};
 pub use velocity_tracker::{PositionSample, Velocity, VelocityTracker};
 
+use crate::Modifiers;
+
+/// Gating predicate evaluated by `GestureBinding::register_recognizer`
+/// before the recognizer joins the arena, allowing per-recognizer
+/// rejection rules that depend on the buttons + modifiers carried by
+/// the registering pointer event.
+///
+/// **Why a newtype, not a `pub type X = dyn Fn(...)` alias.** A `dyn`
+/// trait alias is unnameable in `impl Trait` return position, prints
+/// as a verbose error message, cannot grow methods, and cannot
+/// override auto-traits. The newtype wrapping a `Box<dyn Fn>` keeps
+/// the surface short while leaving room to add observation methods
+/// (e.g. a `name()` for trace logging) later — no breaking change.
+///
+/// **Why `Fn`, not `FnMut`.** The filter is queried once per
+/// registration; it has no need to mutate captured state. Keeping
+/// `Fn` also keeps the recognizer's interior-mutability surface flat
+/// (audit cross-cut A7).
+///
+/// Construction: [`Self::new`] with any `Fn(PointerButtons,
+/// Modifiers) -> bool + 'static` closure. Evaluation: [`Self::call`].
+///
+/// `register_recognizer` evaluates the filter **before** adding the
+/// recognizer to the arena (Decision D10). On `false` the recognizer
+/// short-circuits and is not registered — never enters the arena and
+/// never returns `Possible` indefinitely.
+pub struct AllowedButtonsFilter(Box<dyn Fn(PointerButtons, Modifiers) -> bool + 'static>);
+
+impl AllowedButtonsFilter {
+    /// Wrap an arbitrary `Fn` closure as a filter. The closure must
+    /// be `'static` because filters outlive any specific stack frame
+    /// (recognizers store them as fields on `'static` types).
+    pub fn new(f: impl Fn(PointerButtons, Modifiers) -> bool + 'static) -> Self {
+        Self(Box::new(f))
+    }
+
+    /// Evaluate the filter for the given button + modifier state.
+    /// `true` means the recognizer should be admitted; `false` means
+    /// `register_recognizer` will skip the `arena.add` call.
+    pub fn call(&self, buttons: PointerButtons, modifiers: Modifiers) -> bool {
+        (self.0)(buttons, modifiers)
+    }
+}
+
+impl std::fmt::Debug for AllowedButtonsFilter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("AllowedButtonsFilter(<closure>)")
+    }
+}
+
 // =====================================================================
 // Internal fluent-builder helpers for `InteractiveElement` (T14).
 // `#[doc(hidden)]` — they appear in the public surface only because

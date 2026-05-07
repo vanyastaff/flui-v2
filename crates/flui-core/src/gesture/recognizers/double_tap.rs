@@ -2,9 +2,10 @@
 //!
 //! See the design doc § "DoubleTapGestureRecognizer".
 
+use crate::Modifiers;
 use crate::gesture::{
-    DeliveredEvent, GestureDisposition, GestureRecognizer, GestureSettings, PointerButtons,
-    PointerId, PointerKind, PointerPhase, RecognizerLifecycle, SemanticAction,
+    AllowedButtonsFilter, DeliveredEvent, GestureDisposition, GestureRecognizer, GestureSettings,
+    PointerButtons, PointerId, PointerKind, PointerPhase, RecognizerLifecycle, SemanticAction,
 };
 use crate::scheduler::Instant;
 use crate::{Pixels, Point};
@@ -67,6 +68,11 @@ pub struct DoubleTapGestureRecognizer {
     /// [`crate::gesture::GestureSettings::double_tap_min_time`] at
     /// construction. Must be `<` [`Self::double_tap_timeout`].
     pub double_tap_min_time: Duration,
+    /// Optional `(buttons, modifiers) -> bool` predicate evaluated by
+    /// [`crate::gesture::GestureBinding::register_recognizer`] before
+    /// the recognizer joins the arena. `None` (the default) admits
+    /// every event whose `buttons` contain [`Self::button`].
+    pub allowed_buttons_filter: Option<AllowedButtonsFilter>,
 
     state: DoubleTapState,
     pointer: Option<PointerId>,
@@ -84,12 +90,25 @@ impl DoubleTapGestureRecognizer {
             touch_slop: settings.touch_slop,
             double_tap_timeout: settings.double_tap_timeout,
             double_tap_min_time: settings.double_tap_min_time,
+            allowed_buttons_filter: None,
             state: DoubleTapState::Idle,
             pointer: None,
             first_up_time: None,
             first_position: Point::default(),
             last_kind: PointerKind::Mouse,
         }
+    }
+
+    /// Fluent setter for [`Self::allowed_buttons_filter`]. The closure
+    /// is evaluated by [`crate::gesture::GestureBinding::register_recognizer`]
+    /// at registration time; on `false` the recognizer never enters
+    /// the arena (Decision D10).
+    pub fn with_allowed_buttons_filter(
+        mut self,
+        f: impl Fn(PointerButtons, Modifiers) -> bool + 'static,
+    ) -> Self {
+        self.allowed_buttons_filter = Some(AllowedButtonsFilter::new(f));
+        self
     }
 
     fn distance_sq(&self, p: Point<Pixels>) -> f32 {
@@ -117,6 +136,10 @@ impl GestureRecognizer for DoubleTapGestureRecognizer {
 
     fn name(&self) -> &'static str {
         "double_tap"
+    }
+
+    fn allowed_buttons_filter(&self) -> Option<&AllowedButtonsFilter> {
+        self.allowed_buttons_filter.as_ref()
     }
 
     fn add_pointer(&mut self, pointer_id: PointerId, event: DeliveredEvent<'_>) {

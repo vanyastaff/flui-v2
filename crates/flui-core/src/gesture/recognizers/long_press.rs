@@ -7,12 +7,14 @@
 //!
 //! See the design doc § "LongPressGestureRecognizer".
 
+use crate::Modifiers;
 use crate::gesture::arena::ArenaBackChannel;
 use crate::gesture::{
-    DeliveredEvent, GestureDisposition, GestureRecognizer, GestureSettings, PointerButtons,
-    PointerId, PointerKind, PointerPhase, RecognizerLifecycle, SemanticAction,
+    AllowedButtonsFilter, DeliveredEvent, GestureDisposition, GestureRecognizer, GestureSettings,
+    PointerButtons, PointerId, PointerKind, PointerPhase, RecognizerLifecycle, SemanticAction,
 };
 use crate::{AppContext, Pixels, Point, Task};
+use smallvec::SmallVec;
 use std::time::Duration;
 
 const LONG_PRESS_SEMANTIC_ACTIONS: &[SemanticAction] = &[SemanticAction::LongPress];
@@ -67,6 +69,11 @@ pub struct LongPressGestureRecognizer {
     /// [`crate::gesture::GestureSettings::long_press_timer_budget`] at
     /// construction (default: 16 ms / one 60 Hz frame).
     pub timer_budget: Duration,
+    /// Optional `(buttons, modifiers) -> bool` predicate evaluated by
+    /// [`crate::gesture::GestureBinding::register_recognizer`] before
+    /// the recognizer joins the arena. `None` (the default) admits
+    /// every event whose `buttons` contain [`Self::button`].
+    pub allowed_buttons_filter: Option<AllowedButtonsFilter>,
 
     pointer: Option<PointerId>,
     down_position: Point<Pixels>,
@@ -82,8 +89,14 @@ pub struct LongPressGestureRecognizer {
     /// outside the binding (e.g. directly in unit tests) silently
     /// no-ops the timer's `declare_winner` call instead of panicking.
     arena_back_channel: ArenaBackChannel,
-    /// Index into `arena.entries` recorded at registration time.
-    pointer_index: Option<usize>,
+    /// Per-pointer arena entry slots recorded at registration time.
+    ///
+    /// Single-shot LongPress holds at most one pointer in flight in
+    /// practice, so the inline storage of `1` covers the common case
+    /// without a heap allocation. Multi-pointer recognizers built on
+    /// the same back-channel hook (S07.6 MultiTap) carry the same
+    /// shape with a larger inline budget.
+    pointer_indexes: SmallVec<[(PointerId, usize); 1]>,
 }
 
 impl LongPressGestureRecognizer {
@@ -97,14 +110,27 @@ impl LongPressGestureRecognizer {
             timeout: settings.long_press_timeout,
             slop: settings.long_press_slop,
             timer_budget: settings.long_press_timer_budget,
+            allowed_buttons_filter: None,
             pointer: None,
             down_position: Point::default(),
             last_kind: PointerKind::Mouse,
             accepted: false,
             timer: None,
             arena_back_channel: ArenaBackChannel::empty(),
-            pointer_index: None,
+            pointer_indexes: SmallVec::new(),
         }
+    }
+
+    /// Fluent setter for [`Self::allowed_buttons_filter`]. The closure
+    /// is evaluated by [`crate::gesture::GestureBinding::register_recognizer`]
+    /// at registration time; on `false` the recognizer never enters
+    /// the arena (Decision D10).
+    pub fn with_allowed_buttons_filter(
+        mut self,
+        f: impl Fn(PointerButtons, Modifiers) -> bool + 'static,
+    ) -> Self {
+        self.allowed_buttons_filter = Some(AllowedButtonsFilter::new(f));
+        self
     }
 
     fn distance_sq(&self, p: Point<Pixels>) -> f32 {
@@ -121,6 +147,10 @@ impl GestureRecognizer for LongPressGestureRecognizer {
 
     fn name(&self) -> &'static str {
         "long_press"
+    }
+
+    fn allowed_buttons_filter(&self) -> Option<&AllowedButtonsFilter> {
+        self.allowed_buttons_filter.as_ref()
     }
 
     fn add_pointer(&mut self, pointer_id: PointerId, event: DeliveredEvent<'_>) {
@@ -167,7 +197,16 @@ impl GestureRecognizer for LongPressGestureRecognizer {
                 let entry_position = event.global_position();
                 let entry_kind = event.kind();
                 let back_channel = self.arena_back_channel.clone();
-                let entry_index = self.pointer_index;
+                // Look up this pointer's entry slot recorded during
+                // `set_arena_back_channel`. Multi-pointer recognizers
+                // share the back-channel hook surface, so the lookup
+                // is keyed on `pointer_id` (the matching slot is
+                // `(pid, idx)`).
+                let entry_index = self
+                    .pointer_indexes
+                    .iter()
+                    .find(|(pid, _)| *pid == pointer_id)
+                    .map(|(_, idx)| *idx);
                 let window_handle = window.window_handle();
                 // S07.5 T5 — use `BackgroundExecutor::timer` so the
                 // test harness's virtual clock (driven by
@@ -307,13 +346,18 @@ impl GestureRecognizer for LongPressGestureRecognizer {
 
     fn rejected(
         &mut self,
-        _pointer_id: PointerId,
+        pointer_id: PointerId,
         _window: &mut crate::Window,
         _cx: &mut crate::App,
     ) {
-        // Drop the timer to cancel the future.
+        // Drop the timer to cancel the future and clear the entry
+        // slot for this pointer (single-shot LongPress only ever
+        // tracks one in-flight pointer, but staying defensive
+        // matches the per-pointer storage shape).
         self.timer = None;
         self.accepted = false;
+        self.pointer_indexes
+            .retain(|(pid, _)| *pid != pointer_id);
     }
 
     fn semantic_actions(&self) -> &'static [SemanticAction] {
@@ -330,16 +374,27 @@ impl RecognizerLifecycle for LongPressGestureRecognizer {
         true
     }
 
-    fn set_arena_back_channel(&mut self, back_channel: ArenaBackChannel, entry_index: usize) {
+    fn set_arena_back_channel(
+        &mut self,
+        pointer_id: PointerId,
+        back_channel: ArenaBackChannel,
+        entry_index: usize,
+    ) {
         log::trace!(
             target: "flui::gesture::long_press",
             recognizer = "long_press",
             lifecycle = "set_back_channel",
+            pointer_id = format!("{:?}", pointer_id),
             entry_index = entry_index;
             "long_press back-channel injected at registration"
         );
         self.arena_back_channel = back_channel;
-        self.pointer_index = Some(entry_index);
+        // Replace any stale entry for this pointer (defensive: a
+        // re-Down on the same pointer mid-arena is unexpected but
+        // would otherwise leave a duplicate slot here).
+        self.pointer_indexes
+            .retain(|(pid, _)| *pid != pointer_id);
+        self.pointer_indexes.push((pointer_id, entry_index));
     }
 
     fn configure_settings(&mut self, settings: &GestureSettings) {

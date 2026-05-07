@@ -13,9 +13,10 @@
 //!
 //! See the design doc § "ScaleGestureRecognizer".
 
+use crate::Modifiers;
 use crate::gesture::{
-    DeliveredEvent, GestureDisposition, GestureRecognizer, GestureSettings, PointerId, PointerKind,
-    PointerPhase, RecognizerLifecycle,
+    AllowedButtonsFilter, DeliveredEvent, GestureDisposition, GestureRecognizer, GestureSettings,
+    PointerButtons, PointerId, PointerKind, PointerPhase, RecognizerLifecycle,
 };
 use crate::{Pixels, Point};
 use smallvec::SmallVec;
@@ -95,6 +96,11 @@ pub struct ScaleGestureRecognizer {
     /// the gesture is accepted. Read from
     /// [`crate::gesture::GestureSettings::touch_slop`] at construction.
     pub slop: Pixels,
+    /// Optional `(buttons, modifiers) -> bool` predicate evaluated by
+    /// [`crate::gesture::GestureBinding::register_recognizer`] before
+    /// the recognizer joins the arena. `None` (the default) admits
+    /// every event.
+    pub allowed_buttons_filter: Option<AllowedButtonsFilter>,
 
     state: ScaleState,
     /// Active pointers, indexed by `PointerId`.
@@ -112,12 +118,25 @@ impl ScaleGestureRecognizer {
             on_update: None,
             on_end: None,
             slop: settings.touch_slop,
+            allowed_buttons_filter: None,
             state: ScaleState::Idle,
             pointers: SmallVec::new(),
             initial_distance: 0.0,
             initial_angle: 0.0,
             initial_kind: PointerKind::Mouse,
         }
+    }
+
+    /// Fluent setter for [`Self::allowed_buttons_filter`]. The closure
+    /// is evaluated by [`crate::gesture::GestureBinding::register_recognizer`]
+    /// at registration time; on `false` the recognizer never enters
+    /// the arena (Decision D10).
+    pub fn with_allowed_buttons_filter(
+        mut self,
+        f: impl Fn(PointerButtons, Modifiers) -> bool + 'static,
+    ) -> Self {
+        self.allowed_buttons_filter = Some(AllowedButtonsFilter::new(f));
+        self
     }
 
     fn focal_point(&self) -> Point<Pixels> {
@@ -192,6 +211,10 @@ impl GestureRecognizer for ScaleGestureRecognizer {
 
     fn name(&self) -> &'static str {
         "scale"
+    }
+
+    fn allowed_buttons_filter(&self) -> Option<&AllowedButtonsFilter> {
+        self.allowed_buttons_filter.as_ref()
     }
 
     fn add_pointer(&mut self, pointer_id: PointerId, event: DeliveredEvent<'_>) {
