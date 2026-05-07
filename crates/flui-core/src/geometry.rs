@@ -3916,12 +3916,44 @@ impl Affine2 {
         }
     }
 
-    /// Returns the inverse transform, or `None` if the linear part is
-    /// singular (determinant is zero or near-zero).
+    /// Returns the inverse transform, or `None` if the linear part
+    /// is singular or so ill-conditioned that the inverse would be
+    /// numerically useless.
+    ///
+    /// **Singularity threshold.** A 2×2 linear part with elements of
+    /// magnitude `M` has Frobenius norm `M·√k` (`k = entries^2`), so
+    /// a determinant comparable to `M²` corresponds to a
+    /// well-conditioned matrix. We reject when `det²` is below the
+    /// `f32` working-precision floor relative to that scale:
+    /// `det² < ε² · ‖linear‖_F²`. Equivalently: the inverse condition
+    /// number `|det| / ‖linear‖_F²` must be at least `f32::EPSILON`
+    /// (~1.19·10⁻⁷).
+    ///
+    /// This is scale-aware: `Affine2::scale(1e-4)` (det = 1·10⁻⁸)
+    /// stays invertible because its Frobenius norm shrinks in
+    /// proportion, while a sheared matrix
+    /// `[[1, 0.5], [2, 1]]` (det = 0.0) is rejected regardless of
+    /// magnitude. A naive absolute-`f32::EPSILON` cutoff misclassifies
+    /// the first as singular and the second as invertible, so this
+    /// method does not use one.
+    ///
+    /// Translation does not enter the singularity check — it never
+    /// affects invertibility (translation is always a rigid motion).
     pub fn inverse(self) -> Option<Self> {
         let [[a, b, tx], [c, d, ty]] = self.rows;
         let det = a * d - b * c;
-        if det.abs() <= f32::EPSILON {
+        let frob_sq = a * a + b * b + c * c + d * d;
+        // Avoid the divide-by-zero branch when the linear part is the
+        // zero matrix — the relative test below would compare 0 < 0
+        // and slip through. A zero linear part is unconditionally
+        // singular regardless of translation.
+        if frob_sq <= f32::MIN_POSITIVE {
+            return None;
+        }
+        // Relative singularity test: |det| / ‖linear‖_F² must clear
+        // f32 working precision. Comparing squared quantities avoids
+        // the abs() + sqrt() round-trip.
+        if det * det < f32::EPSILON * f32::EPSILON * frob_sq * frob_sq {
             return None;
         }
         let inv_det = 1.0 / det;
@@ -4056,6 +4088,35 @@ mod tests {
             rows: [[0.0, 0.0, 1.0], [0.0, 0.0, 2.0]],
         };
         assert!(degenerate.inverse().is_none());
+    }
+
+    #[test]
+    fn affine2_inverse_rejects_collinear_linear_part() {
+        // Linear part `[[1, 2], [2, 4]]` is rank 1 (rows are
+        // proportional). det = 0 but the Frobenius norm is non-zero,
+        // so the relative-threshold path catches it (an absolute
+        // f32::EPSILON test would also catch it, but this lock makes
+        // the relative-threshold path explicit).
+        let collinear = Affine2 {
+            rows: [[1.0, 2.0, 0.0], [2.0, 4.0, 0.0]],
+        };
+        assert!(collinear.inverse().is_none(), "rank-1 linear part is singular");
+    }
+
+    #[test]
+    fn affine2_inverse_accepts_small_but_well_conditioned_scale() {
+        // `scale(1e-4)` has det = 1e-8 — well below f32::EPSILON
+        // (~1.19e-7), so an absolute-EPSILON singularity threshold
+        // would wrongly reject this matrix. The relative threshold
+        // accepts it because |det| / ‖linear‖_F² = 1e-8 / 2e-8 = 0.5
+        // is well above f32::EPSILON.
+        let small_scale = Affine2::scale(1e-4);
+        let inv = small_scale.inverse().expect("scale(1e-4) is invertible");
+        // Round-trip: applying small_scale then inv should recover
+        // the original point within float precision.
+        let p = px(3.0, 4.0);
+        let round_tripped = inv.transform_point(small_scale.transform_point(p));
+        assert!(approx_eq(round_tripped, p, 1e-3));
     }
 
     #[test]

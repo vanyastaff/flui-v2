@@ -313,6 +313,7 @@ pub(crate) mod velocity_tracker;
 pub use arena::{ArenaBackChannel, GestureDisposition};
 pub use arena_team::GestureArenaTeam;
 pub use binding::GestureBinding;
+pub(crate) use binding::RegistrationResult;
 pub use gesture_settings::GestureSettings;
 pub use hit_test::{HitTestBehavior, HitTestEntry, HitTestResult, HitTestScope};
 pub use pan_zoom_event::{PanZoomPhase, PointerPanZoomEvent};

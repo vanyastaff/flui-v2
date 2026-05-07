@@ -394,7 +394,7 @@ Re-invoke after substantial edits:
 18. **Verification grep gates pass:**
     - `grep "event\.position" crates/flui-core/src/gesture/recognizers/` → 0 hits.
     - `grep "event\.timestamp" crates/flui-core/src/gesture/recognizers/` → 0 hits (all migrated to `source_timestamp`).
-    - `grep "impl RecognizerLifecycle" crates/` → 1 hit (long_press.rs only).
+    - `grep "needs_back_channel" crates/flui-core/src/gesture/recognizers/` → exactly 1 hit (`long_press.rs` is the only recognizer that overrides `RecognizerLifecycle::needs_back_channel` to `true`; the per-file `RecognizerLifecycle` impl count itself is **5**, one per recognizer family — every recognizer needs `configure_settings`, so a higher count there is expected, not a regression).
     - `grep "PointerEvent {" crates/flui-core/src/gesture/` → all sites enumerated in T7.
 
 ## Risks

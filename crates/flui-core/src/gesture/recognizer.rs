@@ -240,7 +240,7 @@ mod tests {
     use super::*;
     use crate::Modifiers;
     use crate::gesture::{
-        AllowedButtonsFilter, PointerButtons, recognizers::DoubleTapGestureRecognizer,
+        PointerButtons, recognizers::DoubleTapGestureRecognizer,
         recognizers::HorizontalDragGestureRecognizer, recognizers::LongPressGestureRecognizer,
         recognizers::PanGestureRecognizer, recognizers::ScaleGestureRecognizer,
         recognizers::TapGestureRecognizer, recognizers::VerticalDragGestureRecognizer,
@@ -257,47 +257,51 @@ mod tests {
     /// method returns `None`; overrides return `Some(self.<field>)`.
     /// Without that override, `register_recognizer` would never see
     /// the filter and Decision D10's gating becomes a silent no-op.
+    ///
+    /// All seven recognizer families use the documented fluent
+    /// `with_allowed_buttons_filter` builder — keeping the test
+    /// shape uniform with the canonical `recognizer-extension.md`
+    /// recipe (rather than mixing with raw `pub field = Some(...)`
+    /// assignment, which works but is the unidiomatic form for
+    /// downstream readers).
     #[test]
     fn every_recognizer_surfaces_allowed_buttons_filter() {
         use crate::gesture::GestureSettings;
 
         let s = GestureSettings::default();
-        let always_false = || AllowedButtonsFilter::new(|_, _| false);
 
-        // Each recognizer family is exercised: install the filter via
-        // the builder, then read it back through the trait method and
-        // call it.
-        let mut tap = TapGestureRecognizer::new(&s);
-        tap.allowed_buttons_filter = Some(always_false());
-        assert!(tap.allowed_buttons_filter().is_some(), "tap surfaces filter");
+        // Each recognizer family installs an always-false filter via
+        // the canonical builder, then we read it back through the
+        // trait method and verify the closure is reachable. The
+        // closure body is not exercised here — the binding-side
+        // integration test in `gesture_dispatch_integration.rs`
+        // covers the full register_recognizer rejection path.
+
+        let tap = TapGestureRecognizer::new(&s).with_allowed_buttons_filter(|_, _| false);
         assert!(
-            !tap.allowed_buttons_filter()
-                .unwrap()
-                .call(PointerButtons::PRIMARY, Modifiers::default())
+            tap.allowed_buttons_filter()
+                .is_some_and(|f| !f.call(PointerButtons::PRIMARY, Modifiers::default())),
+            "tap surfaces filter and forwards arguments"
         );
 
-        let mut dt = DoubleTapGestureRecognizer::new(&s);
-        dt.allowed_buttons_filter = Some(always_false());
+        let dt = DoubleTapGestureRecognizer::new(&s).with_allowed_buttons_filter(|_, _| false);
         assert!(dt.allowed_buttons_filter().is_some(), "double_tap surfaces filter");
 
-        let mut lp = LongPressGestureRecognizer::new(&s);
-        lp.allowed_buttons_filter = Some(always_false());
+        let lp = LongPressGestureRecognizer::new(&s).with_allowed_buttons_filter(|_, _| false);
         assert!(lp.allowed_buttons_filter().is_some(), "long_press surfaces filter");
 
-        let pan = PanGestureRecognizer::new(&s)
-            .with_allowed_buttons_filter(|_, _| false);
+        let pan = PanGestureRecognizer::new(&s).with_allowed_buttons_filter(|_, _| false);
         assert!(pan.allowed_buttons_filter().is_some(), "pan surfaces filter");
 
-        let hdrag = HorizontalDragGestureRecognizer::new(&s)
-            .with_allowed_buttons_filter(|_, _| false);
+        let hdrag =
+            HorizontalDragGestureRecognizer::new(&s).with_allowed_buttons_filter(|_, _| false);
         assert!(hdrag.allowed_buttons_filter().is_some(), "hdrag surfaces filter");
 
-        let vdrag = VerticalDragGestureRecognizer::new(&s)
-            .with_allowed_buttons_filter(|_, _| false);
+        let vdrag =
+            VerticalDragGestureRecognizer::new(&s).with_allowed_buttons_filter(|_, _| false);
         assert!(vdrag.allowed_buttons_filter().is_some(), "vdrag surfaces filter");
 
-        let mut scale = ScaleGestureRecognizer::new(&s);
-        scale.allowed_buttons_filter = Some(always_false());
+        let scale = ScaleGestureRecognizer::new(&s).with_allowed_buttons_filter(|_, _| false);
         assert!(scale.allowed_buttons_filter().is_some(), "scale surfaces filter");
     }
 

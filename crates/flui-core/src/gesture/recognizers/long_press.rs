@@ -207,6 +207,15 @@ impl GestureRecognizer for LongPressGestureRecognizer {
                 // share the back-channel hook surface, so the lookup
                 // is keyed on `pointer_id` (the matching slot is
                 // `(pid, idx)`).
+                //
+                // **Eager capture.** This computes the resolved
+                // `Option<usize>` *before* the `cx.spawn` call so the
+                // async closure captures a `Copy` value rather than a
+                // borrow into `self.pointer_indexes`. A late lookup
+                // inside the closure would race with `rejected`
+                // (which clears the slot) and with sibling
+                // `add_pointer` calls — both legal on the main
+                // thread between Down and timer-fire.
                 let entry_index = self
                     .pointer_indexes
                     .iter()

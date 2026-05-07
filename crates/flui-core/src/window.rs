@@ -4388,11 +4388,20 @@ impl Window {
                         let recs = self.pending_recognizers.remove(&entry.hitbox_id);
                         if let Some(recs) = recs {
                             // Compute hit-target-local position for
-                            // this entry. S07.5b: arena entries do not
-                            // yet store inverse transforms, so the
-                            // local position equals `pe.position`.
-                            // S09 will populate this from
-                            // `entry.transform`.
+                            // this entry. S07.5b: hit-test entries do
+                            // not yet store non-identity transforms,
+                            // so the local position equals
+                            // `pe.position`. S09 paint integration
+                            // will populate `entry.transform` and
+                            // this inversion will start to do real
+                            // work.
+                            //
+                            // The stored `entry.transform` follows
+                            // the Flutter `local → window` convention
+                            // (see `HitTestEntry.transform` rustdoc):
+                            // invert and apply once per delivery to
+                            // recover the per-target local
+                            // coordinate.
                             let local_position = entry
                                 .transform
                                 .and_then(|t| t.inverse())
@@ -4401,14 +4410,33 @@ impl Window {
                             let delivered =
                                 crate::gesture::DeliveredEvent::new(pe, local_position);
                             for rec in recs.iter() {
-                                rec.borrow_mut().add_pointer(pe.pointer_id, delivered);
-                                let rec_needs_hold = self.gesture_binding.register_recognizer(
+                                // Register first; only then prime the
+                                // recognizer's per-pointer state.
+                                // Decision D10: a filter-rejected
+                                // recognizer never sees `add_pointer`,
+                                // so paint-time recognizer instances
+                                // re-used across paint cycles cannot
+                                // leak stale `down_position` / state
+                                // mutation from a rejected
+                                // registration. `arena.add` does not
+                                // dispatch — `arena.dispatch` for
+                                // this Down event runs later in this
+                                // function — so swapping the order
+                                // is safe under the synchronous
+                                // main-thread invariant.
+                                let result = self.gesture_binding.register_recognizer(
                                     pe.pointer_id,
                                     pe.buttons,
                                     pe.modifiers,
                                     std::rc::Rc::clone(rec),
                                 );
-                                needs_hold = needs_hold || rec_needs_hold;
+                                if let crate::gesture::RegistrationResult::Accepted {
+                                    needs_hold: rec_needs_hold,
+                                } = result
+                                {
+                                    rec.borrow_mut().add_pointer(pe.pointer_id, delivered);
+                                    needs_hold = needs_hold || rec_needs_hold;
+                                }
                             }
                         }
                         if matches!(entry.behavior, crate::gesture::HitTestBehavior::Opaque) {

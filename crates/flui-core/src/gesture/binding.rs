@@ -16,6 +16,33 @@ use crate::{AppContext, Task};
 use std::cell::RefCell;
 use std::rc::Rc;
 
+/// Outcome of [`GestureBinding::register_recognizer`].
+///
+/// Distinguishes "the recognizer was admitted" (with its
+/// `needs_arena_hold` flag) from "the recognizer was rejected by its
+/// own [`super::AllowedButtonsFilter`] before ever entering the
+/// arena" (Decision D10). The dispatcher uses the variant to decide
+/// whether to fire the recognizer's `add_pointer` callback —
+/// rejected recognizers never see any callbacks.
+#[derive(Copy, Clone, Debug)]
+pub(crate) enum RegistrationResult {
+    /// The recognizer's [`super::AllowedButtonsFilter`] rejected the
+    /// registering pointer event. The recognizer was **not** added
+    /// to the arena and **must not** receive `add_pointer` /
+    /// `handle_event` callbacks.
+    Rejected,
+    /// The recognizer was added to the arena. `needs_hold` mirrors
+    /// the previous `bool` return value — `true` iff the recognizer
+    /// asked the arena to enter `hold` mode via
+    /// [`super::recognizer::RecognizerLifecycle::needs_arena_hold`].
+    Accepted {
+        /// Whether the dispatcher must follow up with
+        /// `arena.hold(pointer_id)` plus a release-timer scheduled
+        /// via [`GestureBinding::schedule_arena_release`].
+        needs_hold: bool,
+    },
+}
+
 /// Per-window owner of the gesture arena, the configurable
 /// [`GestureSettings`], the [`PointerSanitizer`], the per-pointer
 /// [`WindowPointerState`] cache, and the per-pointer arena-hold
@@ -217,11 +244,18 @@ impl GestureBinding {
         buttons: super::PointerButtons,
         modifiers: crate::Modifiers,
         recognizer: Rc<RefCell<Box<dyn GestureRecognizer>>>,
-    ) -> bool {
+    ) -> RegistrationResult {
         // Decision D10 — per-recognizer button/modifier filter check
         // happens *before* arena.add. Rejecting recognizers never
         // enter the arena, so they never become permanent
         // `Possible`-returning zombies on a pointer they decline.
+        //
+        // Side-effect ordering: this method is called *before*
+        // `add_pointer` in the Window-side dispatch loop. Returning
+        // `Rejected` keeps the recognizer in a pristine
+        // post-construction state — no `down_position` mutation, no
+        // `state` transition — so paint-time recognizer instances
+        // re-used across paint cycles cannot leak stale state.
         {
             let rec = recognizer.borrow();
             if let Some(filter) = rec.allowed_buttons_filter()
@@ -234,7 +268,7 @@ impl GestureBinding {
                     recognizer = rec.name();
                     "AllowedButtonsFilter rejected; skipping arena.add"
                 );
-                return false;
+                return RegistrationResult::Rejected;
             }
         }
 
@@ -259,7 +293,7 @@ impl GestureBinding {
             arena_state = if needs_hold { "needs_hold" } else { "open" };
             "register_recognizer"
         );
-        needs_hold
+        RegistrationResult::Accepted { needs_hold }
     }
 
     /// Schedule a `double_tap_timeout`-deferred `arena.release` for

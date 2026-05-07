@@ -366,6 +366,18 @@ impl GestureArenaManager {
         let Some((_, arena)) = self.arenas.iter_mut().find(|(id, _)| *id == pointer_id) else {
             return;
         };
+        // `release` without a matching `hold` is a real logic error
+        // — either the dispatcher schedule_arena_release timer fired
+        // twice, or a recognizer's needs_arena_hold contract was
+        // violated. Catch it loudly in dev builds via debug_assert,
+        // and degrade to saturating-sub in release builds so a stale
+        // timer cannot underflow `hold_count` and trip the
+        // `hold_count == 0` sweep gate elsewhere.
+        debug_assert!(
+            arena.hold_count > 0,
+            "GestureArenaManager::release called without a matching hold (pointer_id={:?})",
+            pointer_id,
+        );
         arena.hold_count = arena.hold_count.saturating_sub(1);
         // Sweep only when nobody else is holding the arena.
         let needs_sweep =
