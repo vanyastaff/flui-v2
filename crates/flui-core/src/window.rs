@@ -4318,9 +4318,35 @@ impl Window {
         {
             // Refresh the per-Window content bounds so the sanitizer
             // can clamp out-of-bounds positions (Wayland decoration
-            // drag).
-            let bounds = self.bounds();
-            self.gesture_binding.pointer_state_mut().window_bounds = bounds;
+            // drag, etc.).
+            //
+            // **Critical:** [`super::gesture::dispatch::PointerSanitizer::convert`]
+            // clamps **client-space** event positions — origin at
+            // the window's top-left (0, 0), x grows right, y grows
+            // down. The bounds it clamps against MUST be in the
+            // same coordinate space.
+            //
+            // Using [`Self::bounds`] here was a long-standing
+            // Windows regression: that method returns the window's
+            // **screen** position in global coordinates, so any
+            // window not anchored at screen `(0, 0)` saw its mouse
+            // events collapsed onto the window's screen origin
+            // (every Down/Up/Hover snapped to
+            // `(window_screen_x, window_screen_y)`). When the
+            // window happened to be at `(0, 0)` the bug was
+            // invisible because client and screen coordinates
+            // coincide — masking the regression in casual testing
+            // and on `interactive_elements` examples that pin the
+            // window in the top-left corner.
+            //
+            // The sanitizer's actual job is "clamp into the content
+            // rectangle"; in client space that rectangle is always
+            // `origin = (0, 0)`, `size = viewport_size`.
+            let bounds = Bounds {
+                origin: Point::default(),
+                size: self.viewport_size(),
+            };
+            self.gesture_binding.pointer_state_mut().content_bounds = bounds;
 
             // PointerSignalEvent (Scroll / Magnify) explicitly bypasses
             // the gesture arena per the design — those events have no

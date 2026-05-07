@@ -35,6 +35,7 @@ xcuserdata/
 
 # AI agent local overrides (per-user, not project state)
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
 .serena/cache/
 .serena/project.local.yml
 .ai-factory/skill-context/
