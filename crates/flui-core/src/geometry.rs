@@ -4060,8 +4060,16 @@ mod tests {
     fn affine2_rotation_quarter_turn() {
         // Counter-clockwise rotation of 90° maps (1, 0) -> (0, 1).
         let r = Affine2::rotation(std::f32::consts::FRAC_PI_2);
-        assert!(approx_eq(r.transform_point(px(1.0, 0.0)), px(0.0, 1.0), 1e-5));
-        assert!(approx_eq(r.transform_point(px(0.0, 1.0)), px(-1.0, 0.0), 1e-5));
+        assert!(approx_eq(
+            r.transform_point(px(1.0, 0.0)),
+            px(0.0, 1.0),
+            1e-5
+        ));
+        assert!(approx_eq(
+            r.transform_point(px(0.0, 1.0)),
+            px(-1.0, 0.0),
+            1e-5
+        ));
     }
 
     #[test]
@@ -4069,7 +4077,11 @@ mod tests {
         let t = Affine2::translation(px(13.0, -7.0));
         let inv = t.inverse().expect("translation is always invertible");
         let p = px(2.0, 5.0);
-        assert!(approx_eq(inv.transform_point(t.transform_point(p)), p, 1e-5));
+        assert!(approx_eq(
+            inv.transform_point(t.transform_point(p)),
+            p,
+            1e-5
+        ));
     }
 
     #[test]
@@ -4078,7 +4090,11 @@ mod tests {
             .composed(Affine2::rotation(std::f32::consts::FRAC_PI_3));
         let inv = t.inverse().expect("rigid motion is always invertible");
         let p = px(11.5, -2.25);
-        assert!(approx_eq(inv.transform_point(t.transform_point(p)), p, 1e-4));
+        assert!(approx_eq(
+            inv.transform_point(t.transform_point(p)),
+            p,
+            1e-4
+        ));
     }
 
     #[test]
@@ -4100,7 +4116,10 @@ mod tests {
         let collinear = Affine2 {
             rows: [[1.0, 2.0, 0.0], [2.0, 4.0, 0.0]],
         };
-        assert!(collinear.inverse().is_none(), "rank-1 linear part is singular");
+        assert!(
+            collinear.inverse().is_none(),
+            "rank-1 linear part is singular"
+        );
     }
 
     #[test]

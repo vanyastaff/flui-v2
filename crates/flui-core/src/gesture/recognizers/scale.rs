@@ -317,7 +317,10 @@ impl GestureRecognizer for ScaleGestureRecognizer {
                 // remove the pointer and check whether the gesture is
                 // ending (count < 2) or merely losing one finger of
                 // a > 2 group.
-                let was_tracked = self.pointers.iter().any(|(id, _)| *id == event.pointer_id());
+                let was_tracked = self
+                    .pointers
+                    .iter()
+                    .any(|(id, _)| *id == event.pointer_id());
                 let pre_retain_scale = self.current_scale();
                 let pre_retain_rotation = self.pair_angle() - self.initial_angle;
                 self.pointers.retain(|(id, _)| *id != event.pointer_id());

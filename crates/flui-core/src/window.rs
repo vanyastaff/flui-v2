@@ -4407,8 +4407,7 @@ impl Window {
                                 .and_then(|t| t.inverse())
                                 .map(|inv| inv.transform_point(pe.position))
                                 .unwrap_or(pe.position);
-                            let delivered =
-                                crate::gesture::DeliveredEvent::new(pe, local_position);
+                            let delivered = crate::gesture::DeliveredEvent::new(pe, local_position);
                             for rec in recs.iter() {
                                 // Register first; only then prime the
                                 // recognizer's per-pointer state.

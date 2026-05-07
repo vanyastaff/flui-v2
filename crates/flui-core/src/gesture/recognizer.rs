@@ -285,24 +285,42 @@ mod tests {
         );
 
         let dt = DoubleTapGestureRecognizer::new(&s).with_allowed_buttons_filter(|_, _| false);
-        assert!(dt.allowed_buttons_filter().is_some(), "double_tap surfaces filter");
+        assert!(
+            dt.allowed_buttons_filter().is_some(),
+            "double_tap surfaces filter"
+        );
 
         let lp = LongPressGestureRecognizer::new(&s).with_allowed_buttons_filter(|_, _| false);
-        assert!(lp.allowed_buttons_filter().is_some(), "long_press surfaces filter");
+        assert!(
+            lp.allowed_buttons_filter().is_some(),
+            "long_press surfaces filter"
+        );
 
         let pan = PanGestureRecognizer::new(&s).with_allowed_buttons_filter(|_, _| false);
-        assert!(pan.allowed_buttons_filter().is_some(), "pan surfaces filter");
+        assert!(
+            pan.allowed_buttons_filter().is_some(),
+            "pan surfaces filter"
+        );
 
         let hdrag =
             HorizontalDragGestureRecognizer::new(&s).with_allowed_buttons_filter(|_, _| false);
-        assert!(hdrag.allowed_buttons_filter().is_some(), "hdrag surfaces filter");
+        assert!(
+            hdrag.allowed_buttons_filter().is_some(),
+            "hdrag surfaces filter"
+        );
 
         let vdrag =
             VerticalDragGestureRecognizer::new(&s).with_allowed_buttons_filter(|_, _| false);
-        assert!(vdrag.allowed_buttons_filter().is_some(), "vdrag surfaces filter");
+        assert!(
+            vdrag.allowed_buttons_filter().is_some(),
+            "vdrag surfaces filter"
+        );
 
         let scale = ScaleGestureRecognizer::new(&s).with_allowed_buttons_filter(|_, _| false);
-        assert!(scale.allowed_buttons_filter().is_some(), "scale surfaces filter");
+        assert!(
+            scale.allowed_buttons_filter().is_some(),
+            "scale surfaces filter"
+        );
     }
 
     /// Default trait body returns `None` — recognizers that opt out

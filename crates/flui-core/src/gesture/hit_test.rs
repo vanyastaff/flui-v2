@@ -128,7 +128,6 @@ impl HitTestResult {
     pub fn push_offset(&mut self, offset: Point<Pixels>) -> HitTestScope<'_> {
         self.push_transform(Affine2::translation(offset))
     }
-
 }
 
 /// RAII guard returned by [`HitTestResult::push_transform`].
@@ -257,7 +256,10 @@ mod tests {
         }
         assert_eq!(result.len(), 1);
         let only = result.iter().next().unwrap();
-        assert!(only.transform.is_none(), "identity scope should not bake into transform");
+        assert!(
+            only.transform.is_none(),
+            "identity scope should not bake into transform"
+        );
         assert!(result.transform_stack.is_empty(), "Drop pops the stack");
     }
 
@@ -283,7 +285,9 @@ mod tests {
             scope.add(entry_at(position));
         }
         let only = result.iter().next().unwrap();
-        let baked = only.transform.expect("non-identity scope bakes a transform");
+        let baked = only
+            .transform
+            .expect("non-identity scope bakes a transform");
         // The recorded transform is window-to-local-space; inverting and
         // applying to the window position yields the local position.
         let inverse = baked.inverse().unwrap();
@@ -308,7 +312,9 @@ mod tests {
             // Outer scope still alive here; inner has dropped (popped).
         }
         let entry = result.iter().next().unwrap();
-        let baked = entry.transform.expect("nested non-identity scope bakes a transform");
+        let baked = entry
+            .transform
+            .expect("nested non-identity scope bakes a transform");
         // Composed transform: outer ∘ inner translates origin by
         // (10, 5).
         let p = baked.transform_point(px(0.0, 0.0));

@@ -247,7 +247,10 @@ macro_rules! impl_drag_recognizer {
                 self.inner.velocity_tracker.reset();
                 self.inner
                     .velocity_tracker
-                    .add_position(PositionSample::new(event.local_position, event.source_timestamp()));
+                    .add_position(PositionSample::new(
+                        event.local_position,
+                        event.source_timestamp(),
+                    ));
             }
 
             fn handle_event(
@@ -265,7 +268,10 @@ macro_rules! impl_drag_recognizer {
                         let dy = event.local_position.y.0 - self.inner.down_position.y.0;
                         self.inner
                             .velocity_tracker
-                            .add_position(PositionSample::new(event.local_position, event.source_timestamp()));
+                            .add_position(PositionSample::new(
+                                event.local_position,
+                                event.source_timestamp(),
+                            ));
 
                         if self.inner.state == DragState::Possible {
                             if self.inner.axis_rejected(dx, dy) {

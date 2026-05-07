@@ -370,8 +370,7 @@ impl GestureRecognizer for LongPressGestureRecognizer {
         // matches the per-pointer storage shape).
         self.timer = None;
         self.accepted = false;
-        self.pointer_indexes
-            .retain(|(pid, _)| *pid != pointer_id);
+        self.pointer_indexes.retain(|(pid, _)| *pid != pointer_id);
     }
 
     fn semantic_actions(&self) -> &'static [SemanticAction] {
@@ -406,8 +405,7 @@ impl RecognizerLifecycle for LongPressGestureRecognizer {
         // Replace any stale entry for this pointer (defensive: a
         // re-Down on the same pointer mid-arena is unexpected but
         // would otherwise leave a duplicate slot here).
-        self.pointer_indexes
-            .retain(|(pid, _)| *pid != pointer_id);
+        self.pointer_indexes.retain(|(pid, _)| *pid != pointer_id);
         self.pointer_indexes.push((pointer_id, entry_index));
     }
 

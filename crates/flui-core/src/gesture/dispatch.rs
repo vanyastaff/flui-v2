@@ -624,9 +624,15 @@ mod tests {
         assert!((sample.value - 0.5).abs() < 1e-6);
         assert_eq!(sample.min, 0.0);
         assert_eq!(sample.max, 1.0);
-        assert!((sample.normalize() - 0.5).abs() < 1e-6, "normalize round-trips Force Touch midpoint");
+        assert!(
+            (sample.normalize() - 0.5).abs() < 1e-6,
+            "normalize round-trips Force Touch midpoint"
+        );
         // State also captures the sample for the next translation step.
-        assert!(state.last_pressure.is_some(), "state.last_pressure carries the same sample");
+        assert!(
+            state.last_pressure.is_some(),
+            "state.last_pressure carries the same sample"
+        );
     }
 
     /// T20 — non-pressure mouse-class events (Down/Up/Move) keep

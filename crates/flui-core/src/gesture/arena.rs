@@ -380,8 +380,7 @@ impl GestureArenaManager {
         );
         arena.hold_count = arena.hold_count.saturating_sub(1);
         // Sweep only when nobody else is holding the arena.
-        let needs_sweep =
-            arena.hold_count == 0 && arena.winner.is_none() && arena.is_open;
+        let needs_sweep = arena.hold_count == 0 && arena.winner.is_none() && arena.is_open;
         if needs_sweep {
             // Drop the borrow before calling `sweep` (which re-borrows).
             self.sweep(pointer_id, window, cx);
