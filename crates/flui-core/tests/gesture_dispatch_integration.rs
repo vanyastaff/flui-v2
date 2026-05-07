@@ -215,3 +215,51 @@ fn on_double_tap_fires_through_arena_hold(cx: &mut TestAppContext) {
          (S07.5 T6 — arena.hold / release wiring)"
     );
 }
+
+#[flui_core::test]
+fn double_tap_timeout_releases_held_arena_without_firing(cx: &mut TestAppContext) {
+    use std::time::Duration;
+    // Locks the timer-driven release path of S07.5 T6: when the second
+    // tap never arrives, the per-pointer `Task<()>` stored on
+    // `GestureBinding::arena_hold_timers` fires after `double_tap_timeout`
+    // and calls `arena.release`. The recognizer's sweep on release
+    // resets state without firing `on_double_tap`. This is the
+    // "cancellation by timeout" half of the contract that the
+    // happy-path two-tap test does not exercise.
+    let fired = Rc::new(Cell::new(0u32));
+    let fired_for_view = fired.clone();
+    let (_view, cx) = cx.add_window_view(move |window, _cx| {
+        // Use a tight timeout so `advance_clock` reaches it cheaply,
+        // and a non-zero `min_time` so the recognizer would be ready
+        // to accept a second tap if one arrived (i.e. the test fails
+        // for the right reason — timer not firing, not because
+        // min_time clamped the second tap out).
+        window.gesture_settings_mut().double_tap_min_time = Duration::from_millis(0);
+        window.gesture_settings_mut().double_tap_timeout = Duration::from_millis(20);
+        GestureTestView::new(move |element, _window, _cx| {
+            let f = fired_for_view.clone();
+            element.on_double_tap(move |_, _, _| {
+                f.set(f.get() + 1);
+            })
+        })
+    });
+    // Single click — registers the DoubleTap recognizer, opens the
+    // arena, holds it, and schedules the release timer.
+    cx.simulate_click(Point::new(px(20.0), px(20.0)), Modifiers::default());
+    cx.run_until_parked();
+    assert_eq!(fired.get(), 0, "single click must not fire on_double_tap");
+    // Drive the executor past `double_tap_timeout` without a second
+    // tap — the release timer fires, calls `arena.release`, and the
+    // recognizer's sweep resets state. Pump twice for the
+    // spawn → timer → update_window chain (mirrors the LongPress
+    // test pattern).
+    cx.executor().advance_clock(Duration::from_millis(50));
+    cx.run_until_parked();
+    cx.executor().advance_clock(Duration::from_millis(5));
+    cx.run_until_parked();
+    assert_eq!(
+        fired.get(),
+        0,
+        "timer-driven release must NOT fire on_double_tap (no second tap arrived)"
+    );
+}

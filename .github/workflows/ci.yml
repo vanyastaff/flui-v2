@@ -73,6 +73,11 @@ jobs:
       # `.ai-factory/plans/feature-gesture-s07-t15-followup.md`.
       - name: cargo check -p flui-core --features test-support
         run: cargo check -p flui-core --features test-support
+      # Run the gesture-dispatch integration tests on Windows too —
+      # they are platform-agnostic by design (the whole point of the
+      # T1 feature split was to make them buildable on this runner).
+      - name: cargo test -p flui-core --features test-support --test gesture_dispatch_integration
+        run: cargo test -p flui-core --features test-support --test gesture_dispatch_integration
       - name: Install cargo-hack
         uses: taiki-e/install-action@cargo-hack
       # Smoke the new feature combinatorics — depth 2 catches the test-support /
@@ -169,6 +174,15 @@ jobs:
 
       - name: Test
         run: cargo test --workspace
+
+      # S07.5 T10 — the gesture-dispatch integration tests are
+      # cfg-gated on the `test-support` feature (which is not in the
+      # default feature set), so the workspace `cargo test` above does
+      # not pick them up. Run them explicitly so the
+      # paint → register_recognizer → arena.dispatch → callback
+      # chain stays locked in CI.
+      - name: Test flui-core with test-support feature (gesture e2e)
+        run: cargo test -p flui-core --features test-support --test gesture_dispatch_integration
 
   format:
     name: Format
