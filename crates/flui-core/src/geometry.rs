@@ -3838,10 +3838,12 @@ where
 ///
 /// Used by the gesture-layer hit-test substrate (see
 /// [`crate::gesture::HitTestEntry::transform`]) to record the
-/// window-local-to-target-local transform for each hit-test entry.
-/// Recognizers consume the inverse via the `local_position` field on
-/// [`crate::gesture::DeliveredEvent`], so callers rarely invert
-/// `Affine2` by hand.
+/// target-local-to-window-local transform for each hit-test entry
+/// (Flutter convention — paint pushes `local → window`). The
+/// dispatcher inverts the recorded matrix once per delivery to
+/// produce `local_position`; recognizers consume the result through
+/// [`crate::gesture::DeliveredEvent`] and rarely invert `Affine2`
+/// by hand.
 ///
 /// Implemented as a bespoke primitive rather than depending on
 /// `euclid::Transform2D` because `euclid` is not a direct

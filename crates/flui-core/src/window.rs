@@ -4402,11 +4402,39 @@ impl Window {
                             // invert and apply once per delivery to
                             // recover the per-target local
                             // coordinate.
-                            let local_position = entry
-                                .transform
-                                .and_then(|t| t.inverse())
-                                .map(|inv| inv.transform_point(pe.position))
-                                .unwrap_or(pe.position);
+                            //
+                            // **Invertibility contract.** Paint
+                            // promises every transform it pushes is
+                            // invertible. A `Some(t)` whose
+                            // `inverse()` returns `None` is a
+                            // paint-side bug (singular `Affine2`):
+                            // in dev / test builds we panic via
+                            // `debug_assert!` so the failing call
+                            // site surfaces in CI; in release we
+                            // degrade to identity + `log::warn!`
+                            // rather than drop the event. The
+                            // rustdoc on `HitTestEntry.transform`
+                            // documents this strict-in-dev /
+                            // lenient-in-release posture so reviewers
+                            // can audit the contract from one place.
+                            let local_position = match entry.transform {
+                                None => pe.position,
+                                Some(t) => match t.inverse() {
+                                    Some(inv) => inv.transform_point(pe.position),
+                                    None => {
+                                        debug_assert!(
+                                            false,
+                                            "HitTestEntry.transform is non-invertible — paint pushed a singular Affine2 (hitbox_id={:?})",
+                                            entry.hitbox_id,
+                                        );
+                                        log::warn!(
+                                            target: "flui::gesture",
+                                            "non-invertible HitTestEntry.transform — falling back to identity local_position (paint pushed a singular Affine2; please file a bug)"
+                                        );
+                                        pe.position
+                                    }
+                                },
+                            };
                             let delivered = crate::gesture::DeliveredEvent::new(pe, local_position);
                             for rec in recs.iter() {
                                 // Register first; only then prime the

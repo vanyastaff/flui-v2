@@ -151,8 +151,11 @@
 //!   carrying pan + scale + rotation tuples without bloating every
 //!   PointerEvent.
 //! - **Hit-test transform substrate.** `HitTestEntry.transform:
-//!   Option<Affine2>` records the window-to-target affine for each
-//!   entry. `Affine2` is a bespoke 2x3 row-major primitive
+//!   Option<Affine2>` records the target-local-to-window-local
+//!   affine for each entry (Flutter convention — paint pushes
+//!   `local → window`, the dispatcher inverts and applies it once
+//!   per delivery to recover `local_position`). `Affine2` is a
+//!   bespoke 2x3 row-major primitive
 //!   (`Affine2::IDENTITY`, `translation`, `rotation`, `composed`,
 //!   `inverse`, `transform_point`) — no `euclid` direct dep. The
 //!   RAII guard `HitTestResult::push_transform(t) -> HitTestScope`

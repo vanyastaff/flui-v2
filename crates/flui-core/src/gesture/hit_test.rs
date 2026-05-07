@@ -39,16 +39,34 @@ pub struct HitTestEntry {
     /// `local_position` from the event's window-space position:
     ///
     /// ```text
-    /// local_position =
-    ///     transform.unwrap_or(IDENTITY)
-    ///              .inverse()
-    ///              .expect("paint promises invertible transforms")
-    ///              .transform_point(event.position)
+    /// local_position = match entry.transform {
+    ///     None      => event.position,
+    ///     Some(t)   => t.inverse()
+    ///                   .map(|inv| inv.transform_point(event.position))
+    ///                   .unwrap_or(/* see invertibility contract */),
+    /// }
     /// ```
     ///
     /// The result flows through [`crate::DeliveredEvent::local_position`].
     /// Recognizers must read `local_position` for in-target geometry —
     /// they never invert the transform themselves.
+    ///
+    /// **Invertibility contract.** Paint **must** push only
+    /// invertible affine transforms. A `Some(t)` with
+    /// `t.inverse() == None` is a paint-side bug (singular
+    /// `Affine2`). The dispatcher enforces this asymmetrically:
+    ///
+    /// - **Dev / test builds** — `debug_assert!` fires on the
+    ///   non-invertible path, surfacing the failing paint call site
+    ///   in CI.
+    /// - **Release builds** — the dispatcher logs at `log::warn!`
+    ///   and falls back to `event.position` (identity) so the event
+    ///   is delivered with the wrong-but-stable `local_position`,
+    ///   never dropped.
+    ///
+    /// In other words: paint *promises* invertibility, the dispatcher
+    /// *verifies* it loudly in dev and *degrades gracefully* in
+    /// release.
     ///
     /// **S09 contract.** When the paint pipeline starts pushing real
     /// transforms (e.g. via `RenderTransform`), every entry registered
@@ -106,12 +124,18 @@ impl HitTestResult {
     /// Push a transform onto the internal stack and return an RAII
     /// guard whose `Drop` pops it. Entries added through the returned
     /// scope (via [`HitTestScope::add`]) carry the cumulative
-    /// window-to-local transform composed from every active scope.
+    /// `target-local → window-local` transform composed from every
+    /// active scope (matching the direction of
+    /// [`HitTestEntry::transform`]).
     ///
     /// The pushed transform is composed onto the current top-of-stack
     /// (so nested scopes accumulate), enabling deeply-nested paint
     /// trees to record one-shot transforms per layer without
-    /// recomputing the full stack on every add.
+    /// recomputing the full stack on every add. `t` itself is
+    /// expected to follow the same direction — paint pushes the
+    /// transform that maps the new layer's local space into the
+    /// current scope's local space, and `composed` walks
+    /// child-most-first.
     pub fn push_transform(&mut self, t: Affine2) -> HitTestScope<'_> {
         let cumulative = self
             .transform_stack
@@ -288,8 +312,9 @@ mod tests {
         let baked = only
             .transform
             .expect("non-identity scope bakes a transform");
-        // The recorded transform is window-to-local-space; inverting and
-        // applying to the window position yields the local position.
+        // The recorded transform is `target-local → window-local`
+        // (Flutter convention); inverting and applying to the window
+        // position recovers the per-target local position.
         let inverse = baked.inverse().unwrap();
         let local = inverse.transform_point(only.position);
         // r maps (1, 0) -> (0, 1), so r^-1 maps (1, 0) -> (0, -1)

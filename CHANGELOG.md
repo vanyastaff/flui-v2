@@ -54,7 +54,11 @@ Audit rationale: `docs/superpowers/specs/2026-05-08-flutter-gestures-architectur
   without 3 always-empty `Option` fields. The platform layer is not
   yet wired to emit these (S20 work).
 - **`HitTestEntry.transform: Option<Affine2>`** (T10) records the
-  window-local-to-target-local affine for each hit-test entry.
+  target-local-to-window-local affine for each hit-test entry
+  (Flutter `local → window` convention). The dispatcher inverts and
+  applies it once per delivery to recover the per-target
+  `local_position`; recognizers consume the result through
+  [`DeliveredEvent::local_position`] and never invert directly.
   `Affine2` is a bespoke 2x3 row-major primitive in
   `flui_core::geometry` (`IDENTITY`, `translation`, `rotation`,
   `composed`, `inverse`, `transform_point`); no `euclid` direct
