@@ -271,11 +271,7 @@ impl GestureRecognizer for ScaleGestureRecognizer {
                     };
                     let rotation = cur_angle - self.initial_angle;
                     if let Some(cb) = self.on_end.as_mut() {
-                        cb(
-                            ScaleEndDetails { scale, rotation },
-                            window,
-                            cx,
-                        );
+                        cb(ScaleEndDetails { scale, rotation }, window, cx);
                     }
                     self.state = ScaleState::Idle;
                     return GestureDisposition::Accepted;
@@ -319,9 +315,7 @@ mod tests {
         GestureSettings, PointerButtons, PointerEvent, PointerId, PointerKind, PointerPhase,
     };
     use crate::scheduler::Instant;
-    use crate::{
-        self as flui_core, AppContext as _, Context as _, Modifiers, TestAppContext,
-    };
+    use crate::{self as flui_core, AppContext as _, Modifiers, TestAppContext};
     use std::cell::Cell;
     use std::rc::Rc;
 
@@ -362,7 +356,8 @@ mod tests {
     #[flui_core::test]
     fn scale_single_pointer_does_not_engage(cx: &mut TestAppContext) {
         let _ = cx.update(|cx| {
-            cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+            let _ = cx
+                .open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
                 .unwrap()
                 .update(cx, |_, window, cx| {
                     let starts = Rc::new(Cell::new(0u32));
@@ -375,7 +370,12 @@ mod tests {
                     }
                     let d = pe(0, PointerPhase::Down, pt(0.0, 0.0), PointerButtons::PRIMARY);
                     scale.add_pointer(PointerId(0), &d);
-                    let mv = pe(0, PointerPhase::Move, pt(50.0, 50.0), PointerButtons::PRIMARY);
+                    let mv = pe(
+                        0,
+                        PointerPhase::Move,
+                        pt(50.0, 50.0),
+                        PointerButtons::PRIMARY,
+                    );
                     assert_eq!(
                         scale.handle_event(&mv, window, cx),
                         GestureDisposition::Possible,
@@ -389,7 +389,8 @@ mod tests {
     #[flui_core::test]
     fn scale_two_pointers_diverging_accepts_after_slop(cx: &mut TestAppContext) {
         let _ = cx.update(|cx| {
-            cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+            let _ = cx
+                .open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
                 .unwrap()
                 .update(cx, |_, window, cx| {
                     let starts = Rc::new(Cell::new(0u32));
@@ -427,11 +428,21 @@ mod tests {
                     }
                     // p0 at (0,0), p1 at (100,0) → initial distance 100.
                     let d0 = pe(0, PointerPhase::Down, pt(0.0, 0.0), PointerButtons::PRIMARY);
-                    let d1 = pe(1, PointerPhase::Down, pt(100.0, 0.0), PointerButtons::PRIMARY);
+                    let d1 = pe(
+                        1,
+                        PointerPhase::Down,
+                        pt(100.0, 0.0),
+                        PointerButtons::PRIMARY,
+                    );
                     scale.add_pointer(PointerId(0), &d0);
                     scale.add_pointer(PointerId(1), &d1);
                     // Move p1 outward to 150 → new distance 150 → delta 50 > slop 18.
-                    let m1 = pe(1, PointerPhase::Move, pt(150.0, 0.0), PointerButtons::PRIMARY);
+                    let m1 = pe(
+                        1,
+                        PointerPhase::Move,
+                        pt(150.0, 0.0),
+                        PointerButtons::PRIMARY,
+                    );
                     assert_eq!(
                         scale.handle_event(&m1, window, cx),
                         GestureDisposition::Accepted,
@@ -444,7 +455,8 @@ mod tests {
     #[flui_core::test]
     fn scale_update_computes_correct_zoom_ratio(cx: &mut TestAppContext) {
         let _ = cx.update(|cx| {
-            cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+            let _ = cx
+                .open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
                 .unwrap()
                 .update(cx, |_, window, cx| {
                     let last_scale: Rc<Cell<f32>> = Rc::new(Cell::new(1.0));
@@ -456,14 +468,29 @@ mod tests {
                         }));
                     }
                     let d0 = pe(0, PointerPhase::Down, pt(0.0, 0.0), PointerButtons::PRIMARY);
-                    let d1 = pe(1, PointerPhase::Down, pt(100.0, 0.0), PointerButtons::PRIMARY);
+                    let d1 = pe(
+                        1,
+                        PointerPhase::Down,
+                        pt(100.0, 0.0),
+                        PointerButtons::PRIMARY,
+                    );
                     scale.add_pointer(PointerId(0), &d0);
                     scale.add_pointer(PointerId(1), &d1);
                     // Slop crossing → Accepted (no on_update yet).
-                    let m1a = pe(1, PointerPhase::Move, pt(150.0, 0.0), PointerButtons::PRIMARY);
+                    let m1a = pe(
+                        1,
+                        PointerPhase::Move,
+                        pt(150.0, 0.0),
+                        PointerButtons::PRIMARY,
+                    );
                     let _ = scale.handle_event(&m1a, window, cx);
                     // Now in Accepted; move p1 to 200 → distance 200, ratio 2.0.
-                    let m1b = pe(1, PointerPhase::Move, pt(200.0, 0.0), PointerButtons::PRIMARY);
+                    let m1b = pe(
+                        1,
+                        PointerPhase::Move,
+                        pt(200.0, 0.0),
+                        PointerButtons::PRIMARY,
+                    );
                     let _ = scale.handle_event(&m1b, window, cx);
                     let s = last_scale.get();
                     assert!(
@@ -478,7 +505,8 @@ mod tests {
     #[flui_core::test]
     fn scale_end_fires_when_pointer_count_drops_below_two(cx: &mut TestAppContext) {
         let _ = cx.update(|cx| {
-            cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+            let _ = cx
+                .open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
                 .unwrap()
                 .update(cx, |_, window, cx| {
                     let ends = Rc::new(Cell::new(0u32));
@@ -490,14 +518,29 @@ mod tests {
                         }));
                     }
                     let d0 = pe(0, PointerPhase::Down, pt(0.0, 0.0), PointerButtons::PRIMARY);
-                    let d1 = pe(1, PointerPhase::Down, pt(100.0, 0.0), PointerButtons::PRIMARY);
+                    let d1 = pe(
+                        1,
+                        PointerPhase::Down,
+                        pt(100.0, 0.0),
+                        PointerButtons::PRIMARY,
+                    );
                     scale.add_pointer(PointerId(0), &d0);
                     scale.add_pointer(PointerId(1), &d1);
                     // Cross slop to enter Accepted.
-                    let m1 = pe(1, PointerPhase::Move, pt(150.0, 0.0), PointerButtons::PRIMARY);
+                    let m1 = pe(
+                        1,
+                        PointerPhase::Move,
+                        pt(150.0, 0.0),
+                        PointerButtons::PRIMARY,
+                    );
                     let _ = scale.handle_event(&m1, window, cx);
                     // Lift p1 → pointer_count drops to 1 → on_end fires.
-                    let up = pe(1, PointerPhase::Up, pt(150.0, 0.0), PointerButtons::default());
+                    let up = pe(
+                        1,
+                        PointerPhase::Up,
+                        pt(150.0, 0.0),
+                        PointerButtons::default(),
+                    );
                     assert_eq!(
                         scale.handle_event(&up, window, cx),
                         GestureDisposition::Accepted,

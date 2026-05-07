@@ -46,7 +46,12 @@ pub(crate) struct WindowPointerState {
     /// Last reported pressure for the desktop mouse pointer.
     pub(crate) last_pressure: f32,
     /// Allocator counter for non-mouse pointer IDs (touch / stylus).
-    /// Mouse uses [`DESKTOP_MOUSE_POINTER`].
+    /// Mouse uses [`DESKTOP_MOUSE_POINTER`]. Currently unread —
+    /// `Window::dispatch_event` only handles desktop-mouse paths
+    /// today, so [`Self::allocate_pointer_id`] is API-ready but not
+    /// yet called. T15 (paint-time recognizer registration) and the
+    /// future touch / stylus integrations will populate this.
+    #[allow(dead_code, reason = "T15 + touch/stylus integration consumer")]
     pub(crate) next_pointer_id: u64,
     /// Tracks whether the desktop mouse is currently in the `Down`
     /// state. Used by `PointerSanitizer` for orphan-cancel synthesis
@@ -69,6 +74,11 @@ impl WindowPointerState {
     ///
     /// Skips `DESKTOP_MOUSE_POINTER` (`PointerId(0)`) so the
     /// invariant "non-zero IDs are always non-mouse" holds.
+    /// Unused in the active dispatch path; consumed by T15 (paint-time
+    /// recognizer registration) and by the future touch / stylus
+    /// integrations. Sealed behind `pub(crate)` so external callers
+    /// cannot mint invalid pointer IDs.
+    #[allow(dead_code, reason = "T15 + touch/stylus integration consumer")]
     pub(crate) fn allocate_pointer_id(&mut self) -> PointerId {
         self.next_pointer_id = self.next_pointer_id.saturating_add(1).max(1);
         PointerId(self.next_pointer_id)

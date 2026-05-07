@@ -223,10 +223,7 @@ mod tests {
         GestureSettings, PointerButtons, PointerEvent, PointerId, PointerKind, PointerPhase,
     };
     use crate::scheduler::Instant;
-    use crate::{
-        self as flui_core, AppContext as _, Context as _, Modifiers, Pixels, Point,
-        TestAppContext,
-    };
+    use crate::{self as flui_core, AppContext as _, Modifiers, Pixels, Point, TestAppContext};
     use std::cell::Cell;
     use std::rc::Rc;
 
@@ -275,7 +272,8 @@ mod tests {
     #[flui_core::test]
     fn double_tap_two_quick_taps_accept(cx: &mut TestAppContext) {
         let _ = cx.update(|cx| {
-            cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+            let _ = cx
+                .open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
                 .unwrap()
                 .update(cx, |_, window, cx| {
                     let fired = Rc::new(Cell::new(0u32));
@@ -289,7 +287,10 @@ mod tests {
                     // First tap.
                     let d1 = pe(PointerPhase::Down, p(0.0, 0.0), PointerButtons::PRIMARY);
                     dt.add_pointer(PointerId(0), &d1);
-                    assert_eq!(dt.handle_event(&d1, window, cx), GestureDisposition::Possible);
+                    assert_eq!(
+                        dt.handle_event(&d1, window, cx),
+                        GestureDisposition::Possible
+                    );
                     let u1 = pe(PointerPhase::Up, p(0.0, 0.0), PointerButtons::default());
                     assert_eq!(
                         dt.handle_event(&u1, window, cx),
@@ -299,7 +300,10 @@ mod tests {
                     // Second tap.
                     let d2 = pe(PointerPhase::Down, p(0.0, 0.0), PointerButtons::PRIMARY);
                     dt.add_pointer(PointerId(0), &d2);
-                    assert_eq!(dt.handle_event(&d2, window, cx), GestureDisposition::Possible);
+                    assert_eq!(
+                        dt.handle_event(&d2, window, cx),
+                        GestureDisposition::Possible
+                    );
                     let u2 = pe(PointerPhase::Up, p(0.0, 0.0), PointerButtons::default());
                     assert_eq!(
                         dt.handle_event(&u2, window, cx),
@@ -313,7 +317,8 @@ mod tests {
     #[flui_core::test]
     fn double_tap_second_tap_outside_slop_is_rejected(cx: &mut TestAppContext) {
         let _ = cx.update(|cx| {
-            cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+            let _ = cx
+                .open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
                 .unwrap()
                 .update(cx, |_, window, cx| {
                     let fired = Rc::new(Cell::new(0u32));
@@ -344,7 +349,8 @@ mod tests {
     #[flui_core::test]
     fn double_tap_second_tap_after_timeout_is_rejected(cx: &mut TestAppContext) {
         let _ = cx.update(|cx| {
-            cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+            let _ = cx
+                .open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
                 .unwrap()
                 .update(cx, |_, window, cx| {
                     // 1ms timeout — sleeping 5ms guarantees the second

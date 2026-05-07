@@ -348,10 +348,7 @@ mod tests {
         GestureSettings, PointerButtons, PointerEvent, PointerId, PointerKind, PointerPhase,
     };
     use crate::scheduler::Instant;
-    use crate::{
-        self as flui_core, AppContext as _, Context as _, Modifiers, Pixels, Point,
-        TestAppContext,
-    };
+    use crate::{self as flui_core, AppContext as _, Modifiers, Pixels, Point, TestAppContext};
     use std::cell::Cell;
     use std::rc::Rc;
 
@@ -383,7 +380,8 @@ mod tests {
     #[flui_core::test]
     fn drag_threshold_builders_override_default_slop(cx: &mut TestAppContext) {
         let _ = cx.update(|cx| {
-            cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+            let _ = cx
+                .open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
                 .unwrap()
                 .update(cx, |_, window, cx| {
                     // Default slop is 18 logical px. Override to 100 px
@@ -395,11 +393,7 @@ mod tests {
                     let down = pe(PointerPhase::Down, pt(0.0, 0.0), PointerButtons::PRIMARY);
                     pan.add_pointer(PointerId(0), &down);
                     let _ = pan.handle_event(&down, window, cx);
-                    let mv = pe(
-                        PointerPhase::Move,
-                        pt(50.0, 50.0),
-                        PointerButtons::PRIMARY,
-                    );
+                    let mv = pe(PointerPhase::Move, pt(50.0, 50.0), PointerButtons::PRIMARY);
                     assert_eq!(
                         pan.handle_event(&mv, window, cx),
                         GestureDisposition::Possible,
@@ -412,7 +406,8 @@ mod tests {
     #[flui_core::test]
     fn pan_below_slop_stays_possible_then_accepts_on_slop_crossing(cx: &mut TestAppContext) {
         let _ = cx.update(|cx| {
-            cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+            let _ = cx
+                .open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
                 .unwrap()
                 .update(cx, |_, window, cx| {
                     let starts = Rc::new(Cell::new(0u32));
@@ -427,22 +422,14 @@ mod tests {
                     pan.add_pointer(PointerId(0), &down);
                     let _ = pan.handle_event(&down, window, cx);
                     // Stay below the 18px default slop.
-                    let mv1 = pe(
-                        PointerPhase::Move,
-                        pt(5.0, 5.0),
-                        PointerButtons::PRIMARY,
-                    );
+                    let mv1 = pe(PointerPhase::Move, pt(5.0, 5.0), PointerButtons::PRIMARY);
                     assert_eq!(
                         pan.handle_event(&mv1, window, cx),
                         GestureDisposition::Possible
                     );
                     assert_eq!(starts.get(), 0, "no on_start while below slop");
                     // Cross slop → Accepted, on_start fires.
-                    let mv2 = pe(
-                        PointerPhase::Move,
-                        pt(50.0, 50.0),
-                        PointerButtons::PRIMARY,
-                    );
+                    let mv2 = pe(PointerPhase::Move, pt(50.0, 50.0), PointerButtons::PRIMARY);
                     assert_eq!(
                         pan.handle_event(&mv2, window, cx),
                         GestureDisposition::Accepted
@@ -455,7 +442,8 @@ mod tests {
     #[flui_core::test]
     fn horizontal_drag_rejects_orthogonal_motion(cx: &mut TestAppContext) {
         let _ = cx.update(|cx| {
-            cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+            let _ = cx
+                .open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
                 .unwrap()
                 .update(cx, |_, window, cx| {
                     let mut hdrag =
@@ -464,11 +452,7 @@ mod tests {
                     hdrag.add_pointer(PointerId(0), &down);
                     let _ = hdrag.handle_event(&down, window, cx);
                     // Vertical motion: dy=100, dx=0 → axis_rejected.
-                    let mv = pe(
-                        PointerPhase::Move,
-                        pt(0.0, 100.0),
-                        PointerButtons::PRIMARY,
-                    );
+                    let mv = pe(PointerPhase::Move, pt(0.0, 100.0), PointerButtons::PRIMARY);
                     assert_eq!(
                         hdrag.handle_event(&mv, window, cx),
                         GestureDisposition::Rejected,
@@ -480,52 +464,45 @@ mod tests {
     #[flui_core::test]
     fn horizontal_drag_accepts_aligned_motion(cx: &mut TestAppContext) {
         let _ = cx.update(|cx| {
-            cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
-                .unwrap()
-                .update(cx, |_, window, cx| {
-                    let starts = Rc::new(Cell::new(0u32));
-                    let mut hdrag =
-                        HorizontalDragGestureRecognizer::new(&GestureSettings::default())
-                            .on_start({
-                                let starts = Rc::clone(&starts);
-                                move |_d, _w, _c| {
-                                    starts.set(starts.get() + 1);
-                                }
-                            });
-                    let down = pe(PointerPhase::Down, pt(0.0, 0.0), PointerButtons::PRIMARY);
-                    hdrag.add_pointer(PointerId(0), &down);
-                    let _ = hdrag.handle_event(&down, window, cx);
-                    // Horizontal motion: dx=50, dy=0.
-                    let mv = pe(
-                        PointerPhase::Move,
-                        pt(50.0, 0.0),
-                        PointerButtons::PRIMARY,
-                    );
-                    assert_eq!(
-                        hdrag.handle_event(&mv, window, cx),
-                        GestureDisposition::Accepted,
-                    );
-                    assert_eq!(starts.get(), 1);
-                });
+            let _ =
+                cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+                    .unwrap()
+                    .update(cx, |_, window, cx| {
+                        let starts = Rc::new(Cell::new(0u32));
+                        let mut hdrag =
+                            HorizontalDragGestureRecognizer::new(&GestureSettings::default())
+                                .on_start({
+                                    let starts = Rc::clone(&starts);
+                                    move |_d, _w, _c| {
+                                        starts.set(starts.get() + 1);
+                                    }
+                                });
+                        let down = pe(PointerPhase::Down, pt(0.0, 0.0), PointerButtons::PRIMARY);
+                        hdrag.add_pointer(PointerId(0), &down);
+                        let _ = hdrag.handle_event(&down, window, cx);
+                        // Horizontal motion: dx=50, dy=0.
+                        let mv = pe(PointerPhase::Move, pt(50.0, 0.0), PointerButtons::PRIMARY);
+                        assert_eq!(
+                            hdrag.handle_event(&mv, window, cx),
+                            GestureDisposition::Accepted,
+                        );
+                        assert_eq!(starts.get(), 1);
+                    });
         });
     }
 
     #[flui_core::test]
     fn vertical_drag_rejects_orthogonal_motion(cx: &mut TestAppContext) {
         let _ = cx.update(|cx| {
-            cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+            let _ = cx
+                .open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
                 .unwrap()
                 .update(cx, |_, window, cx| {
-                    let mut vdrag =
-                        VerticalDragGestureRecognizer::new(&GestureSettings::default());
+                    let mut vdrag = VerticalDragGestureRecognizer::new(&GestureSettings::default());
                     let down = pe(PointerPhase::Down, pt(0.0, 0.0), PointerButtons::PRIMARY);
                     vdrag.add_pointer(PointerId(0), &down);
                     let _ = vdrag.handle_event(&down, window, cx);
-                    let mv = pe(
-                        PointerPhase::Move,
-                        pt(100.0, 0.0),
-                        PointerButtons::PRIMARY,
-                    );
+                    let mv = pe(PointerPhase::Move, pt(100.0, 0.0), PointerButtons::PRIMARY);
                     assert_eq!(
                         vdrag.handle_event(&mv, window, cx),
                         GestureDisposition::Rejected,
@@ -537,12 +514,13 @@ mod tests {
     #[flui_core::test]
     fn pan_update_emits_correct_delta(cx: &mut TestAppContext) {
         let _ = cx.update(|cx| {
-            cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+            let _ = cx
+                .open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
                 .unwrap()
                 .update(cx, |_, window, cx| {
                     let last_delta: Rc<Cell<(f32, f32)>> = Rc::new(Cell::new((0.0, 0.0)));
-                    let mut pan = PanGestureRecognizer::new(&GestureSettings::default())
-                        .on_update({
+                    let mut pan =
+                        PanGestureRecognizer::new(&GestureSettings::default()).on_update({
                             let last = Rc::clone(&last_delta);
                             move |d, _w, _c| {
                                 last.set((d.delta.x.0, d.delta.y.0));
@@ -579,7 +557,8 @@ mod tests {
     #[flui_core::test]
     fn pan_end_fires_with_well_formed_velocity(cx: &mut TestAppContext) {
         let _ = cx.update(|cx| {
-            cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+            let _ = cx
+                .open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
                 .unwrap()
                 .update(cx, |_, window, cx| {
                     // VelocityTracker timestamps come from
@@ -592,17 +571,16 @@ mod tests {
                     // velocity behaviour end-to-end.
                     let ends = Rc::new(Cell::new(0u32));
                     let velocity_ok = Rc::new(Cell::new(false));
-                    let mut pan =
-                        PanGestureRecognizer::new(&GestureSettings::default()).on_end({
-                            let ends = Rc::clone(&ends);
-                            let ok = Rc::clone(&velocity_ok);
-                            move |d, _w, _c| {
-                                ends.set(ends.get() + 1);
-                                let vx = d.velocity.pixels_per_second.x;
-                                let vy = d.velocity.pixels_per_second.y;
-                                ok.set(!vx.is_nan() && !vy.is_nan());
-                            }
-                        });
+                    let mut pan = PanGestureRecognizer::new(&GestureSettings::default()).on_end({
+                        let ends = Rc::clone(&ends);
+                        let ok = Rc::clone(&velocity_ok);
+                        move |d, _w, _c| {
+                            ends.set(ends.get() + 1);
+                            let vx = d.velocity.pixels_per_second.x;
+                            let vy = d.velocity.pixels_per_second.y;
+                            ok.set(!vx.is_nan() && !vy.is_nan());
+                        }
+                    });
                     let down = pe(PointerPhase::Down, pt(0.0, 0.0), PointerButtons::PRIMARY);
                     pan.add_pointer(PointerId(0), &down);
                     let _ = pan.handle_event(&down, window, cx);

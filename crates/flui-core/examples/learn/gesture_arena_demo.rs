@@ -101,14 +101,9 @@ impl Render for CompetingRecognizersCard {
                     .text_color(colors.text)
                     .child("1. Competing recognizers"),
             )
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(colors.disabled)
-                    .child(
-                        "Tap, double-tap, long-press, or pan the target. The arena picks one winner.",
-                    ),
-            )
+            .child(div().text_xs().text_color(colors.disabled).child(
+                "Tap, double-tap, long-press, or pan the target. The arena picks one winner.",
+            ))
             .child(
                 div()
                     .id("compete-target")
@@ -323,14 +318,9 @@ impl Render for SettingsOverrideCard {
                     .text_color(colors.text)
                     .child("3. GestureSettings override"),
             )
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(colors.disabled)
-                    .child(format!(
-                        "Long-press fires after {ms} ms (default 500 ms). Hold the chip below.",
-                    )),
-            )
+            .child(div().text_xs().text_color(colors.disabled).child(format!(
+                "Long-press fires after {ms} ms (default 500 ms). Hold the chip below.",
+            )))
             .child({
                 let weak = cx.weak_entity();
                 div()
@@ -442,15 +432,10 @@ impl Render for ScaleDemoCard {
                     .text_color(colors.text)
                     .child("5. Scale (Wayland/macOS pinch only)"),
             )
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(colors.disabled)
-                    .child(
-                        "Pinch on a Wayland session or macOS trackpad. Windows desktop emits no \
+            .child(div().text_xs().text_color(colors.disabled).child(
+                "Pinch on a Wayland session or macOS trackpad. Windows desktop emits no \
                          native pinch — the listener is silent there.",
-                    ),
-            )
+            ))
             .child({
                 let weak = cx.weak_entity();
                 div()

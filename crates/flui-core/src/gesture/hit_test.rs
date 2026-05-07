@@ -58,7 +58,13 @@ impl HitTestResult {
     }
 
     /// Construct an empty result. Crate-internal — consumers receive
-    /// this only from `Window::hit_test`.
+    /// this only from `Window::hit_test`. Currently unused (the
+    /// `Window::hit_test` implementation builds via `Default::default()`
+    /// and `push`); kept as the canonical constructor that T15 will
+    /// route through once the position-aware hit-test path lands
+    /// (see Copilot review A — `Window::hit_test(position)` must use
+    /// `rendered_frame.hit_test` and produce a result via this ctor).
+    #[allow(dead_code, reason = "Copilot-A T15 follow-up will route through this")]
     pub(crate) fn new() -> Self {
         Self {
             entries: SmallVec::new(),

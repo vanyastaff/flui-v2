@@ -27,7 +27,5 @@ pub use drag::{
     PanGestureRecognizer, VerticalDragGestureRecognizer,
 };
 pub use long_press::{LongPressDetails, LongPressGestureRecognizer};
-pub use scale::{
-    ScaleEndDetails, ScaleGestureRecognizer, ScaleStartDetails, ScaleUpdateDetails,
-};
+pub use scale::{ScaleEndDetails, ScaleGestureRecognizer, ScaleStartDetails, ScaleUpdateDetails};
 pub use tap::{TapDetails, TapDownDetails, TapGestureRecognizer, TapUpDetails};

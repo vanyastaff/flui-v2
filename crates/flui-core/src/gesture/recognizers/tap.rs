@@ -261,10 +261,7 @@ mod tests {
         GestureSettings, PointerButtons, PointerEvent, PointerId, PointerKind, PointerPhase,
     };
     use crate::scheduler::Instant;
-    use crate::{
-        self as flui_core, AppContext as _, Context as _, Modifiers, Pixels, Point,
-        TestAppContext,
-    };
+    use crate::{self as flui_core, AppContext as _, Modifiers, Pixels, Point, TestAppContext};
     use std::cell::Cell;
     use std::rc::Rc;
 
@@ -295,7 +292,8 @@ mod tests {
     #[flui_core::test]
     fn tap_down_then_up_within_slop_eagerly_accepts(cx: &mut TestAppContext) {
         let _ = cx.update(|cx| {
-            cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+            let _ = cx
+                .open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
                 .unwrap()
                 .update(cx, |_, window, cx| {
                     let fired = Rc::new(Cell::new(0u32));
@@ -327,7 +325,8 @@ mod tests {
     #[flui_core::test]
     fn tap_move_beyond_slop_rejects(cx: &mut TestAppContext) {
         let _ = cx.update(|cx| {
-            cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+            let _ = cx
+                .open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
                 .unwrap()
                 .update(cx, |_, window, cx| {
                     let mut tap = TapGestureRecognizer::new(&GestureSettings::default());
@@ -335,11 +334,7 @@ mod tests {
                     tap.add_pointer(PointerId(0), &down);
                     let _ = tap.handle_event(&down, window, cx);
                     // Move beyond touch_slop (default 18px); 100 > 18 on x.
-                    let mv = pe(
-                        PointerPhase::Move,
-                        p(100.0, 0.0),
-                        PointerButtons::PRIMARY,
-                    );
+                    let mv = pe(PointerPhase::Move, p(100.0, 0.0), PointerButtons::PRIMARY);
                     assert_eq!(
                         tap.handle_event(&mv, window, cx),
                         GestureDisposition::Rejected,
@@ -352,7 +347,8 @@ mod tests {
     #[flui_core::test]
     fn tap_cancel_calls_on_tap_cancel_and_rejects(cx: &mut TestAppContext) {
         let _ = cx.update(|cx| {
-            cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+            let _ = cx
+                .open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
                 .unwrap()
                 .update(cx, |_, window, cx| {
                     let cancels = Rc::new(Cell::new(0u32));
@@ -379,7 +375,8 @@ mod tests {
     #[flui_core::test]
     fn tap_secondary_button_does_not_register(cx: &mut TestAppContext) {
         let _ = cx.update(|cx| {
-            cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+            let _ = cx
+                .open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
                 .unwrap()
                 .update(cx, |_, window, cx| {
                     let fired = Rc::new(Cell::new(0u32));
@@ -409,7 +406,8 @@ mod tests {
     #[flui_core::test]
     fn tap_sweep_accepted_fires_on_tap_when_arena_declares_winner(cx: &mut TestAppContext) {
         let _ = cx.update(|cx| {
-            cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+            let _ = cx
+                .open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
                 .unwrap()
                 .update(cx, |_, window, cx| {
                     let fired = Rc::new(Cell::new(0u32));

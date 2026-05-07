@@ -1459,7 +1459,7 @@ impl Window {
             mouse_hit_test: HitTest::default(),
             hit_test_behaviors: collections::FxHashMap::default(),
             gesture_pointer_state: crate::gesture::dispatch::WindowPointerState::default(),
-            gesture_sanitizer: crate::gesture::dispatch::PointerSanitizer::default(),
+            gesture_sanitizer: crate::gesture::dispatch::PointerSanitizer,
             gesture_binding: crate::gesture::GestureBinding::default(),
             modifiers,
             capslock,

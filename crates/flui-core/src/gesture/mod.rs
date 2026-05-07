@@ -220,9 +220,7 @@ fn find_or_push<T: GestureRecognizer + 'static>(
     recs: &mut smallvec::SmallVec<[Box<dyn GestureRecognizer>; 4]>,
     new: impl FnOnce() -> T,
 ) -> &mut T {
-    let pos = recs
-        .iter_mut()
-        .position(|r| r.as_any_mut().is::<T>());
+    let pos = recs.iter_mut().position(|r| r.as_any_mut().is::<T>());
     let idx = match pos {
         Some(idx) => idx,
         None => {
@@ -467,4 +465,3 @@ pub fn __internal_on_scale_end(
     });
     r.on_end = Some(Box::new(f));
 }
-

@@ -72,12 +72,7 @@ pub trait GestureRecognizer: 'static {
     /// The arena resolved against this recognizer. Recognizers MUST
     /// reset any in-flight visual state (LongPress feedback, cursor
     /// styling) without firing user callbacks.
-    fn rejected(
-        &mut self,
-        pointer_id: PointerId,
-        window: &mut crate::Window,
-        cx: &mut crate::App,
-    );
+    fn rejected(&mut self, pointer_id: PointerId, window: &mut crate::Window, cx: &mut crate::App);
 
     /// **S08 seam.** The set of semantic actions this recognizer
     /// surfaces to the accessibility tree. Default empty; S08 will

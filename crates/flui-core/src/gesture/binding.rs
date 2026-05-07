@@ -32,6 +32,15 @@ use super::{GestureSettings, PointerId};
 pub struct GestureBinding {
     arena: GestureArenaManager,
     settings: GestureSettings,
+    /// Per-binding sanitizer instance. Currently shadowed by the
+    /// direct `Window::gesture_sanitizer` field that the dispatch
+    /// loop reads (see Copilot review S3). T15 will consolidate the
+    /// two into a single source of truth on `GestureBinding`; until
+    /// then this field is constructed but unread, which is intentional.
+    #[allow(
+        dead_code,
+        reason = "T15 will consolidate Window's direct sanitizer here"
+    )]
     sanitizer: PointerSanitizer,
 }
 
@@ -43,11 +52,15 @@ impl Default for GestureBinding {
 
 impl GestureBinding {
     /// Construct a new binding with default [`GestureSettings`].
+    /// Called by [`Default::default`]; rustc's dead-code analysis
+    /// does not always see the indirection on test builds, hence
+    /// the explicit allow.
+    #[allow(dead_code, reason = "called via the Default impl")]
     pub(crate) fn new() -> Self {
         Self {
             arena: GestureArenaManager::default(),
             settings: GestureSettings::default(),
-            sanitizer: PointerSanitizer::default(),
+            sanitizer: PointerSanitizer,
         }
     }
 
@@ -81,9 +94,16 @@ impl GestureBinding {
     pub(crate) fn arena_mut(&mut self) -> &mut GestureArenaManager {
         &mut self.arena
     }
+    /// Read-only arena accessor. Currently unused (`Window::dispatch_event`
+    /// goes through `arena_mut`); T15 paint-time registration uses this.
+    #[allow(dead_code, reason = "T15 paint-time registration reads through this")]
     pub(crate) fn arena(&self) -> &GestureArenaManager {
         &self.arena
     }
+    /// Sanitizer accessor. Mirror of [`Self::sanitizer`] — pending
+    /// the T15 consolidation that retires the direct
+    /// `Window::gesture_sanitizer` field.
+    #[allow(dead_code, reason = "T15 consolidation entry point")]
     pub(crate) fn sanitizer_mut(&mut self) -> &mut PointerSanitizer {
         &mut self.sanitizer
     }

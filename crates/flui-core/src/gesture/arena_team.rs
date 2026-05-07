@@ -20,6 +20,14 @@ use std::rc::Rc;
 /// are non-breaking additions.
 #[non_exhaustive]
 pub struct GestureArenaTeam {
+    /// The captain recognizer — the only team member whose
+    /// `Accepted` resolves the entire team. Currently stored but
+    /// unread by the active arena flow because public team
+    /// registration via `InteractiveElement` is deferred (the
+    /// `with_captain` constructor exists for forward-compat use
+    /// from a future `GestureDetector` widget). Property test P6
+    /// covers `resolve_member` directly.
+    #[allow(dead_code, reason = "future GestureDetector integration uses this")]
     pub(crate) captain: Rc<RefCell<Box<dyn GestureRecognizer>>>,
     pub(crate) members: SmallVec<[Rc<RefCell<Box<dyn GestureRecognizer>>>; 2]>,
 }
@@ -46,6 +54,12 @@ impl GestureArenaTeam {
     /// `Accepted` are converted to `Possible` (deferred to captain);
     /// members that report `Rejected` keep that verdict; captain's
     /// `Accepted` resolves the entire team.
+    ///
+    /// Currently only exercised by property test P6 in `tests`. T15
+    /// public registration on `InteractiveElement` (or a future
+    /// `GestureDetector` widget) is the production caller — until
+    /// then teams cannot enter the live arena flow.
+    #[allow(dead_code, reason = "T15 GestureDetector registration target")]
     pub(crate) fn resolve_member(
         &self,
         is_captain: bool,
@@ -134,11 +148,14 @@ mod tests {
                     let resolved = team.resolve_member(is_captain, reported);
 
                     if is_captain {
-                        assert_eq!(
-                            resolved, reported,
-                            "captain disposition must pass through"
-                        );
+                        assert_eq!(resolved, reported, "captain disposition must pass through");
                     } else {
+                        // Exhaustive over the three current dispositions.
+                        // `GestureDisposition` is `#[non_exhaustive]`, so
+                        // adding a new variant deliberately breaks this
+                        // match — that forces an explicit decision on
+                        // captain-deferral semantics for the new
+                        // disposition rather than silently wildcarding.
                         match reported {
                             GestureDisposition::Accepted => assert_eq!(
                                 resolved,
@@ -155,7 +172,6 @@ mod tests {
                                 GestureDisposition::Possible,
                                 "member Possible stays Possible"
                             ),
-                            _ => {}
                         }
                     }
                     Ok(())

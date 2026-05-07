@@ -41,9 +41,7 @@
 //! suitable as a CI gate.
 
 use flui_core::scheduler::Instant as SchedulerInstant;
-use flui_core::{
-    GestureSettings, Pixels, Point, PositionSample, VelocityTracker, px,
-};
+use flui_core::{GestureSettings, Pixels, Point, PositionSample, VelocityTracker, px};
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
@@ -100,7 +98,10 @@ fn bench_arena_tick() -> u128 {
     let start = Instant::now();
     let mut acc = 0.0f32;
     for i in 0..ITERATIONS {
-        tracker.add_position(PositionSample::new(p(i as f32, 0.0), SchedulerInstant::now()));
+        tracker.add_position(PositionSample::new(
+            p(i as f32, 0.0),
+            SchedulerInstant::now(),
+        ));
         let v = tracker.estimate();
         acc += v.pixels_per_second.x;
     }

@@ -80,8 +80,10 @@ pub struct LongPressGestureRecognizer {
     /// Async back-channel to the arena. T15 wires this from
     /// `GestureBinding`'s arena `Rc` when `add_pointer` is called.
     /// `None` until wiring lands.
+    #[allow(dead_code, reason = "T15 LongPress timer wiring populates this")]
     arena_back_channel: Option<Weak<RefCell<GestureArenaManager>>>,
     /// Index into `arena.entries` recorded inside `add_pointer`.
+    #[allow(dead_code, reason = "T15 LongPress timer wiring populates this")]
     pointer_index: Option<usize>,
 }
 
@@ -261,10 +263,7 @@ mod tests {
         GestureSettings, PointerButtons, PointerEvent, PointerId, PointerKind, PointerPhase,
     };
     use crate::scheduler::Instant;
-    use crate::{
-        self as flui_core, AppContext as _, Context as _, Modifiers, Pixels, Point,
-        TestAppContext,
-    };
+    use crate::{self as flui_core, AppContext as _, Modifiers, Pixels, Point, TestAppContext};
 
     fn pe(phase: PointerPhase, pos: Point<Pixels>, buttons: PointerButtons) -> PointerEvent {
         PointerEvent {
@@ -289,7 +288,8 @@ mod tests {
     #[flui_core::test]
     fn long_press_move_beyond_slop_rejects_and_cancels_timer(cx: &mut TestAppContext) {
         let _ = cx.update(|cx| {
-            cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+            let _ = cx
+                .open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
                 .unwrap()
                 .update(cx, |_, window, cx| {
                     let mut lp = LongPressGestureRecognizer::new(&GestureSettings::default());
@@ -300,11 +300,7 @@ mod tests {
                         GestureDisposition::Possible
                     );
                     assert!(lp.timer.is_some(), "Down schedules a timer");
-                    let mv = pe(
-                        PointerPhase::Move,
-                        p(100.0, 0.0),
-                        PointerButtons::PRIMARY,
-                    );
+                    let mv = pe(PointerPhase::Move, p(100.0, 0.0), PointerButtons::PRIMARY);
                     assert_eq!(
                         lp.handle_event(&mv, window, cx),
                         GestureDisposition::Rejected,
@@ -320,7 +316,8 @@ mod tests {
     #[flui_core::test]
     fn long_press_up_before_accept_rejects(cx: &mut TestAppContext) {
         let _ = cx.update(|cx| {
-            cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+            let _ = cx
+                .open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
                 .unwrap()
                 .update(cx, |_, window, cx| {
                     let mut lp = LongPressGestureRecognizer::new(&GestureSettings::default());
@@ -340,7 +337,8 @@ mod tests {
     #[flui_core::test]
     fn long_press_cancel_phase_rejects_and_drops_timer(cx: &mut TestAppContext) {
         let _ = cx.update(|cx| {
-            cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+            let _ = cx
+                .open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
                 .unwrap()
                 .update(cx, |_, window, cx| {
                     let mut lp = LongPressGestureRecognizer::new(&GestureSettings::default());
@@ -378,7 +376,8 @@ mod tests {
     #[flui_core::test]
     fn long_press_rejected_callback_clears_state(cx: &mut TestAppContext) {
         let _ = cx.update(|cx| {
-            cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+            let _ = cx
+                .open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
                 .unwrap()
                 .update(cx, |_, window, cx| {
                     let mut lp = LongPressGestureRecognizer::new(&GestureSettings::default());

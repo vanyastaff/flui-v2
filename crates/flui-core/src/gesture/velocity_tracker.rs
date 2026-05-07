@@ -87,11 +87,7 @@ impl VelocityTracker {
     pub fn add_position(&mut self, sample: PositionSample) {
         // Drop samples older than max_age relative to the new sample.
         while let Some(front) = self.samples.front() {
-            if sample
-                .timestamp
-                .saturating_duration_since(front.timestamp)
-                > self.max_age
-            {
+            if sample.timestamp.saturating_duration_since(front.timestamp) > self.max_age {
                 self.samples.pop_front();
             } else {
                 break;

@@ -66,6 +66,10 @@ pub(crate) struct GestureArena {
 }
 
 impl GestureArena {
+    /// Open a new arena. Used by `GestureArenaManager::add` (T15
+    /// follow-up — paint-time recognizer registration is the active
+    /// caller). Currently only reachable through tests.
+    #[allow(dead_code, reason = "T15 paint-time registration consumer")]
     fn new() -> Self {
         Self {
             entries: SmallVec::new(),
@@ -104,6 +108,11 @@ impl GestureArenaManager {
     /// Open an arena for `pointer_id` if none exists; insert
     /// `recognizer` at the back of the entries list (registration
     /// order).
+    ///
+    /// Currently called only from tests. T15 paint-time recognizer
+    /// registration is the production caller — until that wiring
+    /// lands, the active arena always starts empty for any pointer.
+    #[allow(dead_code, reason = "T15 paint-time registration target")]
     pub(crate) fn add(
         &mut self,
         pointer_id: PointerId,
@@ -243,7 +252,11 @@ impl GestureArenaManager {
     }
 
     /// Hold semantics — keep the arena open past `Up` until the
-    /// caller calls [`Self::release`].
+    /// caller calls [`Self::release`]. Used by recognizers like
+    /// `DoubleTap` that span multiple Down/Up sequences. Currently
+    /// only exercised by tests; the production wiring that holds the
+    /// arena on `DoubleTap`'s first Up is part of T15.
+    #[allow(dead_code, reason = "T15 DoubleTap hold/release wiring")]
     pub(crate) fn hold(&mut self, pointer_id: PointerId) {
         if let Some((_, arena)) = self.arenas.iter_mut().find(|(id, _)| *id == pointer_id) {
             arena.is_held = true;
@@ -252,7 +265,8 @@ impl GestureArenaManager {
 
     /// Release a held arena; resumes normal sweep semantics on the
     /// next `Up` (or the call site can call [`Self::sweep`]
-    /// directly).
+    /// directly). T15 DoubleTap wiring is the production caller.
+    #[allow(dead_code, reason = "T15 DoubleTap hold/release wiring")]
     pub(crate) fn release(
         &mut self,
         pointer_id: PointerId,
@@ -298,6 +312,12 @@ impl GestureArenaManager {
     /// Async back-channel for recognizers whose `Accepted` decision
     /// fires from outside `handle_event` (e.g.
     /// `LongPressGestureRecognizer`'s timer).
+    ///
+    /// Currently unreachable from the live dispatch path because
+    /// the long-press timer's back-channel (`arena_back_channel`)
+    /// is wired only by T15 paint-time registration. Until then
+    /// this method is API-ready but unused.
+    #[allow(dead_code, reason = "T15 LongPress timer back-channel target")]
     pub(crate) fn declare_winner(
         &mut self,
         pointer_id: PointerId,
@@ -357,9 +377,7 @@ mod tests {
     use super::*;
     use crate::gesture::{PointerButtons, PointerEvent, PointerId, PointerKind, PointerPhase};
     use crate::scheduler::Instant;
-    use crate::{
-        self as flui_core, AppContext as _, Context as _, Modifiers, Point, TestAppContext,
-    };
+    use crate::{self as flui_core, AppContext as _, Modifiers, Point, TestAppContext};
 
     /// A scriptable mock recognizer. Pops dispositions off
     /// `script` per `handle_event` call; falls back to `Possible`.
@@ -406,7 +424,9 @@ mod tests {
             _: &mut crate::App,
         ) -> GestureDisposition {
             self.handle_calls.push((event.pointer_id, event.phase));
-            self.script.pop_front().unwrap_or(GestureDisposition::Possible)
+            self.script
+                .pop_front()
+                .unwrap_or(GestureDisposition::Possible)
         }
         fn sweep_accepted(
             &mut self,
@@ -416,12 +436,7 @@ mod tests {
         ) {
             self.sweep_calls.push(pointer_id);
         }
-        fn rejected(
-            &mut self,
-            pointer_id: PointerId,
-            _: &mut crate::Window,
-            _: &mut crate::App,
-        ) {
+        fn rejected(&mut self, pointer_id: PointerId, _: &mut crate::Window, _: &mut crate::App) {
             self.rejected_calls.push(pointer_id);
         }
     }
@@ -445,9 +460,7 @@ mod tests {
     /// Wrap a `MockRecognizer` in the `Rc<RefCell<Box<...>>>` shape
     /// the arena expects. Returns the wrapped entry plus a shared
     /// handle for post-dispatch assertion.
-    fn boxed_mock(
-        m: MockRecognizer,
-    ) -> Rc<RefCell<Box<dyn GestureRecognizer>>> {
+    fn boxed_mock(m: MockRecognizer) -> Rc<RefCell<Box<dyn GestureRecognizer>>> {
         Rc::new(RefCell::new(Box::new(m) as Box<dyn GestureRecognizer>))
     }
 
@@ -467,13 +480,16 @@ mod tests {
     #[flui_core::test]
     fn arena_eager_accept_short_circuits_others(cx: &mut TestAppContext) {
         let _ = cx.update(|cx| {
-            cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+            let _ = cx
+                .open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
                 .unwrap()
                 .update(cx, |_, window, cx| {
                     let mut arena = GestureArenaManager::default();
                     let p = PointerId(0);
-                    let r0 =
-                        boxed_mock(MockRecognizer::with_script("r0", &[GestureDisposition::Accepted]));
+                    let r0 = boxed_mock(MockRecognizer::with_script(
+                        "r0",
+                        &[GestureDisposition::Accepted],
+                    ));
                     let r1 = boxed_mock(MockRecognizer::new("r1"));
                     arena.add(p, Rc::clone(&r0));
                     arena.add(p, Rc::clone(&r1));
@@ -488,11 +504,7 @@ mod tests {
                         // r0 accepted (depends on iteration order).
                         // `dispatch` snapshots in registration order, so
                         // r0 (idx 0) runs first → r1 doesn't see it.
-                        assert_eq!(
-                            m.rejected_calls,
-                            vec![p],
-                            "loser notified rejected"
-                        );
+                        assert_eq!(m.rejected_calls, vec![p], "loser notified rejected");
                     });
                 });
         });
@@ -501,7 +513,8 @@ mod tests {
     #[flui_core::test]
     fn arena_sweep_first_registered_wins_on_up(cx: &mut TestAppContext) {
         let _ = cx.update(|cx| {
-            cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+            let _ = cx
+                .open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
                 .unwrap()
                 .update(cx, |_, window, cx| {
                     let mut arena = GestureArenaManager::default();
@@ -526,7 +539,8 @@ mod tests {
     #[flui_core::test]
     fn arena_cancel_rejects_all_entries(cx: &mut TestAppContext) {
         let _ = cx.update(|cx| {
-            cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+            let _ = cx
+                .open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
                 .unwrap()
                 .update(cx, |_, window, cx| {
                     let mut arena = GestureArenaManager::default();
@@ -551,23 +565,22 @@ mod tests {
     #[flui_core::test]
     fn arena_rejected_disposition_drops_entry(cx: &mut TestAppContext) {
         let _ = cx.update(|cx| {
-            cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+            let _ = cx
+                .open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
                 .unwrap()
                 .update(cx, |_, window, cx| {
                     let mut arena = GestureArenaManager::default();
                     let p = PointerId(0);
-                    let r0 =
-                        boxed_mock(MockRecognizer::with_script("r0", &[GestureDisposition::Rejected]));
+                    let r0 = boxed_mock(MockRecognizer::with_script(
+                        "r0",
+                        &[GestureDisposition::Rejected],
+                    ));
                     let r1 = boxed_mock(MockRecognizer::new("r1"));
                     arena.add(p, Rc::clone(&r0));
                     arena.add(p, Rc::clone(&r1));
                     let evt = pointer_event(PointerPhase::Move);
                     arena.dispatch(p, &evt, window, cx);
-                    assert_eq!(
-                        arena.entry_count(p),
-                        1,
-                        "rejected entry dropped from arena"
-                    );
+                    assert_eq!(arena.entry_count(p), 1, "rejected entry dropped from arena");
                 });
         });
     }
@@ -575,7 +588,8 @@ mod tests {
     #[flui_core::test]
     fn arena_hold_blocks_sweep(cx: &mut TestAppContext) {
         let _ = cx.update(|cx| {
-            cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+            let _ = cx
+                .open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
                 .unwrap()
                 .update(cx, |_, window, cx| {
                     let mut arena = GestureArenaManager::default();
@@ -627,7 +641,8 @@ mod tests {
         runner
             .run(&(1usize..10), |num_entries| {
                 cx.update(|cx| {
-                    cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+                    let _ = cx
+                        .open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
                         .unwrap()
                         .update(cx, |_, window, cx| {
                             let mut arena = GestureArenaManager::default();
@@ -666,7 +681,8 @@ mod tests {
             .run(&(2usize..8, 0usize..8), |(num_entries, accept_pos)| {
                 let accept_idx = accept_pos % num_entries;
                 cx.update(|cx| {
-                    cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+                    let _ = cx
+                        .open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
                         .unwrap()
                         .update(cx, |_, window, cx| {
                             let mut arena = GestureArenaManager::default();
@@ -719,7 +735,8 @@ mod tests {
             .run(&(2usize..8, 0usize..8), |(num_entries, reject_pos)| {
                 let reject_idx = reject_pos % num_entries;
                 cx.update(|cx| {
-                    cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+                    let _ = cx
+                        .open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
                         .unwrap()
                         .update(cx, |_, window, cx| {
                             let mut arena = GestureArenaManager::default();
@@ -759,7 +776,8 @@ mod tests {
         runner
             .run(&(1usize..10), |num_entries| {
                 cx.update(|cx| {
-                    cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+                    let _ = cx
+                        .open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
                         .unwrap()
                         .update(cx, |_, window, cx| {
                             let mut arena = GestureArenaManager::default();
@@ -806,7 +824,8 @@ mod tests {
         runner
             .run(&(1usize..6), |num_entries| {
                 cx.update(|cx| {
-                    cx.open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+                    let _ = cx
+                        .open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
                         .unwrap()
                         .update(cx, |_, window, cx| {
                             let mut arena = GestureArenaManager::default();
