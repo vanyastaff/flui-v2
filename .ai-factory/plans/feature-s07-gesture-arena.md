@@ -125,10 +125,10 @@ Verified by **T22** bench fixture (`cargo run -p flui-core --release --example g
 
 ### Phase C — Arena core, binding, settings, velocity
 
-- [ ] **T7:** `GestureRecognizer` trait (object-safe — verified by doc-test AND `rust-api-migration-auditor`; `?Sync` main-thread only) in `recognizer.rs` with `semantic_actions()` (S08 seam) and `on_focus_request()` (S12 seam) default-empty hooks. `GestureArenaManager` + `GestureArena` + `GestureArenaEntry` in `arena.rs`. Per-pointer arena, eager-accept wins, sweep-on-up declares first-registered.
-- [ ] **T8:** `GestureArenaTeam` in `arena_team.rs`. Captain-deferred resolution.
-- [ ] **T21:** `GestureSettings` (`#[non_exhaustive]`, Flutter defaults) + **`GestureBinding`** (per-`Window` owner of arena+settings+sanitizer). `Window` holds `gesture_binding: GestureBinding`; recognizers consume `&GestureSettings` on construction. Public API: `cx.window().gesture_binding()`, `cx.window().gesture_settings_mut()` (the S14 MediaQuery seam).
-- [ ] **T9:** `VelocityTracker` + `Velocity` in `velocity_tracker.rs`. Flutter `LeastSquaresSolver` weighted-quadratic fit; bounded `VecDeque<PositionSample>`; max samples + max age configurable via `GestureSettings`.
+- [x] **T7:** `GestureRecognizer` trait (object-safe — verified by doc-test AND `rust-api-migration-auditor`; `?Sync` main-thread only) in `recognizer.rs` with `semantic_actions()` (S08 seam) and `on_focus_request()` (S12 seam) default-empty hooks. `GestureArenaManager` + `GestureArena` + `GestureArenaEntry` in `arena.rs`. Per-pointer arena, eager-accept wins, sweep-on-up declares first-registered.
+- [x] **T8:** `GestureArenaTeam` in `arena_team.rs`. Captain-deferred resolution.
+- [x] **T21:** `GestureSettings` (`#[non_exhaustive]`, Flutter defaults) + **`GestureBinding`** (per-`Window` owner of arena+settings+sanitizer). `Window` holds `gesture_binding: GestureBinding`; recognizers consume `&GestureSettings` on construction. Public API: `cx.window().gesture_binding()`, `cx.window().gesture_settings_mut()` (the S14 MediaQuery seam).
+- [x] **T9:** `VelocityTracker` + `Velocity` in `velocity_tracker.rs`. Flutter `LeastSquaresSolver` weighted-quadratic fit; bounded `VecDeque<PositionSample>`; max samples + max age configurable via `GestureSettings`.
 
 > **Commit checkpoint C — after T7, T8, T21, T9:** `feat(flui-core): gesture arena, binding, settings, velocity tracker (S07)`
 

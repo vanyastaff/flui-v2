@@ -963,6 +963,9 @@ pub struct Window {
     /// `PointerSanitizer` for the gesture dispatch path. T20 grows
     /// per-pointer state inside this; T4 ships it stateless.
     pub(crate) gesture_sanitizer: crate::gesture::dispatch::PointerSanitizer,
+    /// Per-`Window` gesture arena + settings + sanitizer (T21). Owns
+    /// the recognizer-competition machinery.
+    pub(crate) gesture_binding: crate::gesture::GestureBinding,
     modifiers: Modifiers,
     capslock: Capslock,
     scale_factor: f32,
@@ -1457,6 +1460,7 @@ impl Window {
             hit_test_behaviors: collections::FxHashMap::default(),
             gesture_pointer_state: crate::gesture::dispatch::WindowPointerState::default(),
             gesture_sanitizer: crate::gesture::dispatch::PointerSanitizer::default(),
+            gesture_binding: crate::gesture::GestureBinding::default(),
             modifiers,
             capslock,
             scale_factor,
@@ -2197,6 +2201,24 @@ impl Window {
     /// The position of the mouse relative to the window.
     pub fn mouse_position(&self) -> Point<Pixels> {
         self.mouse_position
+    }
+
+    /// Borrow the per-`Window` gesture binding (arena + settings +
+    /// sanitizer). See [`crate::gesture::GestureBinding`].
+    pub fn gesture_binding(&self) -> &crate::gesture::GestureBinding {
+        &self.gesture_binding
+    }
+
+    /// Mutably borrow the per-`Window` gesture binding.
+    pub fn gesture_binding_mut(&mut self) -> &mut crate::gesture::GestureBinding {
+        &mut self.gesture_binding
+    }
+
+    /// Mutate gesture thresholds. The S14 MediaQuery seam — when
+    /// `MediaQueryData::gesture_settings` lands, it routes through
+    /// this accessor.
+    pub fn gesture_settings_mut(&mut self) -> &mut crate::gesture::GestureSettings {
+        self.gesture_binding.settings_mut()
     }
 
     /// Walk the existing committed hit-test list and produce a typed

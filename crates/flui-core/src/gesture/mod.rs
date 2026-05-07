@@ -61,7 +61,13 @@ pub mod velocity_tracker;
 // gesture::{ … }` block in `crates/flui-core/src/lib.rs`. New
 // pub items added under `gesture::` MUST be enumerated here.
 
+pub use arena::GestureDisposition;
+pub use arena_team::GestureArenaTeam;
+pub use binding::GestureBinding;
+pub use gesture_settings::GestureSettings;
 pub use hit_test::{HitTestBehavior, HitTestEntry, HitTestResult};
 pub use pointer_event::{PointerButtons, PointerEvent, PointerId, PointerKind, PointerPhase};
 pub use pointer_signal::PointerSignalEvent;
+pub use recognizer::{GestureRecognizer, SemanticAction};
+pub use velocity_tracker::{PositionSample, Velocity, VelocityTracker};
 
