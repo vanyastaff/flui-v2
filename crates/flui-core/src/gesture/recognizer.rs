@@ -6,7 +6,7 @@
 //! See the design doc § "GestureRecognizer trait".
 
 use super::arena::ArenaBackChannel;
-use super::{GestureDisposition, GestureSettings, PointerEvent, PointerId};
+use super::{AllowedButtonsFilter, DeliveredEvent, GestureDisposition, GestureSettings, PointerId};
 use crate::FocusHandle;
 
 /// One competitor in the gesture arena.
@@ -43,16 +43,28 @@ pub trait GestureRecognizer: 'static {
 
     /// The recognizer is being added to the arena for `pointer_id`.
     /// Recognizers track per-pointer state internally.
-    fn add_pointer(&mut self, pointer_id: PointerId, event: &PointerEvent);
+    ///
+    /// `event.local_position` is the hit-target-local pointer position
+    /// at the moment the recognizer was registered; recognizers must
+    /// use it (rather than `event.event.position`) when initialising
+    /// per-pointer state such as `down_position`.
+    fn add_pointer(&mut self, pointer_id: PointerId, event: DeliveredEvent<'_>);
 
     /// A new event arrived for a tracked pointer. Recognizers may
     /// **eagerly accept** by returning [`GestureDisposition::Accepted`]
     /// or **eagerly reject** with [`GestureDisposition::Rejected`].
     /// Returning [`GestureDisposition::Possible`] keeps the recognizer
     /// in the arena.
+    ///
+    /// The dispatcher passes a [`DeliveredEvent`] carrying the
+    /// underlying `&PointerEvent` plus a per-recognizer
+    /// `local_position`. Recognizers must read
+    /// `event.local_position` for any in-target geometry (slop,
+    /// distance, drag delta) and `event.event.<field>` for everything
+    /// else (kind, phase, buttons, timestamps, pressure).
     fn handle_event(
         &mut self,
-        event: &PointerEvent,
+        event: DeliveredEvent<'_>,
         window: &mut crate::Window,
         cx: &mut crate::App,
     ) -> GestureDisposition;
@@ -87,6 +99,19 @@ pub trait GestureRecognizer: 'static {
     /// Default `None`; `TapGestureRecognizer` overrides when
     /// `request_focus_on_tap_down` is set.
     fn on_focus_request(&self) -> Option<FocusHandle> {
+        None
+    }
+
+    /// Optional per-recognizer button + modifier gating predicate.
+    ///
+    /// Returned by recognizers that opt into [`AllowedButtonsFilter`]
+    /// gating (typically via a `with_allowed_buttons_filter`
+    /// builder). [`super::GestureBinding::register_recognizer`]
+    /// evaluates this filter on the registering pointer event before
+    /// `arena.add`; on rejection the recognizer is not added (Decision
+    /// D10). Default `None` — no extra gating beyond the recognizer's
+    /// own `add_pointer` button check.
+    fn allowed_buttons_filter(&self) -> Option<&AllowedButtonsFilter> {
         None
     }
 
@@ -146,6 +171,12 @@ pub trait RecognizerLifecycle {
     /// entry index into the arena. Called only when
     /// [`Self::needs_back_channel`] returns `true`.
     ///
+    /// `pointer_id` is the pointer for which the recognizer is being
+    /// registered. Multi-pointer recognizers (e.g. `LongPress`,
+    /// future `MultiTap`) MUST keep one `(pointer_id, entry_index)`
+    /// pair per pointer they track — a single boolean / scalar slot
+    /// silently conflates concurrent in-flight presses.
+    ///
     /// `back_channel` is an opaque [`ArenaBackChannel`] that stays
     /// valid while the per-window arena is alive and degrades into a
     /// silent no-op once the `Window` (and its `GestureBinding`)
@@ -157,7 +188,13 @@ pub trait RecognizerLifecycle {
     /// `entries` vec at registration time, suitable for
     /// `back_channel.declare_winner(pointer_id, entry_index, ...)`
     /// from a timer callback.
-    fn set_arena_back_channel(&mut self, _back_channel: ArenaBackChannel, _entry_index: usize) {}
+    fn set_arena_back_channel(
+        &mut self,
+        _pointer_id: PointerId,
+        _back_channel: ArenaBackChannel,
+        _entry_index: usize,
+    ) {
+    }
 
     /// Whether this recognizer wants the arena to enter `hold` mode on
     /// the initial `Down`, deferring the sweep-on-`Up` resolution until
@@ -201,11 +238,104 @@ pub enum SemanticAction {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Modifiers;
+    use crate::gesture::{
+        PointerButtons, recognizers::DoubleTapGestureRecognizer,
+        recognizers::HorizontalDragGestureRecognizer, recognizers::LongPressGestureRecognizer,
+        recognizers::PanGestureRecognizer, recognizers::ScaleGestureRecognizer,
+        recognizers::TapGestureRecognizer, recognizers::VerticalDragGestureRecognizer,
+    };
 
     /// Compile-time assertion that `GestureRecognizer` is object-safe.
     /// Will fail to compile if a future change makes the trait
     /// non-`dyn`-compatible.
     fn _assert_object_safe(_: &dyn GestureRecognizer) {}
+
+    /// T20 canary — every recognizer that ships
+    /// `with_allowed_buttons_filter` must surface the closure through
+    /// `GestureRecognizer::allowed_buttons_filter`. The default trait
+    /// method returns `None`; overrides return `Some(self.<field>)`.
+    /// Without that override, `register_recognizer` would never see
+    /// the filter and Decision D10's gating becomes a silent no-op.
+    ///
+    /// All seven recognizer families use the documented fluent
+    /// `with_allowed_buttons_filter` builder — keeping the test
+    /// shape uniform with the canonical `recognizer-extension.md`
+    /// recipe (rather than mixing with raw `pub field = Some(...)`
+    /// assignment, which works but is the unidiomatic form for
+    /// downstream readers).
+    #[test]
+    fn every_recognizer_surfaces_allowed_buttons_filter() {
+        use crate::gesture::GestureSettings;
+
+        let s = GestureSettings::default();
+
+        // Each recognizer family installs an always-false filter via
+        // the canonical builder, then we read it back through the
+        // trait method and verify the closure is reachable. The
+        // closure body is not exercised here — the binding-side
+        // integration test in `gesture_dispatch_integration.rs`
+        // covers the full register_recognizer rejection path.
+
+        let tap = TapGestureRecognizer::new(&s).with_allowed_buttons_filter(|_, _| false);
+        assert!(
+            tap.allowed_buttons_filter()
+                .is_some_and(|f| !f.call(PointerButtons::PRIMARY, Modifiers::default())),
+            "tap surfaces filter and forwards arguments"
+        );
+
+        let dt = DoubleTapGestureRecognizer::new(&s).with_allowed_buttons_filter(|_, _| false);
+        assert!(
+            dt.allowed_buttons_filter().is_some(),
+            "double_tap surfaces filter"
+        );
+
+        let lp = LongPressGestureRecognizer::new(&s).with_allowed_buttons_filter(|_, _| false);
+        assert!(
+            lp.allowed_buttons_filter().is_some(),
+            "long_press surfaces filter"
+        );
+
+        let pan = PanGestureRecognizer::new(&s).with_allowed_buttons_filter(|_, _| false);
+        assert!(
+            pan.allowed_buttons_filter().is_some(),
+            "pan surfaces filter"
+        );
+
+        let hdrag =
+            HorizontalDragGestureRecognizer::new(&s).with_allowed_buttons_filter(|_, _| false);
+        assert!(
+            hdrag.allowed_buttons_filter().is_some(),
+            "hdrag surfaces filter"
+        );
+
+        let vdrag =
+            VerticalDragGestureRecognizer::new(&s).with_allowed_buttons_filter(|_, _| false);
+        assert!(
+            vdrag.allowed_buttons_filter().is_some(),
+            "vdrag surfaces filter"
+        );
+
+        let scale = ScaleGestureRecognizer::new(&s).with_allowed_buttons_filter(|_, _| false);
+        assert!(
+            scale.allowed_buttons_filter().is_some(),
+            "scale surfaces filter"
+        );
+    }
+
+    /// Default trait body returns `None` — recognizers that opt out
+    /// of `allowed_buttons_filter` (the common case) keep the
+    /// register-recognizer fast-path.
+    #[test]
+    fn allowed_buttons_filter_default_is_none() {
+        use crate::gesture::GestureSettings;
+        let s = GestureSettings::default();
+
+        // No filter installed → `allowed_buttons_filter()` returns
+        // `None`.
+        let tap = TapGestureRecognizer::new(&s);
+        assert!(tap.allowed_buttons_filter().is_none());
+    }
 }
 
 /// Compile-time assertion that `GestureRecognizer` is object-safe.

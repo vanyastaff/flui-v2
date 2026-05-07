@@ -1,18 +1,25 @@
 //! `LongPressGestureRecognizer` + `LongPressDetails`.
 //!
-//! Async timer via `cx.spawn(async { smol::Timer::after(d).await })`.
-//! Async back-channel to the arena via
-//! `Weak<RefCell<GestureArenaManager>>` plus `pointer_index`. Drop
+//! Async timer via
+//! `cx.spawn(async move |_| { cx.background_executor().timer(d).await })`
+//! — the test scheduler's virtual clock (driven by
+//! `TestAppContext::executor().advance_clock`) wakes the timer.
+//! `smol::Timer::after` would observe wall-clock time and never
+//! fire under `advance_clock`. Async back-channel to the arena via
+//! `Weak<RefCell<GestureArenaManager>>` plus per-pointer
+//! `(PointerId, entry_index)` slots in `pointer_indexes`. Drop
 //! cancels the timer task.
 //!
 //! See the design doc § "LongPressGestureRecognizer".
 
+use crate::Modifiers;
 use crate::gesture::arena::ArenaBackChannel;
 use crate::gesture::{
-    GestureDisposition, GestureRecognizer, GestureSettings, PointerButtons, PointerEvent,
-    PointerId, PointerKind, PointerPhase, RecognizerLifecycle, SemanticAction,
+    AllowedButtonsFilter, DeliveredEvent, GestureDisposition, GestureRecognizer, GestureSettings,
+    PointerButtons, PointerId, PointerKind, PointerPhase, RecognizerLifecycle, SemanticAction,
 };
 use crate::{AppContext, Pixels, Point, Task};
+use smallvec::SmallVec;
 use std::time::Duration;
 
 const LONG_PRESS_SEMANTIC_ACTIONS: &[SemanticAction] = &[SemanticAction::LongPress];
@@ -67,6 +74,11 @@ pub struct LongPressGestureRecognizer {
     /// [`crate::gesture::GestureSettings::long_press_timer_budget`] at
     /// construction (default: 16 ms / one 60 Hz frame).
     pub timer_budget: Duration,
+    /// Optional `(buttons, modifiers) -> bool` predicate evaluated by
+    /// [`crate::gesture::GestureBinding::register_recognizer`] before
+    /// the recognizer joins the arena. `None` (the default) admits
+    /// every event whose `buttons` contain [`Self::button`].
+    pub allowed_buttons_filter: Option<AllowedButtonsFilter>,
 
     pointer: Option<PointerId>,
     down_position: Point<Pixels>,
@@ -82,8 +94,14 @@ pub struct LongPressGestureRecognizer {
     /// outside the binding (e.g. directly in unit tests) silently
     /// no-ops the timer's `declare_winner` call instead of panicking.
     arena_back_channel: ArenaBackChannel,
-    /// Index into `arena.entries` recorded at registration time.
-    pointer_index: Option<usize>,
+    /// Per-pointer arena entry slots recorded at registration time.
+    ///
+    /// Single-shot LongPress holds at most one pointer in flight in
+    /// practice, so the inline storage of `1` covers the common case
+    /// without a heap allocation. Multi-pointer recognizers built on
+    /// the same back-channel hook (S07.6 MultiTap) carry the same
+    /// shape with a larger inline budget.
+    pointer_indexes: SmallVec<[(PointerId, usize); 1]>,
 }
 
 impl LongPressGestureRecognizer {
@@ -97,14 +115,27 @@ impl LongPressGestureRecognizer {
             timeout: settings.long_press_timeout,
             slop: settings.long_press_slop,
             timer_budget: settings.long_press_timer_budget,
+            allowed_buttons_filter: None,
             pointer: None,
             down_position: Point::default(),
             last_kind: PointerKind::Mouse,
             accepted: false,
             timer: None,
             arena_back_channel: ArenaBackChannel::empty(),
-            pointer_index: None,
+            pointer_indexes: SmallVec::new(),
         }
+    }
+
+    /// Fluent setter for [`Self::allowed_buttons_filter`]. The closure
+    /// is evaluated by [`crate::gesture::GestureBinding::register_recognizer`]
+    /// at registration time; on `false` the recognizer never enters
+    /// the arena (Decision D10).
+    pub fn with_allowed_buttons_filter(
+        mut self,
+        f: impl Fn(PointerButtons, Modifiers) -> bool + 'static,
+    ) -> Self {
+        self.allowed_buttons_filter = Some(AllowedButtonsFilter::new(f));
+        self
     }
 
     fn distance_sq(&self, p: Point<Pixels>) -> f32 {
@@ -123,13 +154,17 @@ impl GestureRecognizer for LongPressGestureRecognizer {
         "long_press"
     }
 
-    fn add_pointer(&mut self, pointer_id: PointerId, event: &PointerEvent) {
-        if !event.buttons.contains(self.button) {
+    fn allowed_buttons_filter(&self) -> Option<&AllowedButtonsFilter> {
+        self.allowed_buttons_filter.as_ref()
+    }
+
+    fn add_pointer(&mut self, pointer_id: PointerId, event: DeliveredEvent<'_>) {
+        if !event.buttons().contains(self.button) {
             return;
         }
         self.pointer = Some(pointer_id);
-        self.down_position = event.position;
-        self.last_kind = event.kind;
+        self.down_position = event.local_position;
+        self.last_kind = event.kind();
         self.accepted = false;
         // T15 will populate `arena_back_channel` and `pointer_index`
         // from the GestureBinding when the recognizer joins the
@@ -140,14 +175,14 @@ impl GestureRecognizer for LongPressGestureRecognizer {
 
     fn handle_event(
         &mut self,
-        event: &PointerEvent,
+        event: DeliveredEvent<'_>,
         window: &mut crate::Window,
         cx: &mut crate::App,
     ) -> GestureDisposition {
-        if self.pointer != Some(event.pointer_id) {
+        if self.pointer != Some(event.pointer_id()) {
             return GestureDisposition::Possible;
         }
-        match event.phase {
+        match event.phase() {
             PointerPhase::Down => {
                 // Schedule the long-press timer. `cx.spawn` returns a
                 // `Task<()>` we store; dropping it cancels the future.
@@ -161,11 +196,31 @@ impl GestureRecognizer for LongPressGestureRecognizer {
                 // (timer fires after `Window` drops) becomes a no-op
                 // upgrade.
                 let timeout = self.timeout;
-                let pointer_id = event.pointer_id;
-                let entry_position = event.position;
-                let entry_kind = event.kind;
+                let pointer_id = event.pointer_id();
+                // Callback global_position uses window-local because
+                // user code expects window-space coordinates here.
+                let entry_position = event.global_position();
+                let entry_kind = event.kind();
                 let back_channel = self.arena_back_channel.clone();
-                let entry_index = self.pointer_index;
+                // Look up this pointer's entry slot recorded during
+                // `set_arena_back_channel`. Multi-pointer recognizers
+                // share the back-channel hook surface, so the lookup
+                // is keyed on `pointer_id` (the matching slot is
+                // `(pid, idx)`).
+                //
+                // **Eager capture.** This computes the resolved
+                // `Option<usize>` *before* the `cx.spawn` call so the
+                // async closure captures a `Copy` value rather than a
+                // borrow into `self.pointer_indexes`. A late lookup
+                // inside the closure would race with `rejected`
+                // (which clears the slot) and with sibling
+                // `add_pointer` calls — both legal on the main
+                // thread between Down and timer-fire.
+                let entry_index = self
+                    .pointer_indexes
+                    .iter()
+                    .find(|(pid, _)| *pid == pointer_id)
+                    .map(|(_, idx)| *idx);
                 let window_handle = window.window_handle();
                 // S07.5 T5 — use `BackgroundExecutor::timer` so the
                 // test harness's virtual clock (driven by
@@ -247,15 +302,15 @@ impl GestureRecognizer for LongPressGestureRecognizer {
                 GestureDisposition::Possible
             }
             PointerPhase::Move => {
-                if self.distance_sq(event.position) > (self.slop.0).powi(2) {
+                if self.distance_sq(event.local_position) > (self.slop.0).powi(2) {
                     self.timer = None; // drops the task → cancels future
                     GestureDisposition::Rejected
                 } else if self.accepted {
                     if let Some(cb) = self.on_long_press_move.as_mut() {
                         cb(
                             LongPressDetails {
-                                global_position: event.position,
-                                kind: event.kind,
+                                global_position: event.global_position(),
+                                kind: event.kind(),
                             },
                             window,
                             cx,
@@ -273,8 +328,8 @@ impl GestureRecognizer for LongPressGestureRecognizer {
                     if let Some(cb) = self.on_long_press_end.as_mut() {
                         cb(
                             LongPressDetails {
-                                global_position: event.position,
-                                kind: event.kind,
+                                global_position: event.global_position(),
+                                kind: event.kind(),
                             },
                             window,
                             cx,
@@ -305,13 +360,17 @@ impl GestureRecognizer for LongPressGestureRecognizer {
 
     fn rejected(
         &mut self,
-        _pointer_id: PointerId,
+        pointer_id: PointerId,
         _window: &mut crate::Window,
         _cx: &mut crate::App,
     ) {
-        // Drop the timer to cancel the future.
+        // Drop the timer to cancel the future and clear the entry
+        // slot for this pointer (single-shot LongPress only ever
+        // tracks one in-flight pointer, but staying defensive
+        // matches the per-pointer storage shape).
         self.timer = None;
         self.accepted = false;
+        self.pointer_indexes.retain(|(pid, _)| *pid != pointer_id);
     }
 
     fn semantic_actions(&self) -> &'static [SemanticAction] {
@@ -328,16 +387,26 @@ impl RecognizerLifecycle for LongPressGestureRecognizer {
         true
     }
 
-    fn set_arena_back_channel(&mut self, back_channel: ArenaBackChannel, entry_index: usize) {
+    fn set_arena_back_channel(
+        &mut self,
+        pointer_id: PointerId,
+        back_channel: ArenaBackChannel,
+        entry_index: usize,
+    ) {
         log::trace!(
             target: "flui::gesture::long_press",
             recognizer = "long_press",
             lifecycle = "set_back_channel",
+            pointer_id = format!("{:?}", pointer_id),
             entry_index = entry_index;
             "long_press back-channel injected at registration"
         );
         self.arena_back_channel = back_channel;
-        self.pointer_index = Some(entry_index);
+        // Replace any stale entry for this pointer (defensive: a
+        // re-Down on the same pointer mid-arena is unexpected but
+        // would otherwise leave a duplicate slot here).
+        self.pointer_indexes.retain(|(pid, _)| *pid != pointer_id);
+        self.pointer_indexes.push((pointer_id, entry_index));
     }
 
     fn configure_settings(&mut self, settings: &GestureSettings) {
@@ -366,12 +435,18 @@ mod tests {
 
     use super::*;
     use crate::gesture::{
-        GestureSettings, PointerButtons, PointerEvent, PointerId, PointerKind, PointerPhase,
+        DeliveredEvent, GestureSettings, PointerButtons, PointerEvent, PointerId, PointerKind,
+        PointerPhase,
     };
     use crate::scheduler::Instant;
     use crate::{self as flui_core, Modifiers, Pixels, Point, TestAppContext};
 
+    fn de(event: &PointerEvent) -> DeliveredEvent<'_> {
+        DeliveredEvent::at_event_position(event)
+    }
+
     fn pe(phase: PointerPhase, pos: Point<Pixels>, buttons: PointerButtons) -> PointerEvent {
+        let now = Instant::now();
         PointerEvent {
             pointer_id: PointerId(0),
             kind: PointerKind::Mouse,
@@ -380,8 +455,10 @@ mod tests {
             delta: Point::default(),
             buttons,
             modifiers: Modifiers::default(),
-            timestamp: Instant::now(),
-            pressure: 1.0,
+            timestamp: now,
+            source_timestamp: now,
+            provenance: crate::gesture::PointerEventProvenance::Platform,
+            pressure: None,
             tilt: 0.0,
             orientation: 0.0,
         }
@@ -400,15 +477,15 @@ mod tests {
                 .update(cx, |_, window, cx| {
                     let mut lp = LongPressGestureRecognizer::new(&GestureSettings::default());
                     let down = pe(PointerPhase::Down, p(0.0, 0.0), PointerButtons::PRIMARY);
-                    lp.add_pointer(PointerId(0), &down);
+                    lp.add_pointer(PointerId(0), de(&down));
                     assert_eq!(
-                        lp.handle_event(&down, window, cx),
+                        lp.handle_event(de(&down), window, cx),
                         GestureDisposition::Possible
                     );
                     assert!(lp.timer.is_some(), "Down schedules a timer");
                     let mv = pe(PointerPhase::Move, p(100.0, 0.0), PointerButtons::PRIMARY);
                     assert_eq!(
-                        lp.handle_event(&mv, window, cx),
+                        lp.handle_event(de(&mv), window, cx),
                         GestureDisposition::Rejected,
                     );
                     assert!(
@@ -428,11 +505,11 @@ mod tests {
                 .update(cx, |_, window, cx| {
                     let mut lp = LongPressGestureRecognizer::new(&GestureSettings::default());
                     let down = pe(PointerPhase::Down, p(0.0, 0.0), PointerButtons::PRIMARY);
-                    lp.add_pointer(PointerId(0), &down);
-                    let _ = lp.handle_event(&down, window, cx);
+                    lp.add_pointer(PointerId(0), de(&down));
+                    let _ = lp.handle_event(de(&down), window, cx);
                     let up = pe(PointerPhase::Up, p(0.0, 0.0), PointerButtons::default());
                     assert_eq!(
-                        lp.handle_event(&up, window, cx),
+                        lp.handle_event(de(&up), window, cx),
                         GestureDisposition::Rejected,
                         "Up before timer-accept rejects (no premature acceptance)"
                     );
@@ -449,11 +526,11 @@ mod tests {
                 .update(cx, |_, window, cx| {
                     let mut lp = LongPressGestureRecognizer::new(&GestureSettings::default());
                     let down = pe(PointerPhase::Down, p(0.0, 0.0), PointerButtons::PRIMARY);
-                    lp.add_pointer(PointerId(0), &down);
-                    let _ = lp.handle_event(&down, window, cx);
+                    lp.add_pointer(PointerId(0), de(&down));
+                    let _ = lp.handle_event(de(&down), window, cx);
                     let cancel = pe(PointerPhase::Cancel, p(0.0, 0.0), PointerButtons::default());
                     assert_eq!(
-                        lp.handle_event(&cancel, window, cx),
+                        lp.handle_event(de(&cancel), window, cx),
                         GestureDisposition::Rejected,
                     );
                     assert!(lp.timer.is_none(), "Cancel drops the timer Task");
@@ -488,8 +565,8 @@ mod tests {
                 .update(cx, |_, window, cx| {
                     let mut lp = LongPressGestureRecognizer::new(&GestureSettings::default());
                     let down = pe(PointerPhase::Down, p(0.0, 0.0), PointerButtons::PRIMARY);
-                    lp.add_pointer(PointerId(0), &down);
-                    let _ = lp.handle_event(&down, window, cx);
+                    lp.add_pointer(PointerId(0), de(&down));
+                    let _ = lp.handle_event(de(&down), window, cx);
                     lp.accepted = true; // simulate timer firing
                     GestureRecognizer::rejected(&mut lp, PointerId(0), window, cx);
                     assert!(lp.timer.is_none(), "rejected drops the timer");

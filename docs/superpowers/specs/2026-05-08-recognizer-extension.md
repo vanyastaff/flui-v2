@@ -46,12 +46,25 @@ S07.5 (`RecognizerLifecycle` + `register_recognizer`).
    - `as_any_mut(&mut self) -> &mut dyn Any` returning `self` (object-safety).
    - `name(&self) -> &'static str` for the `kv` log schema.
    - `add_pointer(&mut self, pid, event)` — initial state setup.
-   - `handle_event(&mut self, event, window, cx) -> GestureDisposition`
-     — the per-event state machine.
+     `event` is a `DeliveredEvent<'_>` (S07.5b); read
+     `event.local_position` for `down_position`-style state and
+     `event.kind()`/`event.buttons()`/etc. for non-position fields.
+   - `handle_event(&mut self, event: DeliveredEvent<'_>, window, cx) ->
+     GestureDisposition` — the per-event state machine. Same
+     conventions as `add_pointer`: `event.local_position` for
+     slop/distance/drag-delta computation,
+     `event.global_position()` for callback `global_position`
+     payloads. **Never** read the underlying event's `position`
+     field directly — the verification grep
+     `grep "event\.position" crates/flui-core/src/gesture/recognizers/`
+     must return zero hits.
    - `sweep_accepted(&mut self, ...)` — what to do when sweep declares
      this recognizer the captain.
    - `rejected(&mut self, ...)` — clean up; **must reset to a fresh
      state**, never leak partial state.
+   - Override `allowed_buttons_filter(&self) -> Option<&AllowedButtonsFilter>`
+     to return `self.allowed_buttons_filter.as_ref()` if you ship a
+     filter field. The default body returns `None`.
    - Override `lifecycle(&mut self) -> Option<&mut dyn RecognizerLifecycle>`
      to return `Some(self)` if any lifecycle hook applies (see below).
 
@@ -102,9 +115,10 @@ accessor. Each method has a default no-op body. Override one of:
 | Hook                          | Override when …                                                                                                               | Reference impl                  |
 | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
 | `needs_back_channel`          | the recognizer must declare itself winner from outside `handle_event` (timer fire, async I/O completion).                     | `LongPressGestureRecognizer`    |
-| `set_arena_back_channel`      | (always paired with `needs_back_channel = true`) store the supplied [`ArenaBackChannel`] + entry index for later.             | `LongPressGestureRecognizer`    |
+| `set_arena_back_channel(pid, bc, idx)` | (always paired with `needs_back_channel = true`) store the supplied [`ArenaBackChannel`] + per-pointer `(pid, idx)` slot for later. Multi-pointer recognizers must keep one slot per pointer (see LongPress migration in S07.5b). | `LongPressGestureRecognizer` |
 | `needs_arena_hold`            | the gesture spans multiple Down/Up sequences and the arena must stay open past the first sweep.                               | `DoubleTapGestureRecognizer`    |
 | `configure_settings`          | the recognizer's thresholds come from per-window `GestureSettings`. Override to copy from `settings` into the recognizer.     | every recognizer                |
+| `allowed_buttons_filter` (on `GestureRecognizer`) | the recognizer ships a `pub allowed_buttons_filter: Option<AllowedButtonsFilter>` field. Surface it through the trait method so `register_recognizer` can gate admission (Decision D10). The fluent `with_allowed_buttons_filter(closure)` builder lives on the recognizer struct itself, not on `RecognizerLifecycle`. | every recognizer with the field |
 
 If none of these apply, leave `lifecycle()` returning `None` (the
 trait default). Tests, mocks, and recognizers that build their own
@@ -146,11 +160,19 @@ impl RecognizerLifecycle for LongPressGestureRecognizer {
 
     fn set_arena_back_channel(
         &mut self,
+        pointer_id: PointerId,
         back_channel: ArenaBackChannel,
         entry_index: usize,
     ) {
         self.arena_back_channel = back_channel;
-        self.pointer_index = Some(entry_index);
+        // S07.5b: per-pointer storage. Single-shot LongPress only
+        // ever holds one in-flight pointer in practice, so the
+        // SmallVec inline budget of 1 covers the common case
+        // without a heap allocation. Multi-pointer recognizers
+        // (S07.6 MultiTap) inherit the same shape.
+        self.pointer_indexes
+            .retain(|(pid, _)| *pid != pointer_id);
+        self.pointer_indexes.push((pointer_id, entry_index));
     }
 
     fn configure_settings(&mut self, settings: &GestureSettings) {
@@ -166,7 +188,13 @@ The async timer pattern (inside `handle_event` on `Down`):
 ```rust
 let timeout = self.timeout;
 let back_channel = self.arena_back_channel.clone();
-let entry_index = self.pointer_index;
+// Look up this pointer's entry slot recorded during
+// `set_arena_back_channel`.
+let entry_index = self
+    .pointer_indexes
+    .iter()
+    .find(|(pid, _)| *pid == event.pointer_id())
+    .map(|(_, idx)| *idx);
 let window_handle = window.window_handle();
 // Use BackgroundExecutor::timer (not smol::Timer::after) so test
 // schedulers' virtual-clock advance_clock wakes the timer.
@@ -230,6 +258,14 @@ is dispatched through the existing held arena entry.
   values are applied later via `configure_settings`. Do not try to
   thread settings into the construction call directly — `render()`
   has no `&Window` reference at the right moment.
+- **Pressure thresholds operate on `PressureSample::normalize()`,
+  never raw `value`** (S07.5b). A Wacom pen reports
+  `PressureSample { value: 4096.0, min: 0.0, max: 8192.0 }`, while
+  Force Touch reports `PressureSample { value: 0.5, min: 0.0,
+  max: 1.0 }`. Both produce the same `0.5` after `normalize()`, so
+  a recognizer threshold of `0.4` means the same physical effort
+  on every device. Comparing raw `value` against a fixed constant
+  silently makes the threshold device-dependent.
 
 ---
 

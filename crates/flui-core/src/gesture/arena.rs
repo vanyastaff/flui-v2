@@ -12,7 +12,7 @@
 //!
 //! See the design doc § "GestureArena and GestureArenaManager".
 
-use super::{GestureRecognizer, PointerEvent, PointerId};
+use super::{DeliveredEvent, GestureRecognizer, PointerEvent, PointerId};
 use smallvec::SmallVec;
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
@@ -60,9 +60,16 @@ pub(crate) struct GestureArena {
     /// `false` once the arena has resolved (sweep run, all rejected
     /// notified) — subsequent dispatches are no-ops.
     pub(crate) is_open: bool,
-    /// `true` while a recognizer holds the arena open past `Up`
-    /// (e.g. `DoubleTap` waiting for a second tap).
-    pub(crate) is_held: bool,
+    /// Number of recognizers currently holding the arena open past
+    /// `Up` (e.g. `DoubleTap` waiting for a second tap, future
+    /// MultiTap waiting for additional taps). The arena is considered
+    /// **held** iff `hold_count > 0`; sweep is gated on
+    /// `hold_count == 0`. A `u32` counter (rather than a `bool`) is
+    /// required because two recognizers on the same pointer may
+    /// independently want hold semantics (e.g. DoubleTap + MultiTap)
+    /// — under a boolean, one's `release` would silently clear the
+    /// other's hold.
+    pub(crate) hold_count: u32,
 }
 
 impl GestureArena {
@@ -74,7 +81,7 @@ impl GestureArena {
             entries: SmallVec::new(),
             winner: None,
             is_open: true,
-            is_held: false,
+            hold_count: 0,
         }
     }
 }
@@ -229,7 +236,13 @@ impl GestureArenaManager {
         for (idx, recognizer) in snapshot.iter().enumerate() {
             let disposition = {
                 let mut r = recognizer.borrow_mut();
-                r.handle_event(event, window, cx)
+                // S07.5b: arena does not yet track per-entry hit-test
+                // transforms, so every recognizer sees the window-
+                // local position as its local position. S09 will
+                // store a per-entry inverse-transform alongside the
+                // recognizer and compute a real `local_position`
+                // here.
+                r.handle_event(DeliveredEvent::at_event_position(event), window, cx)
             };
             match disposition {
                 GestureDisposition::Accepted => {
@@ -266,8 +279,8 @@ impl GestureArenaManager {
             for loser in losers.iter() {
                 loser.borrow_mut().rejected(pointer_id, window, cx);
             }
-            // Close the arena unless the winner asked to hold.
-            if !arena.is_held {
+            // Close the arena unless a recognizer is holding it.
+            if arena.hold_count == 0 {
                 arena.is_open = false;
             }
         } else {
@@ -298,7 +311,7 @@ impl GestureArenaManager {
         let Some((_, arena)) = self.arenas.iter_mut().find(|(id, _)| *id == pointer_id) else {
             return;
         };
-        if arena.is_held || arena.winner.is_some() || !arena.is_open {
+        if arena.hold_count > 0 || arena.winner.is_some() || !arena.is_open {
             return;
         }
 
@@ -332,7 +345,7 @@ impl GestureArenaManager {
     /// at registration time.
     pub(crate) fn hold(&mut self, pointer_id: PointerId) {
         if let Some((_, arena)) = self.arenas.iter_mut().find(|(id, _)| *id == pointer_id) {
-            arena.is_held = true;
+            arena.hold_count = arena.hold_count.saturating_add(1);
         }
     }
 
@@ -353,8 +366,21 @@ impl GestureArenaManager {
         let Some((_, arena)) = self.arenas.iter_mut().find(|(id, _)| *id == pointer_id) else {
             return;
         };
-        arena.is_held = false;
-        let needs_sweep = arena.winner.is_none() && arena.is_open;
+        // `release` without a matching `hold` is a real logic error
+        // — either the dispatcher schedule_arena_release timer fired
+        // twice, or a recognizer's needs_arena_hold contract was
+        // violated. Catch it loudly in dev builds via debug_assert,
+        // and degrade to saturating-sub in release builds so a stale
+        // timer cannot underflow `hold_count` and trip the
+        // `hold_count == 0` sweep gate elsewhere.
+        debug_assert!(
+            arena.hold_count > 0,
+            "GestureArenaManager::release called without a matching hold (pointer_id={:?})",
+            pointer_id,
+        );
+        arena.hold_count = arena.hold_count.saturating_sub(1);
+        // Sweep only when nobody else is holding the arena.
+        let needs_sweep = arena.hold_count == 0 && arena.winner.is_none() && arena.is_open;
         if needs_sweep {
             // Drop the borrow before calling `sweep` (which re-borrows).
             self.sweep(pointer_id, window, cx);
@@ -379,7 +405,7 @@ impl GestureArenaManager {
             .collect();
         arena.winner = None;
         arena.is_open = false;
-        arena.is_held = false;
+        arena.hold_count = 0;
         for r in entries.iter() {
             r.borrow_mut().rejected(pointer_id, window, cx);
         }
@@ -420,7 +446,7 @@ impl GestureArenaManager {
                 }
             })
             .collect();
-        if !arena.is_held {
+        if arena.hold_count == 0 {
             arena.is_open = false;
         }
         for loser in losers.iter() {
@@ -468,9 +494,10 @@ impl GestureArenaManager {
     /// - `is_open`: `existing.is_open && incoming.is_open` (closing
     ///   on either side closes the merged arena — the more
     ///   conservative choice).
-    /// - `is_held`: `existing.is_held || incoming.is_held` (either
-    ///   side holding holds the merged arena — DoubleTap's hold
-    ///   semantics survive a callback-time merge).
+    /// - `hold_count`: `existing.hold_count + incoming.hold_count`
+    ///   (counters compose additively; saturating-add against
+    ///   `u32::MAX` overflow as a defensive measure for pathological
+    ///   merges).
     pub(crate) fn merge_by_pointer_id(&mut self, mut other: GestureArenaManager) {
         for (pid, incoming) in other.arenas.drain(..) {
             if let Some((_, existing)) = self.arenas.iter_mut().find(|(id, _)| *id == pid) {
@@ -479,7 +506,7 @@ impl GestureArenaManager {
                     existing.winner = incoming.winner;
                 }
                 existing.is_open = existing.is_open && incoming.is_open;
-                existing.is_held = existing.is_held || incoming.is_held;
+                existing.hold_count = existing.hold_count.saturating_add(incoming.hold_count);
             } else {
                 self.arenas.push((pid, incoming));
             }
@@ -489,7 +516,7 @@ impl GestureArenaManager {
     /// Garbage-collect resolved arenas.
     ///
     /// An arena is removed when it is **closed** (`is_open == false`)
-    /// and **not held** (`is_held == false`). The previous version
+    /// and **not held** (`hold_count == 0`). The previous version
     /// only removed empty closed arenas, so a closed-but-non-empty
     /// arena (the normal post-resolution shape — winners and losers
     /// stay in `entries` until something explicit clears them, plus
@@ -498,14 +525,14 @@ impl GestureArenaManager {
     /// `GestureBinding::active_pointer_count` forever (Copilot
     /// review E).
     ///
-    /// Held arenas (`is_held == true`) stay alive past `Up` for
+    /// Held arenas (`hold_count > 0`) stay alive past `Up` for
     /// `DoubleTap`-style multi-Down sequences and only resolve via
     /// [`Self::release`].
     fn gc(&mut self, pointer_id: PointerId) {
         if let Some(idx) = self
             .arenas
             .iter()
-            .position(|(id, a)| *id == pointer_id && !a.is_open && !a.is_held)
+            .position(|(id, a)| *id == pointer_id && !a.is_open && a.hold_count == 0)
         {
             self.arenas.remove(idx);
         }
@@ -563,14 +590,15 @@ mod tests {
         fn name(&self) -> &'static str {
             self.name
         }
-        fn add_pointer(&mut self, _: PointerId, _: &PointerEvent) {}
+        fn add_pointer(&mut self, _: PointerId, _: DeliveredEvent<'_>) {}
         fn handle_event(
             &mut self,
-            event: &PointerEvent,
+            event: DeliveredEvent<'_>,
             _: &mut crate::Window,
             _: &mut crate::App,
         ) -> GestureDisposition {
-            self.handle_calls.push((event.pointer_id, event.phase));
+            self.handle_calls
+                .push((event.event.pointer_id, event.event.phase));
             self.script
                 .pop_front()
                 .unwrap_or(GestureDisposition::Possible)
@@ -589,6 +617,7 @@ mod tests {
     }
 
     fn pointer_event(phase: PointerPhase) -> PointerEvent {
+        let now = Instant::now();
         PointerEvent {
             pointer_id: PointerId(0),
             kind: PointerKind::Mouse,
@@ -597,8 +626,10 @@ mod tests {
             delta: Point::default(),
             buttons: PointerButtons::PRIMARY,
             modifiers: Modifiers::default(),
-            timestamp: Instant::now(),
-            pressure: 1.0,
+            timestamp: now,
+            source_timestamp: now,
+            provenance: crate::gesture::PointerEventProvenance::Platform,
+            pressure: None,
             tilt: 0.0,
             orientation: 0.0,
         }
@@ -1130,28 +1161,29 @@ mod tests {
                                     .arenas
                                     .iter()
                                     .find(|(pid, _)| *pid == p)
-                                    .map(|(_, a)| a.is_held)
+                                    .map(|(_, a)| a.hold_count > 0)
                                     .unwrap_or(false),
-                                "hold(p) sets is_held"
+                                "hold(p) increments hold_count"
                             );
                             match resolver {
                                 0 => arena.release(p, window, cx),
                                 _ => arena.cancel(p, window, cx),
                             }
-                            // Either resolver path drops the held flag
-                            // (release runs sweep which closes; cancel
-                            // closes directly). The arena may have been
-                            // gc'd, in which case it is trivially
-                            // not held.
+                            // Either resolver path drops hold_count
+                            // back to zero (release decrements + may
+                            // sweep + close; cancel closes directly
+                            // and zeroes hold_count). The arena may
+                            // have been gc'd — that is trivially
+                            // hold_count == 0.
                             let still_held = arena
                                 .arenas
                                 .iter()
                                 .find(|(pid, _)| *pid == p)
-                                .map(|(_, a)| a.is_held)
+                                .map(|(_, a)| a.hold_count > 0)
                                 .unwrap_or(false);
                             assert!(
                                 !still_held,
-                                "hold without matching resolve leaked: arena still held"
+                                "hold without matching resolve leaked: hold_count > 0"
                             );
                         });
                 });

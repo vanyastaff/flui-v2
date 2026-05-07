@@ -11,10 +11,11 @@
 //!
 //! See the design doc § "Drag recognizers".
 
+use crate::Modifiers;
 use crate::gesture::{
-    GestureDisposition, GestureRecognizer, GestureSettings, PointerButtons, PointerEvent,
-    PointerId, PointerKind, PointerPhase, PositionSample, RecognizerLifecycle, Velocity,
-    VelocityTracker,
+    AllowedButtonsFilter, DeliveredEvent, GestureDisposition, GestureRecognizer, GestureSettings,
+    PointerButtons, PointerId, PointerKind, PointerPhase, PositionSample, RecognizerLifecycle,
+    Velocity, VelocityTracker,
 };
 use crate::{Pixels, Point};
 
@@ -82,6 +83,7 @@ struct DragImpl {
     last_position: Point<Pixels>,
     last_kind: PointerKind,
     velocity_tracker: VelocityTracker,
+    allowed_buttons_filter: Option<AllowedButtonsFilter>,
 
     on_start: Option<Box<dyn FnMut(DragStartDetails, &mut crate::Window, &mut crate::App)>>,
     on_update: Option<Box<dyn FnMut(DragUpdateDetails, &mut crate::Window, &mut crate::App)>>,
@@ -100,6 +102,7 @@ impl DragImpl {
             last_position: Point::default(),
             last_kind: PointerKind::Mouse,
             velocity_tracker: VelocityTracker::new(settings),
+            allowed_buttons_filter: None,
             on_start: None,
             on_update: None,
             on_end: None,
@@ -202,6 +205,18 @@ macro_rules! impl_drag_recognizer {
                 self.inner.button = button;
                 self
             }
+
+            /// Attach an `AllowedButtonsFilter` evaluated by
+            /// `register_recognizer` before arena admission. On
+            /// rejection (closure returns `false`) the recognizer
+            /// never enters the arena.
+            pub fn with_allowed_buttons_filter(
+                mut self,
+                f: impl Fn(PointerButtons, Modifiers) -> bool + 'static,
+            ) -> Self {
+                self.inner.allowed_buttons_filter = Some(AllowedButtonsFilter::new(f));
+                self
+            }
         }
 
         impl GestureRecognizer for $name {
@@ -213,40 +228,50 @@ macro_rules! impl_drag_recognizer {
                 $name_str
             }
 
-            fn add_pointer(&mut self, pointer_id: PointerId, event: &PointerEvent) {
+            fn allowed_buttons_filter(&self) -> Option<&AllowedButtonsFilter> {
+                self.inner.allowed_buttons_filter.as_ref()
+            }
+
+            fn add_pointer(&mut self, pointer_id: PointerId, event: DeliveredEvent<'_>) {
                 if self.inner.state != DragState::Idle {
                     return;
                 }
-                if !event.buttons.contains(self.inner.button) {
+                if !event.buttons().contains(self.inner.button) {
                     return;
                 }
                 self.inner.pointer = Some(pointer_id);
-                self.inner.down_position = event.position;
-                self.inner.last_position = event.position;
-                self.inner.last_kind = event.kind;
+                self.inner.down_position = event.local_position;
+                self.inner.last_position = event.local_position;
+                self.inner.last_kind = event.kind();
                 self.inner.state = DragState::Possible;
                 self.inner.velocity_tracker.reset();
                 self.inner
                     .velocity_tracker
-                    .add_position(PositionSample::new(event.position, event.timestamp));
+                    .add_position(PositionSample::new(
+                        event.local_position,
+                        event.source_timestamp(),
+                    ));
             }
 
             fn handle_event(
                 &mut self,
-                event: &PointerEvent,
+                event: DeliveredEvent<'_>,
                 window: &mut crate::Window,
                 cx: &mut crate::App,
             ) -> GestureDisposition {
-                if self.inner.pointer != Some(event.pointer_id) {
+                if self.inner.pointer != Some(event.pointer_id()) {
                     return GestureDisposition::Possible;
                 }
-                match event.phase {
+                match event.phase() {
                     PointerPhase::Move => {
-                        let dx = event.position.x.0 - self.inner.down_position.x.0;
-                        let dy = event.position.y.0 - self.inner.down_position.y.0;
+                        let dx = event.local_position.x.0 - self.inner.down_position.x.0;
+                        let dy = event.local_position.y.0 - self.inner.down_position.y.0;
                         self.inner
                             .velocity_tracker
-                            .add_position(PositionSample::new(event.position, event.timestamp));
+                            .add_position(PositionSample::new(
+                                event.local_position,
+                                event.source_timestamp(),
+                            ));
 
                         if self.inner.state == DragState::Possible {
                             if self.inner.axis_rejected(dx, dy) {
@@ -258,14 +283,14 @@ macro_rules! impl_drag_recognizer {
                                 if let Some(cb) = self.inner.on_start.as_mut() {
                                     cb(
                                         DragStartDetails {
-                                            global_position: event.position,
-                                            kind: event.kind,
+                                            global_position: event.global_position(),
+                                            kind: event.kind(),
                                         },
                                         window,
                                         cx,
                                     );
                                 }
-                                self.inner.last_position = event.position;
+                                self.inner.last_position = event.local_position;
                                 return GestureDisposition::Accepted;
                             }
                             return GestureDisposition::Possible;
@@ -274,20 +299,20 @@ macro_rules! impl_drag_recognizer {
                         // DragState::Accepted — fire on_update.
                         if let Some(cb) = self.inner.on_update.as_mut() {
                             let delta = Point::new(
-                                event.position.x - self.inner.last_position.x,
-                                event.position.y - self.inner.last_position.y,
+                                event.local_position.x - self.inner.last_position.x,
+                                event.local_position.y - self.inner.last_position.y,
                             );
                             cb(
                                 DragUpdateDetails {
-                                    global_position: event.position,
+                                    global_position: event.global_position(),
                                     delta,
-                                    kind: event.kind,
+                                    kind: event.kind(),
                                 },
                                 window,
                                 cx,
                             );
                         }
-                        self.inner.last_position = event.position;
+                        self.inner.last_position = event.local_position;
                         GestureDisposition::Possible
                     }
                     PointerPhase::Up => {
@@ -297,8 +322,8 @@ macro_rules! impl_drag_recognizer {
                                 cb(
                                     DragEndDetails {
                                         velocity,
-                                        global_position: event.position,
-                                        kind: event.kind,
+                                        global_position: event.global_position(),
+                                        kind: event.kind(),
                                     },
                                     window,
                                     cx,
@@ -377,14 +402,20 @@ mod tests {
 
     use super::*;
     use crate::gesture::{
-        GestureSettings, PointerButtons, PointerEvent, PointerId, PointerKind, PointerPhase,
+        DeliveredEvent, GestureSettings, PointerButtons, PointerEvent, PointerId, PointerKind,
+        PointerPhase,
     };
     use crate::scheduler::Instant;
     use crate::{self as flui_core, AppContext as _, Modifiers, Pixels, Point, TestAppContext};
     use std::cell::Cell;
     use std::rc::Rc;
 
+    fn de(event: &PointerEvent) -> DeliveredEvent<'_> {
+        DeliveredEvent::at_event_position(event)
+    }
+
     fn pe(phase: PointerPhase, pos: Point<Pixels>, buttons: PointerButtons) -> PointerEvent {
+        let now = Instant::now();
         PointerEvent {
             pointer_id: PointerId(0),
             kind: PointerKind::Mouse,
@@ -393,8 +424,10 @@ mod tests {
             delta: Point::default(),
             buttons,
             modifiers: Modifiers::default(),
-            timestamp: Instant::now(),
-            pressure: 1.0,
+            timestamp: now,
+            source_timestamp: now,
+            provenance: crate::gesture::PointerEventProvenance::Platform,
+            pressure: None,
             tilt: 0.0,
             orientation: 0.0,
         }
@@ -423,11 +456,11 @@ mod tests {
                         .with_pan_slop(crate::Pixels(100.0))
                         .with_button(PointerButtons::PRIMARY);
                     let down = pe(PointerPhase::Down, pt(0.0, 0.0), PointerButtons::PRIMARY);
-                    pan.add_pointer(PointerId(0), &down);
-                    let _ = pan.handle_event(&down, window, cx);
+                    pan.add_pointer(PointerId(0), de(&down));
+                    let _ = pan.handle_event(de(&down), window, cx);
                     let mv = pe(PointerPhase::Move, pt(50.0, 50.0), PointerButtons::PRIMARY);
                     assert_eq!(
-                        pan.handle_event(&mv, window, cx),
+                        pan.handle_event(de(&mv), window, cx),
                         GestureDisposition::Possible,
                         "with_pan_slop(100) keeps a 50-px move below threshold",
                     );
@@ -451,19 +484,19 @@ mod tests {
                     });
                     let mut pan = pan;
                     let down = pe(PointerPhase::Down, pt(0.0, 0.0), PointerButtons::PRIMARY);
-                    pan.add_pointer(PointerId(0), &down);
-                    let _ = pan.handle_event(&down, window, cx);
+                    pan.add_pointer(PointerId(0), de(&down));
+                    let _ = pan.handle_event(de(&down), window, cx);
                     // Stay below the 18px default slop.
                     let mv1 = pe(PointerPhase::Move, pt(5.0, 5.0), PointerButtons::PRIMARY);
                     assert_eq!(
-                        pan.handle_event(&mv1, window, cx),
+                        pan.handle_event(de(&mv1), window, cx),
                         GestureDisposition::Possible
                     );
                     assert_eq!(starts.get(), 0, "no on_start while below slop");
                     // Cross slop → Accepted, on_start fires.
                     let mv2 = pe(PointerPhase::Move, pt(50.0, 50.0), PointerButtons::PRIMARY);
                     assert_eq!(
-                        pan.handle_event(&mv2, window, cx),
+                        pan.handle_event(de(&mv2), window, cx),
                         GestureDisposition::Accepted
                     );
                     assert_eq!(starts.get(), 1, "on_start fires once on slop crossing");
@@ -481,12 +514,12 @@ mod tests {
                     let mut hdrag =
                         HorizontalDragGestureRecognizer::new(&GestureSettings::default());
                     let down = pe(PointerPhase::Down, pt(0.0, 0.0), PointerButtons::PRIMARY);
-                    hdrag.add_pointer(PointerId(0), &down);
-                    let _ = hdrag.handle_event(&down, window, cx);
+                    hdrag.add_pointer(PointerId(0), de(&down));
+                    let _ = hdrag.handle_event(de(&down), window, cx);
                     // Vertical motion: dy=100, dx=0 → axis_rejected.
                     let mv = pe(PointerPhase::Move, pt(0.0, 100.0), PointerButtons::PRIMARY);
                     assert_eq!(
-                        hdrag.handle_event(&mv, window, cx),
+                        hdrag.handle_event(de(&mv), window, cx),
                         GestureDisposition::Rejected,
                     );
                 });
@@ -510,12 +543,12 @@ mod tests {
                                     }
                                 });
                         let down = pe(PointerPhase::Down, pt(0.0, 0.0), PointerButtons::PRIMARY);
-                        hdrag.add_pointer(PointerId(0), &down);
-                        let _ = hdrag.handle_event(&down, window, cx);
+                        hdrag.add_pointer(PointerId(0), de(&down));
+                        let _ = hdrag.handle_event(de(&down), window, cx);
                         // Horizontal motion: dx=50, dy=0.
                         let mv = pe(PointerPhase::Move, pt(50.0, 0.0), PointerButtons::PRIMARY);
                         assert_eq!(
-                            hdrag.handle_event(&mv, window, cx),
+                            hdrag.handle_event(de(&mv), window, cx),
                             GestureDisposition::Accepted,
                         );
                         assert_eq!(starts.get(), 1);
@@ -532,11 +565,11 @@ mod tests {
                 .update(cx, |_, window, cx| {
                     let mut vdrag = VerticalDragGestureRecognizer::new(&GestureSettings::default());
                     let down = pe(PointerPhase::Down, pt(0.0, 0.0), PointerButtons::PRIMARY);
-                    vdrag.add_pointer(PointerId(0), &down);
-                    let _ = vdrag.handle_event(&down, window, cx);
+                    vdrag.add_pointer(PointerId(0), de(&down));
+                    let _ = vdrag.handle_event(de(&down), window, cx);
                     let mv = pe(PointerPhase::Move, pt(100.0, 0.0), PointerButtons::PRIMARY);
                     assert_eq!(
-                        vdrag.handle_event(&mv, window, cx),
+                        vdrag.handle_event(de(&mv), window, cx),
                         GestureDisposition::Rejected,
                     );
                 });
@@ -559,18 +592,18 @@ mod tests {
                             }
                         });
                     let down = pe(PointerPhase::Down, pt(0.0, 0.0), PointerButtons::PRIMARY);
-                    pan.add_pointer(PointerId(0), &down);
-                    let _ = pan.handle_event(&down, window, cx);
+                    pan.add_pointer(PointerId(0), de(&down));
+                    let _ = pan.handle_event(de(&down), window, cx);
                     // Cross slop → Accepted.
                     let m1 = pe(PointerPhase::Move, pt(40.0, 0.0), PointerButtons::PRIMARY);
                     assert_eq!(
-                        pan.handle_event(&m1, window, cx),
+                        pan.handle_event(de(&m1), window, cx),
                         GestureDisposition::Accepted
                     );
                     // Now in Accepted state — next Move fires on_update
                     // with delta from the snapshot stored on accept.
                     let m2 = pe(PointerPhase::Move, pt(60.0, 5.0), PointerButtons::PRIMARY);
-                    let _ = pan.handle_event(&m2, window, cx);
+                    let _ = pan.handle_event(de(&m2), window, cx);
                     let (dx, dy) = last_delta.get();
                     assert!(
                         (dx - 20.0).abs() < 1e-3,
@@ -614,23 +647,23 @@ mod tests {
                         }
                     });
                     let down = pe(PointerPhase::Down, pt(0.0, 0.0), PointerButtons::PRIMARY);
-                    pan.add_pointer(PointerId(0), &down);
-                    let _ = pan.handle_event(&down, window, cx);
+                    pan.add_pointer(PointerId(0), de(&down));
+                    let _ = pan.handle_event(de(&down), window, cx);
                     // Cross slop → Accepted.
                     let m1 = pe(PointerPhase::Move, pt(40.0, 0.0), PointerButtons::PRIMARY);
                     assert_eq!(
-                        pan.handle_event(&m1, window, cx),
+                        pan.handle_event(de(&m1), window, cx),
                         GestureDisposition::Accepted
                     );
                     // A few more samples (no real time passes; positions
                     // still feed the tracker).
                     for x in [60.0_f32, 80.0, 100.0] {
                         let mv = pe(PointerPhase::Move, pt(x, 0.0), PointerButtons::PRIMARY);
-                        let _ = pan.handle_event(&mv, window, cx);
+                        let _ = pan.handle_event(de(&mv), window, cx);
                     }
                     let up = pe(PointerPhase::Up, pt(100.0, 0.0), PointerButtons::default());
                     assert_eq!(
-                        pan.handle_event(&up, window, cx),
+                        pan.handle_event(de(&up), window, cx),
                         GestureDisposition::Accepted,
                     );
                     assert_eq!(ends.get(), 1, "on_end fires exactly once");

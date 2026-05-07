@@ -560,6 +560,16 @@ pub enum WindowControlArea {
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct HitboxId(u64);
 
+#[cfg(test)]
+impl HitboxId {
+    /// Construct a synthetic [`HitboxId`] for tests in sibling
+    /// modules. Production code receives ids only from
+    /// [`Window::next_hitbox_id`].
+    pub(crate) fn for_test(raw: u64) -> Self {
+        Self(raw)
+    }
+}
+
 impl HitboxId {
     /// Checks if the hitbox with this ID is currently hovered. Returns `false` during keyboard
     /// input modality so that keyboard navigation suppresses hover highlights. Except when handling
@@ -2250,6 +2260,11 @@ impl Window {
     /// `flui-core` consumers.
     pub fn hit_test(&self, position: Point<Pixels>) -> crate::gesture::HitTestResult {
         let mut result = crate::gesture::HitTestResult::default();
+        // S07.5b: open a single identity scope so the transform-stack
+        // path is exercised on every hit-test pass. S09 will replace
+        // this with a per-paint-layer push driven by the rendered
+        // frame's transform tree.
+        let mut scope = result.push_transform(crate::Affine2::IDENTITY);
         let frame_hit = self.rendered_frame.hit_test(position);
         for &hitbox_id in frame_hit.ids.iter() {
             let behavior = self
@@ -2264,12 +2279,14 @@ impl Window {
             //
             // `HitTestEntry` is `#[non_exhaustive]` for downstream
             // consumers; same-crate code can use the struct literal.
-            result.push(crate::gesture::HitTestEntry {
+            scope.add(crate::gesture::HitTestEntry {
                 hitbox_id,
                 position,
                 behavior,
+                transform: None,
             });
         }
+        drop(scope);
         result
     }
 
@@ -4370,12 +4387,83 @@ impl Window {
                     for entry in hit_test.iter() {
                         let recs = self.pending_recognizers.remove(&entry.hitbox_id);
                         if let Some(recs) = recs {
+                            // Compute hit-target-local position for
+                            // this entry. S07.5b: hit-test entries do
+                            // not yet store non-identity transforms,
+                            // so the local position equals
+                            // `pe.position`. S09 paint integration
+                            // will populate `entry.transform` and
+                            // this inversion will start to do real
+                            // work.
+                            //
+                            // The stored `entry.transform` follows
+                            // the Flutter `local → window` convention
+                            // (see `HitTestEntry.transform` rustdoc):
+                            // invert and apply once per delivery to
+                            // recover the per-target local
+                            // coordinate.
+                            //
+                            // **Invertibility contract.** Paint
+                            // promises every transform it pushes is
+                            // invertible. A `Some(t)` whose
+                            // `inverse()` returns `None` is a
+                            // paint-side bug (singular `Affine2`):
+                            // in dev / test builds we panic via
+                            // `debug_assert!` so the failing call
+                            // site surfaces in CI; in release we
+                            // degrade to identity + `log::warn!`
+                            // rather than drop the event. The
+                            // rustdoc on `HitTestEntry.transform`
+                            // documents this strict-in-dev /
+                            // lenient-in-release posture so reviewers
+                            // can audit the contract from one place.
+                            let local_position = match entry.transform {
+                                None => pe.position,
+                                Some(t) => match t.inverse() {
+                                    Some(inv) => inv.transform_point(pe.position),
+                                    None => {
+                                        debug_assert!(
+                                            false,
+                                            "HitTestEntry.transform is non-invertible — paint pushed a singular Affine2 (hitbox_id={:?})",
+                                            entry.hitbox_id,
+                                        );
+                                        log::warn!(
+                                            target: "flui::gesture",
+                                            "non-invertible HitTestEntry.transform — falling back to identity local_position (paint pushed a singular Affine2; please file a bug)"
+                                        );
+                                        pe.position
+                                    }
+                                },
+                            };
+                            let delivered = crate::gesture::DeliveredEvent::new(pe, local_position);
                             for rec in recs.iter() {
-                                rec.borrow_mut().add_pointer(pe.pointer_id, pe);
-                                let rec_needs_hold = self
-                                    .gesture_binding
-                                    .register_recognizer(pe.pointer_id, std::rc::Rc::clone(rec));
-                                needs_hold = needs_hold || rec_needs_hold;
+                                // Register first; only then prime the
+                                // recognizer's per-pointer state.
+                                // Decision D10: a filter-rejected
+                                // recognizer never sees `add_pointer`,
+                                // so paint-time recognizer instances
+                                // re-used across paint cycles cannot
+                                // leak stale `down_position` / state
+                                // mutation from a rejected
+                                // registration. `arena.add` does not
+                                // dispatch — `arena.dispatch` for
+                                // this Down event runs later in this
+                                // function — so swapping the order
+                                // is safe under the synchronous
+                                // main-thread invariant.
+                                let result = self.gesture_binding.register_recognizer(
+                                    pe.pointer_id,
+                                    pe.buttons,
+                                    pe.modifiers,
+                                    std::rc::Rc::clone(rec),
+                                );
+                                if let crate::gesture::RegistrationResult::Accepted {
+                                    needs_hold: rec_needs_hold,
+                                } = result
+                                {
+                                    rec.borrow_mut().add_pointer(pe.pointer_id, delivered);
+                                    needs_hold = needs_hold || rec_needs_hold;
+                                }
                             }
                         }
                         if matches!(entry.behavior, crate::gesture::HitTestBehavior::Opaque) {
