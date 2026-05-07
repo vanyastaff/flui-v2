@@ -134,10 +134,10 @@ Verified by **T22** bench fixture (`cargo run -p flui-core --release --example g
 
 ### Phase D — Concrete recognizers
 
-- [ ] **T10:** `TapGestureRecognizer` + `DoubleTapGestureRecognizer` in `recognizers/tap.rs` + `recognizers/double_tap.rs`. Primary/secondary/tertiary buttons; `*Details` types per Flutter; `request_focus_on_tap_down` config wired through `on_focus_request` (S12 seam); `semantic_actions()` returns `&[SemanticAction::Tap]` / `&[SemanticAction::DoubleTap]` (S08 seam).
-- [ ] **T11:** `LongPressGestureRecognizer` in `recognizers/long_press.rs` using `cx.spawn(async { smol::Timer::after(d).await })`. Drop-cancellation of orphan timers. `semantic_actions()` returns `&[SemanticAction::LongPress]`.
-- [ ] **T12:** `PanGestureRecognizer` + `HorizontalDragGestureRecognizer` + `VerticalDragGestureRecognizer` in `recognizers/drag.rs`. Slop thresholds from `GestureSettings`; axis rejection; velocity at end via `VelocityTracker`. Module rustdoc explicitly documents coexistence with `cx.active_drag` (`AnyDrag` flow).
-- [ ] **T13:** `ScaleGestureRecognizer` in `recognizers/scale.rs`. ≥2 pointers; focal point + scale + rotation; explicit gap statements in rustdoc for Windows-no-pinch and desktop-no-rotation.
+- [x] **T10:** `TapGestureRecognizer` + `DoubleTapGestureRecognizer` in `recognizers/tap.rs` + `recognizers/double_tap.rs`. Primary/secondary/tertiary buttons; `*Details` types per Flutter; `request_focus_on_tap_down` config wired through `on_focus_request` (S12 seam); `semantic_actions()` returns `&[SemanticAction::Tap]` / `&[SemanticAction::DoubleTap]` (S08 seam).
+- [x] **T11:** `LongPressGestureRecognizer` in `recognizers/long_press.rs` using `cx.spawn(async { smol::Timer::after(d).await })`. Drop-cancellation of orphan timers. `semantic_actions()` returns `&[SemanticAction::LongPress]`.
+- [x] **T12:** `PanGestureRecognizer` + `HorizontalDragGestureRecognizer` + `VerticalDragGestureRecognizer` in `recognizers/drag.rs`. Slop thresholds from `GestureSettings`; axis rejection; velocity at end via `VelocityTracker`. Module rustdoc explicitly documents coexistence with `cx.active_drag` (`AnyDrag` flow).
+- [x] **T13:** `ScaleGestureRecognizer` in `recognizers/scale.rs`. ≥2 pointers; focal point + scale + rotation; explicit gap statements in rustdoc for Windows-no-pinch and desktop-no-rotation.
 
 > **Commit checkpoint D — after T10, T11, T12, T13:** `feat(flui-core): tap/double-tap/long-press/drag/scale recognizers (S07)`
 
