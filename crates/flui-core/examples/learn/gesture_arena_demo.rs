@@ -9,7 +9,7 @@
 //! wiring lands separately" caveats on LongPress / DoubleTap / per-window
 //! settings; those are stale after S07.5 and have been removed.
 //!
-//! Four scenarios share the demo window:
+//! Seven scenarios share the demo window:
 //!
 //! 1. **Competing recognizers** — a single element has `on_tap`,
 //!    `on_double_tap`, `on_long_press_start`, and `on_pan_start`
@@ -39,6 +39,20 @@
 //!    demo shows a placeholder card explaining the contract. Property
 //!    test P6 in `arena_team.rs` covers the rule.
 //!
+//! 5. **Scale (Wayland/macOS pinch only)** — `on_scale_*` listeners
+//!    on a chip; reads `ScaleUpdateDetails.scale`. Silent on Windows
+//!    desktop because no native pinch event source.
+//!
+//! 6. **Axis-locked drag** — `HorizontalDragGestureRecognizer` /
+//!    `VerticalDragGestureRecognizer` reject orthogonal motion. Two
+//!    side-by-side targets, each accepting only one axis. This is
+//!    the substrate Flutter widgets like `Slider` and `Drawer` rely
+//!    on to coexist with parent scrollers.
+//!
+//! 7. **Pan to translate** — accumulates `pan_update.delta` into a
+//!    running offset and reads `pan_end.velocity` for fling input
+//!    (S11 physics will feed the next version of this card).
+//!
 //! Run interactively:
 //!
 //! ```text
@@ -61,30 +75,35 @@ use flui_core::{
     App, Application, Bounds, Context, Entity, FontWeight, IntoElement, Render, Window,
     WindowBounds, WindowOptions, div, prelude::*, px, size,
 };
-use flui_core::{HitTestBehavior, ScaleStartDetails, ScaleUpdateDetails};
+use flui_core::{
+    DragEndDetails, DragStartDetails, DragUpdateDetails, HitTestBehavior, ScaleStartDetails,
+    ScaleUpdateDetails,
+};
 use std::time::Duration;
-
-/// Maximum number of recent log entries each card keeps.
-const MAX_LOG: usize = 8;
-
-fn truncate_log(log: &mut Vec<String>, line: String) {
-    log.push(line);
-    if log.len() > MAX_LOG {
-        log.remove(0);
-    }
-}
 
 // =====================================================================
 // Scenario 1 — Competing recognizers (Tap / DoubleTap / LongPress / Pan).
 // =====================================================================
 
 struct CompetingRecognizersCard {
-    log: Vec<String>,
+    last_winner: Option<&'static str>,
+    taps: u32,
+    double_taps: u32,
+    long_presses: u32,
+    pans: u32,
+    last_pan_velocity: Option<(f32, f32)>,
 }
 
 impl CompetingRecognizersCard {
     fn new() -> Self {
-        Self { log: Vec::new() }
+        Self {
+            last_winner: None,
+            taps: 0,
+            double_taps: 0,
+            long_presses: 0,
+            pans: 0,
+            last_pan_velocity: None,
+        }
     }
 }
 
@@ -96,6 +115,15 @@ impl Render for CompetingRecognizersCard {
         let weak_lp = weak.clone();
         let weak_ps = weak.clone();
         let weak_pe = weak.clone();
+        let last_winner = self.last_winner.unwrap_or("(none yet)");
+        let taps = self.taps;
+        let double_taps = self.double_taps;
+        let long_presses = self.long_presses;
+        let pans = self.pans;
+        let pan_velocity = self
+            .last_pan_velocity
+            .map(|(vx, vy)| format!("vx={vx:.0}, vy={vy:.0} px/s"))
+            .unwrap_or_else(|| "—".into());
         div()
             .flex()
             .flex_col()
@@ -126,7 +154,8 @@ impl Render for CompetingRecognizersCard {
                     .on_tap(move |_d, _w, app| {
                         if let Some(e) = weak.upgrade() {
                             e.update(app, |this, cx| {
-                                truncate_log(&mut this.log, "tap".into());
+                                this.taps += 1;
+                                this.last_winner = Some("tap");
                                 cx.notify();
                             });
                         }
@@ -134,7 +163,8 @@ impl Render for CompetingRecognizersCard {
                     .on_double_tap(move |_d, _w, app| {
                         if let Some(e) = weak_dt.upgrade() {
                             e.update(app, |this, cx| {
-                                truncate_log(&mut this.log, "double_tap".into());
+                                this.double_taps += 1;
+                                this.last_winner = Some("double_tap");
                                 cx.notify();
                             });
                         }
@@ -142,7 +172,8 @@ impl Render for CompetingRecognizersCard {
                     .on_long_press_start(move |_d, _w, app| {
                         if let Some(e) = weak_lp.upgrade() {
                             e.update(app, |this, cx| {
-                                truncate_log(&mut this.log, "long_press_start".into());
+                                this.long_presses += 1;
+                                this.last_winner = Some("long_press");
                                 cx.notify();
                             });
                         }
@@ -150,7 +181,8 @@ impl Render for CompetingRecognizersCard {
                     .on_pan_start(move |_d, _w, app| {
                         if let Some(e) = weak_ps.upgrade() {
                             e.update(app, |this, cx| {
-                                truncate_log(&mut this.log, "pan_start".into());
+                                this.pans += 1;
+                                this.last_winner = Some("pan");
                                 cx.notify();
                             });
                         }
@@ -158,19 +190,29 @@ impl Render for CompetingRecognizersCard {
                     .on_pan_end(move |d, _w, app| {
                         if let Some(e) = weak_pe.upgrade() {
                             e.update(app, |this, cx| {
-                                truncate_log(
-                                    &mut this.log,
-                                    format!(
-                                        "pan_end vx={:.0} vy={:.0}",
-                                        d.velocity.pixels_per_second.x,
-                                        d.velocity.pixels_per_second.y
-                                    ),
-                                );
+                                this.last_pan_velocity = Some((
+                                    d.velocity.pixels_per_second.x,
+                                    d.velocity.pixels_per_second.y,
+                                ));
                                 cx.notify();
                             });
                         }
                     }),
             )
+            // Single-line "last winner" indicator. Replaced on every
+            // arena resolution — no scrolling history that confuses
+            // the user about which event belongs to which gesture.
+            .child(
+                div()
+                    .text_xs()
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(colors.text)
+                    .child(format!("last winner: {last_winner}")),
+            )
+            // Per-recognizer counters so the user can see the arena
+            // really is picking exactly one winner per gesture (the
+            // sum of all four counters equals the number of
+            // gestures attempted).
             .child(
                 div()
                     .flex()
@@ -178,7 +220,10 @@ impl Render for CompetingRecognizersCard {
                     .gap_0p5()
                     .text_xs()
                     .text_color(colors.disabled)
-                    .children(self.log.iter().map(|e| div().child(format!("• {e}")))),
+                    .child(format!(
+                        "tap: {taps}   double_tap: {double_taps}   long_press: {long_presses}   pan: {pans}"
+                    ))
+                    .child(format!("last pan velocity: {pan_velocity}")),
             )
     }
 }
@@ -468,6 +513,211 @@ impl Render for ScaleDemoCard {
 }
 
 // =====================================================================
+// Scenario 6 — Axis-locked drag (Horizontal vs Vertical recognizers).
+// =====================================================================
+//
+// `HorizontalDragGestureRecognizer` / `VerticalDragGestureRecognizer`
+// reject orthogonal motion in the arena: a horizontal-drag target
+// rejects pointers whose first slop-crossing motion is mostly
+// vertical (and vice versa). This is the substrate Flutter widgets
+// like `Slider` and `Drawer` rely on to coexist with parent scrollers
+// — the parent's `VerticalDrag` and the child `Slider`'s
+// `HorizontalDrag` compete in the arena and the dominant axis wins.
+
+struct AxisLockedDragCard {
+    h_dx: f32,
+    v_dy: f32,
+}
+
+impl AxisLockedDragCard {
+    fn new() -> Self {
+        Self {
+            h_dx: 0.0,
+            v_dy: 0.0,
+        }
+    }
+}
+
+impl Render for AxisLockedDragCard {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let colors = Colors::for_appearance(window);
+        let h_dx = self.h_dx;
+        let v_dy = self.v_dy;
+        let weak_h = cx.weak_entity();
+        let weak_v = cx.weak_entity();
+        div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .p_4()
+            .rounded_lg()
+            .bg(colors.container)
+            .child(
+                div()
+                    .text_sm()
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(colors.text)
+                    .child("6. Axis-locked drag"),
+            )
+            .child(div().text_xs().text_color(colors.disabled).child(
+                "The horizontal target rejects vertical motion (and vice versa). \
+                         Each accumulates its own axis delta — perpendicular drags do nothing.",
+            ))
+            .child(
+                div()
+                    .id("h-drag")
+                    .px_4()
+                    .py_3()
+                    .rounded_md()
+                    .bg(colors.selected)
+                    .text_color(colors.selected_text)
+                    .text_sm()
+                    .child(format!("⇄ horizontal drag — total dx: {h_dx:.0}px"))
+                    .on_horizontal_drag_update(move |d: DragUpdateDetails, _w, app| {
+                        if let Some(e) = weak_h.upgrade() {
+                            e.update(app, |this, cx| {
+                                this.h_dx += d.delta.x.as_f32();
+                                cx.notify();
+                            });
+                        }
+                    }),
+            )
+            .child(
+                div()
+                    .id("v-drag")
+                    .px_4()
+                    .py_3()
+                    .rounded_md()
+                    .bg(colors.selected)
+                    .text_color(colors.selected_text)
+                    .text_sm()
+                    .child(format!("⇅ vertical drag — total dy: {v_dy:.0}px"))
+                    .on_vertical_drag_update(move |d: DragUpdateDetails, _w, app| {
+                        if let Some(e) = weak_v.upgrade() {
+                            e.update(app, |this, cx| {
+                                this.v_dy += d.delta.y.as_f32();
+                                cx.notify();
+                            });
+                        }
+                    }),
+            )
+    }
+}
+
+// =====================================================================
+// Scenario 8 — Pan to translate (tactile pan_update).
+// =====================================================================
+//
+// Reads `DragUpdateDetails.delta` on every pan update to translate a
+// "ball" element across the card. `DragStartDetails` resets the
+// drag origin; `DragEndDetails.velocity` lets a real app start a
+// fling-physics simulation (S11 territory; here we just print the
+// final velocity).
+
+struct PanToTranslateCard {
+    /// Accumulated translation in pixels relative to the card's
+    /// center.
+    offset_x: f32,
+    offset_y: f32,
+    /// Last fling velocity reported by `on_pan_end`. `(0.0, 0.0)`
+    /// before any drag completes.
+    last_velocity: (f32, f32),
+}
+
+impl PanToTranslateCard {
+    fn new() -> Self {
+        Self {
+            offset_x: 0.0,
+            offset_y: 0.0,
+            last_velocity: (0.0, 0.0),
+        }
+    }
+}
+
+impl Render for PanToTranslateCard {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let colors = Colors::for_appearance(window);
+        let off_x = self.offset_x;
+        let off_y = self.offset_y;
+        let (vx, vy) = self.last_velocity;
+        let weak_start = cx.weak_entity();
+        let weak_update = cx.weak_entity();
+        let weak_end = cx.weak_entity();
+        div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .p_4()
+            .rounded_lg()
+            .bg(colors.container)
+            .child(
+                div()
+                    .text_sm()
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(colors.text)
+                    .child("8. Pan to translate"),
+            )
+            .child(div().text_xs().text_color(colors.disabled).child(
+                "Drag the chip — `pan_update.delta` accumulates into a translation. \
+                         Release to read `pan_end.velocity` (px/s).",
+            ))
+            .child(
+                div()
+                    .id("pan-translate-target")
+                    .px_4()
+                    .py_3()
+                    .rounded_md()
+                    .bg(colors.selected)
+                    .text_color(colors.selected_text)
+                    .text_sm()
+                    // Render the running offset in the chip text — we
+                    // do not ship a Transform widget yet (S09), so the
+                    // element does not visually translate; the
+                    // numeric readout is the next-best feedback.
+                    .child(format!("drag me — offset: ({off_x:.0}, {off_y:.0}) px"))
+                    .on_pan_start(move |_d: DragStartDetails, _w, app| {
+                        if let Some(e) = weak_start.upgrade() {
+                            e.update(app, |this, cx| {
+                                // Reset the running offset on each new
+                                // drag so successive drags don't keep
+                                // accumulating without bound.
+                                this.offset_x = 0.0;
+                                this.offset_y = 0.0;
+                                cx.notify();
+                            });
+                        }
+                    })
+                    .on_pan_update(move |d: DragUpdateDetails, _w, app| {
+                        if let Some(e) = weak_update.upgrade() {
+                            e.update(app, |this, cx| {
+                                this.offset_x += d.delta.x.as_f32();
+                                this.offset_y += d.delta.y.as_f32();
+                                cx.notify();
+                            });
+                        }
+                    })
+                    .on_pan_end(move |d: DragEndDetails, _w, app| {
+                        if let Some(e) = weak_end.upgrade() {
+                            e.update(app, |this, cx| {
+                                this.last_velocity = (
+                                    d.velocity.pixels_per_second.x,
+                                    d.velocity.pixels_per_second.y,
+                                );
+                                cx.notify();
+                            });
+                        }
+                    }),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(colors.disabled)
+                    .child(format!("last fling velocity: ({vx:.0}, {vy:.0}) px/s")),
+            )
+    }
+}
+
+// =====================================================================
 // Main viewer.
 // =====================================================================
 
@@ -477,6 +727,8 @@ struct GestureArenaDemo {
     settings: Entity<SettingsOverrideCard>,
     team: Entity<ArenaTeamCard>,
     scale: Entity<ScaleDemoCard>,
+    axis_drag: Entity<AxisLockedDragCard>,
+    pan_translate: Entity<PanToTranslateCard>,
 }
 
 impl GestureArenaDemo {
@@ -487,6 +739,8 @@ impl GestureArenaDemo {
             settings: cx.new(|_| SettingsOverrideCard::new()),
             team: cx.new(|_| ArenaTeamCard::new()),
             scale: cx.new(|_| ScaleDemoCard::new()),
+            axis_drag: cx.new(|_| AxisLockedDragCard::new()),
+            pan_translate: cx.new(|_| PanToTranslateCard::new()),
         }
     }
 }
@@ -517,7 +771,7 @@ impl Render for GestureArenaDemo {
                         div()
                             .text_sm()
                             .text_color(colors.disabled)
-                            .child("Five scenarios exercise the gesture-arena public surface."),
+                            .child("Seven scenarios exercise the gesture-arena public surface."),
                     )
                     .child(
                         div()
@@ -528,7 +782,9 @@ impl Render for GestureArenaDemo {
                             .child(self.overlay.clone())
                             .child(self.settings.clone())
                             .child(self.team.clone())
-                            .child(self.scale.clone()),
+                            .child(self.scale.clone())
+                            .child(self.axis_drag.clone())
+                            .child(self.pan_translate.clone()),
                     ),
             )
     }

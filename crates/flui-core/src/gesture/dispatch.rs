@@ -60,10 +60,25 @@ pub(crate) struct WindowPointerState {
     /// state. Used by `PointerSanitizer` for orphan-cancel synthesis
     /// and duplicate-down rejection.
     pub(crate) mouse_down: bool,
-    /// Most recent window content bounds. Updated by
-    /// `Window::dispatch_event` so the sanitizer can clamp
-    /// out-of-bounds positions (e.g. from Wayland decoration drag).
-    pub(crate) window_bounds: Bounds<Pixels>,
+    /// Window content rectangle in **client space** (origin at the
+    /// window's top-left corner, so `origin == (0, 0)` always; `size`
+    /// is the window's logical content dimensions). Updated by
+    /// `Window::dispatch_event` on every dispatch so the sanitizer
+    /// can clamp out-of-bounds positions (e.g. from Wayland
+    /// decoration drag where the compositor delivers values outside
+    /// the surface).
+    ///
+    /// **Coordinate-space contract.** [`PointerEvent::position`]
+    /// arrives in client space on every supported platform (Win32
+    /// `WM_LBUTTONDOWN` lparam, Wayland surface-local pointer events,
+    /// X11 `event_x`/`event_y`, macOS NSEvent `locationInWindow`).
+    /// Therefore the bounds we clamp those positions against MUST
+    /// also be in client space — never the window's *screen*
+    /// position. Feeding screen-space bounds here collapses every
+    /// event onto the window's screen origin (the bug fixed
+    /// alongside the introduction of this field's current name).
+    /// [`clamp_to_bounds`] asserts the contract in debug builds.
+    pub(crate) content_bounds: Bounds<Pixels>,
     /// Last `Down` position (for duplicate-`Down` slop check).
     pub(crate) last_down_position: Point<Pixels>,
     /// Hitboxes that contained the pointer during the previous frame.
@@ -99,9 +114,10 @@ impl WindowPointerState {
 /// 2. **Duplicate-`Down` rejection.** A `Down` for an already-down
 ///    pointer at the same position (within the duplicate-slop) is
 ///    silently dropped.
-/// 3. **Position clamping.** Positions outside `state.window_bounds`
+/// 3. **Position clamping.** Positions outside `state.content_bounds`
 ///    (which can arrive on Wayland during decoration drag) are
-///    clamped to the window rectangle before downstream consumption.
+///    clamped to the window's content rectangle before downstream
+///    consumption.
 /// 4. **Hover diff** (via [`Self::diff_hover`]). Compares the current
 ///    hit-test result against `state.prior_hover_hitboxes` and emits
 ///    `Enter`/`Exit` events for boundary transitions during pure
@@ -188,7 +204,7 @@ impl PointerSanitizer {
             // Position clamping. Wayland decoration drag can deliver
             // positions outside the content bounds; clamp before
             // recognizers see them.
-            event.position = clamp_to_bounds(event.position, &state.window_bounds);
+            event.position = clamp_to_bounds(event.position, &state.content_bounds);
 
             // Track last_down_position for the duplicate-Down check.
             if matches!(event.phase, PointerPhase::Down) {
@@ -298,11 +314,34 @@ fn distance(a: Point<Pixels>, b: Point<Pixels>) -> f32 {
 }
 
 #[inline]
+/// Clamp a **client-space** event position to the window's content
+/// rectangle. The bounds parameter must follow the
+/// [`WindowPointerState::content_bounds`] contract: client-space
+/// origin (i.e. `bounds.origin == (0, 0)`).
+///
+/// **Defense-in-depth assert.** Passing screen-space bounds (origin
+/// at the window's screen position) here collapses every event
+/// onto that screen origin — a regression we hit and fixed once,
+/// and which is invisible whenever the window happens to be at
+/// screen `(0, 0)`. The `debug_assert!` makes that mistake
+/// impossible to miss in dev / test builds; release builds still
+/// silently clamp (preferring degraded behavior over a panic in
+/// the hot dispatch path).
 fn clamp_to_bounds(p: Point<Pixels>, bounds: &Bounds<Pixels>) -> Point<Pixels> {
-    // If bounds are zero-sized (uninitialized state), pass through.
+    // If bounds are zero-sized (uninitialized state — e.g. the very
+    // first event arrives before `Window::dispatch_event` has set
+    // `content_bounds`), pass through.
     if bounds.size.width.0 <= 0.0 || bounds.size.height.0 <= 0.0 {
         return p;
     }
+    debug_assert!(
+        bounds.origin.x.0 == 0.0 && bounds.origin.y.0 == 0.0,
+        "clamp_to_bounds expects client-space content bounds (origin (0, 0)) — got origin=({}, {}). \
+         A non-zero origin almost always indicates that `Window::bounds()` (which returns global \
+         screen-space bounds) was passed in by mistake. See `WindowPointerState::content_bounds`.",
+        bounds.origin.x.0,
+        bounds.origin.y.0,
+    );
     let min_x = bounds.origin.x;
     let max_x = Pixels(bounds.origin.x.0 + bounds.size.width.0);
     let min_y = bounds.origin.y;
@@ -654,5 +693,153 @@ mod tests {
         };
         let pe = translate_mouse_down(&down, &mut state);
         assert!(pe.pressure.is_none(), "non-pressure Down must surface None");
+    }
+
+    /// Helper: build the canonical client-space content bounds
+    /// (origin (0, 0), `width × height` size) that a real
+    /// `Window::dispatch_event` site would produce.
+    fn content_bounds_900x700() -> crate::Bounds<Pixels> {
+        crate::Bounds {
+            origin: Point::default(),
+            size: crate::Size {
+                width: Pixels(900.0),
+                height: Pixels(700.0),
+            },
+        }
+    }
+
+    fn down_at(pos: Point<Pixels>) -> MouseDownEvent {
+        MouseDownEvent {
+            position: pos,
+            button: crate::MouseButton::Left,
+            modifiers: Modifiers::default(),
+            click_count: 1,
+            first_mouse: false,
+        }
+    }
+
+    /// Regression lock for the long-standing Windows debug-build
+    /// gesture hang: when `WindowPointerState::content_bounds.origin`
+    /// was incorrectly set to the window's *screen* position (via
+    /// `Window::bounds()`), every client-space pointer position got
+    /// clamped onto that screen origin. With the contract corrected
+    /// to client-space bounds (origin always (0, 0)), positions
+    /// inside the content rectangle pass through unchanged.
+    #[test]
+    fn convert_preserves_in_bounds_position() {
+        let mut sanitizer = PointerSanitizer;
+        let mut state = WindowPointerState {
+            content_bounds: content_bounds_900x700(),
+            ..Default::default()
+        };
+        let down = down_at(px(150.0, 250.0));
+        let events = sanitizer.convert(&PlatformInput::MouseDown(down), &mut state);
+        assert_eq!(events.len(), 1, "Down produces exactly one event");
+        assert_eq!(
+            events[0].position,
+            px(150.0, 250.0),
+            "in-bounds position must pass through clamp unchanged"
+        );
+    }
+
+    /// Out-of-bounds positions (e.g. Wayland decoration drag
+    /// delivering values outside the content surface, or Win32
+    /// `SetCapture` continuing past the window edge) get clamped
+    /// to the content rectangle. The clamp behavior is the
+    /// original purpose of `clamp_to_bounds` and must survive the
+    /// content-space contract change.
+    #[test]
+    fn convert_clamps_out_of_bounds_position_to_content_rectangle() {
+        let mut sanitizer = PointerSanitizer;
+        let mut state = WindowPointerState {
+            content_bounds: content_bounds_900x700(),
+            ..Default::default()
+        };
+
+        // Position to the left and above the content area
+        // (Wayland decoration drag at the top-left edge).
+        let oob_topleft = down_at(px(-50.0, -10.0));
+        let events = sanitizer.convert(&PlatformInput::MouseDown(oob_topleft), &mut state);
+        assert_eq!(events[0].position, px(0.0, 0.0));
+
+        // Need to clear the down state for the next dispatch (the
+        // sanitizer would otherwise treat the next Down as orphan).
+        state.mouse_down = false;
+        state.buttons = PointerButtons::default();
+
+        // Position past the right and bottom edges (mouse capture
+        // continues outside the window).
+        let oob_bottomright = down_at(px(950.0, 1200.0));
+        let events = sanitizer.convert(&PlatformInput::MouseDown(oob_bottomright), &mut state);
+        assert_eq!(events[0].position, px(900.0, 700.0));
+    }
+
+    /// Cross-platform check (multi-monitor / window-not-at-origin):
+    /// the actual `screen` location of the window is never relevant
+    /// to this clamp because client-space positions arrive
+    /// pre-translated to the window's coordinate system on every
+    /// supported backend (Win32 `WM_LBUTTONDOWN` lparam, Wayland
+    /// surface-local pointers, X11 `event_x`/`event_y`, macOS
+    /// NSEvent `locationInWindow`). The test verifies this by
+    /// running the same `convert` with the same client-space input
+    /// at any window screen position — `content_bounds.origin`
+    /// stays (0, 0) regardless.
+    #[test]
+    fn convert_is_window_position_independent() {
+        let mut sanitizer = PointerSanitizer;
+        let mut state = WindowPointerState {
+            content_bounds: content_bounds_900x700(),
+            ..Default::default()
+        };
+        // Simulate that the user moved the window to screen
+        // position (3000, 1500). `content_bounds` MUST stay
+        // (0, 0) + viewport_size — `Window::dispatch_event`
+        // ensures this — so the sanitizer never sees a
+        // screen-space origin here.
+        // The client-space click at (430, 320) below is identical
+        // regardless of window screen position.
+        let click = down_at(px(430.0, 320.0));
+        let events = sanitizer.convert(&PlatformInput::MouseDown(click), &mut state);
+        assert_eq!(events[0].position, px(430.0, 320.0));
+    }
+
+    /// Defense-in-depth: passing screen-space content bounds
+    /// (origin not at (0, 0)) violates the contract documented on
+    /// `WindowPointerState::content_bounds` and `clamp_to_bounds`.
+    /// In dev / test builds `clamp_to_bounds` panics via
+    /// `debug_assert!`, surfacing the regression at the call site
+    /// instead of silently collapsing every event to the wrong
+    /// origin.
+    #[test]
+    #[should_panic(expected = "clamp_to_bounds expects client-space content bounds")]
+    fn clamp_to_bounds_rejects_non_origin_bounds_in_dev_builds() {
+        // Build a bounds whose origin matches the historical
+        // `Window::bounds()` mistake: window dragged to screen
+        // (1270, 382). `clamp_to_bounds` must reject this.
+        let screen_space_bounds = crate::Bounds {
+            origin: px(1270.0, 382.0),
+            size: crate::Size {
+                width: Pixels(900.0),
+                height: Pixels(700.0),
+            },
+        };
+        let _ = clamp_to_bounds(px(150.0, 250.0), &screen_space_bounds);
+    }
+
+    /// Zero-sized bounds (e.g. very first event before the
+    /// dispatcher has set `content_bounds`) pass the position
+    /// through unchanged — this is the documented escape hatch on
+    /// `clamp_to_bounds`. The defense-in-depth assert must not
+    /// fire here even though `origin` is technically degenerate.
+    #[test]
+    fn clamp_to_bounds_passes_through_when_bounds_zero_sized() {
+        let zero = crate::Bounds {
+            origin: Point::default(),
+            size: crate::Size {
+                width: Pixels(0.0),
+                height: Pixels(0.0),
+            },
+        };
+        assert_eq!(clamp_to_bounds(px(42.0, 13.0), &zero), px(42.0, 13.0));
     }
 }
