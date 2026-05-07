@@ -27,21 +27,35 @@ pub struct HitTestEntry {
     /// The behavior of this entry — controls whether propagation
     /// continues past it.
     pub behavior: HitTestBehavior,
-    /// The window-local-to-target-local affine recorded by paint when
+    /// The target-local-to-window-local affine recorded by paint when
     /// this entry was registered, or `None` for the identity (most
     /// entries today).
     ///
-    /// Recognizers do not invert this directly: the dispatcher
-    /// computes `local_position` once per delivery via
-    /// `transform.unwrap_or(IDENTITY).inverse().unwrap().transform_point(position)`
-    /// and exposes it through [`crate::DeliveredEvent::local_position`].
+    /// **Direction.** This follows Flutter's `HitTestEntry.transform`
+    /// convention: the stored matrix maps the entry's **target-local**
+    /// coordinates to **window-local** coordinates
+    /// (`transform.transform_point(local) == window`). The dispatcher
+    /// inverts and applies once per delivery to recover the
+    /// `local_position` from the event's window-space position:
     ///
-    /// **S09 contract:** when the paint pipeline starts pushing real
+    /// ```text
+    /// local_position =
+    ///     transform.unwrap_or(IDENTITY)
+    ///              .inverse()
+    ///              .expect("paint promises invertible transforms")
+    ///              .transform_point(event.position)
+    /// ```
+    ///
+    /// The result flows through [`crate::DeliveredEvent::local_position`].
+    /// Recognizers must read `local_position` for in-target geometry —
+    /// they never invert the transform themselves.
+    ///
+    /// **S09 contract.** When the paint pipeline starts pushing real
     /// transforms (e.g. via `RenderTransform`), every entry registered
-    /// inside that scope must carry the composed transform so
-    /// recognizers see a consistent `local_position`. Leaving
-    /// `transform = None` while events flow through a non-identity
-    /// scope silently desyncs slop / down_position math.
+    /// inside that scope must carry the composed local-to-window
+    /// transform so recognizers see a consistent `local_position`.
+    /// Leaving `transform = None` while events flow through a
+    /// non-identity scope silently desyncs slop / down_position math.
     pub transform: Option<Affine2>,
 }
 
@@ -62,10 +76,14 @@ pub struct HitTestEntry {
 #[derive(Clone, Debug, Default)]
 pub struct HitTestResult {
     pub(crate) entries: SmallVec<[HitTestEntry; 8]>,
-    /// Cumulative window-local-to-target-local transforms; top-of-stack
-    /// is the effective transform for entries added at the current
-    /// nesting depth. Always private — consumers manipulate it only
-    /// through [`HitTestScope`].
+    /// Cumulative target-local-to-window-local transforms; top-of-stack
+    /// is the effective `local → window` transform for entries added
+    /// at the current nesting depth. Following the same direction as
+    /// [`HitTestEntry::transform`] — `push_transform(T_child)` from a
+    /// scope already at `T_parent` records `T_parent ∘ T_child`,
+    /// which maps a child-local point all the way to window-local.
+    /// Always private — consumers manipulate it only through
+    /// [`HitTestScope`].
     pub(crate) transform_stack: SmallVec<[Affine2; 4]>,
 }
 
