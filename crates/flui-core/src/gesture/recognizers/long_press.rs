@@ -372,6 +372,7 @@ mod tests {
     use crate::{self as flui_core, Modifiers, Pixels, Point, TestAppContext};
 
     fn pe(phase: PointerPhase, pos: Point<Pixels>, buttons: PointerButtons) -> PointerEvent {
+        let now = Instant::now();
         PointerEvent {
             pointer_id: PointerId(0),
             kind: PointerKind::Mouse,
@@ -380,8 +381,10 @@ mod tests {
             delta: Point::default(),
             buttons,
             modifiers: Modifiers::default(),
-            timestamp: Instant::now(),
-            pressure: 1.0,
+            timestamp: now,
+            source_timestamp: now,
+            provenance: crate::gesture::PointerEventProvenance::Platform,
+            pressure: None,
             tilt: 0.0,
             orientation: 0.0,
         }

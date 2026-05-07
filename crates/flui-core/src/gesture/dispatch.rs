@@ -19,8 +19,8 @@ use crate::{
 use crate::PinchEvent;
 
 use super::{
-    HitTestResult, PointerButtons, PointerEvent, PointerId, PointerKind, PointerPhase,
-    PointerSignalEvent,
+    HitTestResult, PointerButtons, PointerEvent, PointerEventProvenance, PointerId, PointerKind,
+    PointerPhase, PointerSignalEvent, PressureSample,
 };
 use smallvec::SmallVec;
 
@@ -44,7 +44,10 @@ pub(crate) struct WindowPointerState {
     /// Current keyboard modifiers (mirrors `Window::modifiers`).
     pub(crate) modifiers: Modifiers,
     /// Last reported pressure for the desktop mouse pointer.
-    pub(crate) last_pressure: f32,
+    /// `None` for events without real pressure (most mouse events);
+    /// `Some(_)` for the macOS Force Touch path through
+    /// `MousePressureEvent` (Decision MM in S07.5b plan).
+    pub(crate) last_pressure: Option<PressureSample>,
     /// Allocator counter for non-mouse pointer IDs (touch / stylus).
     /// Mouse uses [`DESKTOP_MOUSE_POINTER`]. Currently unread —
     /// `Window::dispatch_event` only handles desktop-mouse paths
@@ -159,6 +162,7 @@ impl PointerSanitizer {
                 e.position.x.0,
                 e.position.y.0,
             );
+            let now = Instant::now();
             out.push(PointerEvent {
                 pointer_id: DESKTOP_MOUSE_POINTER,
                 kind: PointerKind::Mouse,
@@ -167,7 +171,9 @@ impl PointerSanitizer {
                 delta: Point::default(),
                 buttons: state.buttons,
                 modifiers: state.modifiers,
-                timestamp: Instant::now(),
+                timestamp: now,
+                source_timestamp: now,
+                provenance: PointerEventProvenance::SanitizerSynthesized,
                 pressure: state.last_pressure,
                 tilt: 0.0,
                 orientation: 0.0,
@@ -249,6 +255,8 @@ impl PointerSanitizer {
                     buttons: template.buttons,
                     modifiers: template.modifiers,
                     timestamp: template.timestamp,
+                    source_timestamp: template.source_timestamp,
+                    provenance: PointerEventProvenance::SanitizerSynthesized,
                     pressure: template.pressure,
                     tilt: template.tilt,
                     orientation: template.orientation,
@@ -268,6 +276,8 @@ impl PointerSanitizer {
                     buttons: template.buttons,
                     modifiers: template.modifiers,
                     timestamp: template.timestamp,
+                    source_timestamp: template.source_timestamp,
+                    provenance: PointerEventProvenance::SanitizerSynthesized,
                     pressure: template.pressure,
                     tilt: template.tilt,
                     orientation: template.orientation,
@@ -345,7 +355,10 @@ fn translate_mouse_down(e: &MouseDownEvent, state: &mut WindowPointerState) -> P
     state.modifiers = e.modifiers;
     state.buttons = state.buttons.union(buttons);
     state.mouse_down = true;
-    state.last_pressure = 1.0;
+    // Mouse-class Down has no real pressure data on this path; the
+    // macOS Force Touch path goes through `translate_mouse_pressure`.
+    state.last_pressure = None;
+    let now = Instant::now();
     PointerEvent {
         pointer_id: DESKTOP_MOUSE_POINTER,
         kind: PointerKind::Mouse,
@@ -354,7 +367,9 @@ fn translate_mouse_down(e: &MouseDownEvent, state: &mut WindowPointerState) -> P
         delta,
         buttons: state.buttons,
         modifiers: e.modifiers,
-        timestamp: Instant::now(),
+        timestamp: now,
+        source_timestamp: now,
+        provenance: PointerEventProvenance::Platform,
         pressure: state.last_pressure,
         tilt: 0.0,
         orientation: 0.0,
@@ -372,7 +387,8 @@ fn translate_mouse_up(e: &MouseUpEvent, state: &mut WindowPointerState) -> Point
     if state.buttons.is_empty() {
         state.mouse_down = false;
     }
-    state.last_pressure = 0.0;
+    state.last_pressure = None;
+    let now = Instant::now();
     PointerEvent {
         pointer_id: DESKTOP_MOUSE_POINTER,
         kind: PointerKind::Mouse,
@@ -381,7 +397,9 @@ fn translate_mouse_up(e: &MouseUpEvent, state: &mut WindowPointerState) -> Point
         delta,
         buttons: state.buttons,
         modifiers: e.modifiers,
-        timestamp: Instant::now(),
+        timestamp: now,
+        source_timestamp: now,
+        provenance: PointerEventProvenance::Platform,
         pressure: state.last_pressure,
         tilt: 0.0,
         orientation: 0.0,
@@ -397,6 +415,7 @@ fn translate_mouse_move(e: &MouseMoveEvent, state: &mut WindowPointerState) -> P
     } else {
         PointerPhase::Hover
     };
+    let now = Instant::now();
     PointerEvent {
         pointer_id: DESKTOP_MOUSE_POINTER,
         kind: PointerKind::Mouse,
@@ -405,12 +424,13 @@ fn translate_mouse_move(e: &MouseMoveEvent, state: &mut WindowPointerState) -> P
         delta,
         buttons: state.buttons,
         modifiers: e.modifiers,
-        timestamp: Instant::now(),
-        pressure: if matches!(phase, PointerPhase::Move) {
-            1.0
-        } else {
-            0.0
-        },
+        timestamp: now,
+        source_timestamp: now,
+        provenance: PointerEventProvenance::Platform,
+        // Mouse-class Move/Hover events carry no real pressure data;
+        // platforms with real pressure surface it through
+        // `MousePressureEvent` (macOS Force Touch).
+        pressure: None,
         tilt: 0.0,
         orientation: 0.0,
     }
@@ -423,7 +443,19 @@ fn translate_mouse_pressure(
     let delta = subtract(e.position, state.last_mouse_position);
     state.last_mouse_position = e.position;
     state.modifiers = e.modifiers;
-    state.last_pressure = e.pressure;
+    // Decision MM (S07.5b plan): macOS Force Touch is the only real
+    // pressure path that exists today on desktops. Platform reports
+    // `e.pressure` already normalized to `[0.0, 1.0]`, so we surface
+    // it as `Some(PressureSample { value, min: 0.0, max: 1.0 })`.
+    // Recognizers normalize via `PressureSample::normalize()` for
+    // device-agnostic threshold comparisons.
+    let sample = PressureSample {
+        value: e.pressure,
+        min: 0.0,
+        max: 1.0,
+    };
+    state.last_pressure = Some(sample);
+    let now = Instant::now();
     PointerEvent {
         pointer_id: DESKTOP_MOUSE_POINTER,
         kind: PointerKind::Mouse,
@@ -432,8 +464,10 @@ fn translate_mouse_pressure(
         delta,
         buttons: state.buttons,
         modifiers: e.modifiers,
-        timestamp: Instant::now(),
-        pressure: e.pressure,
+        timestamp: now,
+        source_timestamp: now,
+        provenance: PointerEventProvenance::Platform,
+        pressure: Some(sample),
         tilt: 0.0,
         orientation: 0.0,
     }
@@ -453,6 +487,7 @@ fn translate_mouse_exited(e: &MouseExitEvent, state: &mut WindowPointerState) ->
     //
     // See `gesture/pointer_event.rs` for the `Exit` vs `Removed`
     // distinction.
+    let now = Instant::now();
     PointerEvent {
         pointer_id: DESKTOP_MOUSE_POINTER,
         kind: PointerKind::Mouse,
@@ -461,8 +496,10 @@ fn translate_mouse_exited(e: &MouseExitEvent, state: &mut WindowPointerState) ->
         delta,
         buttons: state.buttons,
         modifiers: e.modifiers,
-        timestamp: Instant::now(),
-        pressure: 0.0,
+        timestamp: now,
+        source_timestamp: now,
+        provenance: PointerEventProvenance::Platform,
+        pressure: None,
         tilt: 0.0,
         orientation: 0.0,
     }

@@ -103,17 +103,17 @@ Check at T23 bench that the larger `PointerEvent` doesn't push any allocation of
 
 ### Phase A — Pointer event surface (D1, D2, D3, D8, D12, MM)
 
-- [ ] **T1:** Define `PressureSample` in `gesture/pointer_event.rs`. `#[non_exhaustive]` struct, `Copy + Clone + Debug + PartialEq` derive (NOT `Eq`/`Hash` — `f32` blocks them). Method `pub fn normalize(self) -> f32` returns `((value - min) / (max - min)).clamp(0.0, 1.0)` if `max > min` else `0.0`. **Add explicit `pub use` line** to `gesture/mod.rs:251` re-export block AND to `lib.rs` re-export block (A2 hygiene). Naming uses American spelling (`normalize`) for consistency with Rust ecosystem conventions.
+- [x] **T1:** Define `PressureSample` in `gesture/pointer_event.rs`. `#[non_exhaustive]` struct, `Copy + Clone + Debug + PartialEq` derive (NOT `Eq`/`Hash` — `f32` blocks them). Method `pub fn normalize(self) -> f32` returns `((value - min) / (max - min)).clamp(0.0, 1.0)` if `max > min` else `0.0`. **Add explicit `pub use` line** to `gesture/mod.rs:251` re-export block AND to `lib.rs` re-export block (A2 hygiene). Naming uses American spelling (`normalize`) for consistency with Rust ecosystem conventions.
 
-- [ ] **T2:** Replace `pub pressure: f32` with `pub pressure: Option<PressureSample>` on `PointerEvent`. **Also migrate `WindowPointerState::last_pressure: f32` (`dispatch.rs:47`) to `last_pressure: Option<PressureSample>`** — its setters at `dispatch.rs:348, 375, 426` need the new shape. Update `PointerEvent`'s rustdoc to describe the platform-truth matrix:
+- [x] **T2:** Replace `pub pressure: f32` with `pub pressure: Option<PressureSample>` on `PointerEvent`. **Also migrate `WindowPointerState::last_pressure: f32` (`dispatch.rs:47`) to `last_pressure: Option<PressureSample>`** — its setters at `dispatch.rs:348, 375, 426` need the new shape. Update `PointerEvent`'s rustdoc to describe the platform-truth matrix:
   - Mouse-class events (most desktops): `None`.
   - Mouse-class events on macOS via `MousePressureEvent` (Force Touch): `Some(PressureSample { value, min: 0.0, max: 1.0 })` per Decision MM.
   - Touch / Stylus / Trackpad with real pressure sensors: `Some(...)` with the device's actual range.
   - Touch / Stylus / Trackpad on platforms without sensors: `None`.
 
-- [ ] **T3:** Add `PointerKind::Trackpad`, `PointerKind::InvertedStylus`, `PointerKind::Unknown`. Update rustdoc table. **Document explicitly:** Windows emits `Mouse` for normal trackpad cursor movement; `Trackpad` only for the dedicated pan-zoom synthetic device path (Decision D3).
+- [x] **T3:** Add `PointerKind::Trackpad`, `PointerKind::InvertedStylus`, `PointerKind::Unknown`. Update rustdoc table. **Document explicitly:** Windows emits `Mouse` for normal trackpad cursor movement; `Trackpad` only for the dedicated pan-zoom synthetic device path (Decision D3).
 
-- [ ] **T4:** Define `PointerPanZoomEvent` in `gesture/pan_zoom_event.rs` (new file) as a sibling type to `PointerSignalEvent`:
+- [x] **T4:** Define `PointerPanZoomEvent` in `gesture/pan_zoom_event.rs` (new file) as a sibling type to `PointerSignalEvent`:
 
   ```rust
   /// macOS-trackpad-style pan-zoom-rotate gesture event.
@@ -140,7 +140,7 @@ Check at T23 bench that the larger `PointerEvent` doesn't push any allocation of
 
   Re-export from `gesture/mod.rs` and `lib.rs`. The platform layer is not yet wired to emit these on any platform; T4 defines the type identity only. Future S20 / native macOS pinch lands in `crates/flui-platform/`. **DO NOT** add `PanZoomStart/Update/End` variants to `PointerPhase` — that's the rejected alternative.
 
-- [ ] **T5:** Replace the originally-planned `synthesized: bool` with `pub provenance: PointerEventProvenance` field on `PointerEvent`. Define the enum:
+- [x] **T5:** Replace the originally-planned `synthesized: bool` with `pub provenance: PointerEventProvenance` field on `PointerEvent`. Define the enum:
 
   ```rust
   #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Default)]
@@ -157,12 +157,12 @@ Check at T23 bench that the larger `PointerEvent` doesn't push any allocation of
 
   Update `PointerSanitizer::diff_hover` AND the orphan-Cancel synthesis path at `dispatch.rs:162-174` to set `provenance: PointerEventProvenance::SanitizerSynthesized`. Both synthesis sites must be enumerated; T5 explicitly addresses both (the original audit only mentioned `diff_hover`).
 
-- [ ] **T6:** Split `timestamp` into two fields. For platform-emitted events both equal `event_time`. For sanitizer-synthesised hover Enter/Exit, `source_timestamp = triggering_event.timestamp`. **Switch all `VelocityTracker::add_position` callers to `source_timestamp`** — this includes:
+- [x] **T6:** Split `timestamp` into two fields. For platform-emitted events both equal `event_time`. For sanitizer-synthesised hover Enter/Exit, `source_timestamp = triggering_event.timestamp`. **Switch all `VelocityTracker::add_position` callers to `source_timestamp`** — this includes:
   - `drag.rs:231`: `PositionSample::new(event.position, event.timestamp)` → `event.source_timestamp`.
   - `drag.rs:249`: same migration.
   - Any other site found by grep `event\.timestamp` inside `crates/flui-core/src/gesture/recognizers/` — current grep confirms only the two drag sites.
 
-- [ ] **T7:** Update **every** dispatch path to populate `pressure`, `provenance`, `source_timestamp`. **Explicit enumeration of `PointerEvent` struct literals to migrate:**
+- [x] **T7:** Update **every** dispatch path to populate `pressure`, `provenance`, `source_timestamp`. **Explicit enumeration of `PointerEvent` struct literals to migrate:**
   1. `dispatch.rs:162-174` — orphan-Cancel synthesis (sanitizer)
   2. `dispatch.rs:241-257` — diff_hover Exit synthesis
   3. `dispatch.rs:260-277` — diff_hover Enter synthesis
@@ -182,7 +182,7 @@ Check at T23 bench that the larger `PointerEvent` doesn't push any allocation of
 
   **Verification gate at the end of T7:** `cargo check -p flui-core --all-features` must pass.
 
-- [ ] **T8:** Update tests. **Helpers must set `source_timestamp: timestamp` (re-use the same binding, not call `Instant::now()` twice — microseconds may differ).** Bump `pe()` builders in all six locations from T7. Add a unit test `pressure_sample_normalize_correct_for_wacom_range`: `PressureSample { value: 4096.0, min: 0.0, max: 8192.0 }.normalize() == 0.5`.
+- [x] **T8:** Update tests. **Helpers must set `source_timestamp: timestamp` (re-use the same binding, not call `Instant::now()` twice — microseconds may differ).** Bump `pe()` builders in all six locations from T7. Add a unit test `pressure_sample_normalize_correct_for_wacom_range`: `PressureSample { value: 4096.0, min: 0.0, max: 8192.0 }.normalize() == 0.5`.
 
 > **Commit checkpoint A — after T1–T8:** `feat(flui-core)!: PointerEvent surface upgrade — pressure/kind/PanZoomEvent/provenance/timestamp split (S07.5b A)`
 

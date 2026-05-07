@@ -223,6 +223,7 @@ pub(crate) mod binding;
 pub(crate) mod dispatch;
 pub(crate) mod gesture_settings;
 pub(crate) mod hit_test;
+pub(crate) mod pan_zoom_event;
 pub(crate) mod pointer_event;
 pub(crate) mod pointer_signal;
 pub(crate) mod recognizer;
@@ -248,7 +249,11 @@ pub use arena_team::GestureArenaTeam;
 pub use binding::GestureBinding;
 pub use gesture_settings::GestureSettings;
 pub use hit_test::{HitTestBehavior, HitTestEntry, HitTestResult};
-pub use pointer_event::{PointerButtons, PointerEvent, PointerId, PointerKind, PointerPhase};
+pub use pan_zoom_event::{PanZoomPhase, PointerPanZoomEvent};
+pub use pointer_event::{
+    PointerButtons, PointerEvent, PointerEventProvenance, PointerId, PointerKind, PointerPhase,
+    PressureSample,
+};
 pub use pointer_signal::PointerSignalEvent;
 pub use recognizer::{GestureRecognizer, RecognizerLifecycle, SemanticAction};
 pub use velocity_tracker::{PositionSample, Velocity, VelocityTracker};

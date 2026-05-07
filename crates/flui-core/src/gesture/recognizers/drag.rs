@@ -228,7 +228,7 @@ macro_rules! impl_drag_recognizer {
                 self.inner.velocity_tracker.reset();
                 self.inner
                     .velocity_tracker
-                    .add_position(PositionSample::new(event.position, event.timestamp));
+                    .add_position(PositionSample::new(event.position, event.source_timestamp));
             }
 
             fn handle_event(
@@ -246,7 +246,7 @@ macro_rules! impl_drag_recognizer {
                         let dy = event.position.y.0 - self.inner.down_position.y.0;
                         self.inner
                             .velocity_tracker
-                            .add_position(PositionSample::new(event.position, event.timestamp));
+                            .add_position(PositionSample::new(event.position, event.source_timestamp));
 
                         if self.inner.state == DragState::Possible {
                             if self.inner.axis_rejected(dx, dy) {
@@ -385,6 +385,7 @@ mod tests {
     use std::rc::Rc;
 
     fn pe(phase: PointerPhase, pos: Point<Pixels>, buttons: PointerButtons) -> PointerEvent {
+        let now = Instant::now();
         PointerEvent {
             pointer_id: PointerId(0),
             kind: PointerKind::Mouse,
@@ -393,8 +394,10 @@ mod tests {
             delta: Point::default(),
             buttons,
             modifiers: Modifiers::default(),
-            timestamp: Instant::now(),
-            pressure: 1.0,
+            timestamp: now,
+            source_timestamp: now,
+            provenance: crate::gesture::PointerEventProvenance::Platform,
+            pressure: None,
             tilt: 0.0,
             orientation: 0.0,
         }
