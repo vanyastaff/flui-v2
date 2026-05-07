@@ -797,6 +797,236 @@ pub trait InteractiveElement: Sized {
         self
     }
 
+    /// Set the [`crate::gesture::HitTestBehavior`] for this element
+    /// (S07). Default is `Opaque`. Use `Translucent` to forward arena
+    /// participation to elements behind this one; use `DeferToChild`
+    /// for parent containers that should not receive events directly.
+    fn with_hit_test_behavior(mut self, behavior: crate::gesture::HitTestBehavior) -> Self {
+        self.interactivity().hit_test_behavior = behavior;
+        self
+    }
+
+    /// Attach a tap recognizer (S07). Fires after arena resolution.
+    fn on_tap(
+        mut self,
+        listener: impl FnMut(
+            crate::gesture::recognizers::TapDetails,
+            &mut Window,
+            &mut App,
+        ) + 'static,
+    ) -> Self {
+        crate::gesture::__internal_on_tap(self.interactivity(), listener);
+        self
+    }
+
+    /// Attach a double-tap recognizer (S07).
+    fn on_double_tap(
+        mut self,
+        listener: impl FnMut(
+            crate::gesture::recognizers::DoubleTapDetails,
+            &mut Window,
+            &mut App,
+        ) + 'static,
+    ) -> Self {
+        crate::gesture::__internal_on_double_tap(self.interactivity(), listener);
+        self
+    }
+
+    /// Attach a long-press start callback (S07).
+    fn on_long_press_start(
+        mut self,
+        listener: impl FnMut(
+            crate::gesture::recognizers::LongPressDetails,
+            &mut Window,
+            &mut App,
+        ) + 'static,
+    ) -> Self {
+        crate::gesture::__internal_on_long_press_start(self.interactivity(), listener);
+        self
+    }
+
+    /// Attach a long-press move callback (fires while pressed).
+    fn on_long_press_move(
+        mut self,
+        listener: impl FnMut(
+            crate::gesture::recognizers::LongPressDetails,
+            &mut Window,
+            &mut App,
+        ) + 'static,
+    ) -> Self {
+        crate::gesture::__internal_on_long_press_move(self.interactivity(), listener);
+        self
+    }
+
+    /// Attach a long-press end callback.
+    fn on_long_press_end(
+        mut self,
+        listener: impl FnMut(
+            crate::gesture::recognizers::LongPressDetails,
+            &mut Window,
+            &mut App,
+        ) + 'static,
+    ) -> Self {
+        crate::gesture::__internal_on_long_press_end(self.interactivity(), listener);
+        self
+    }
+
+    /// Attach a free-pan start callback (S07).
+    fn on_pan_start(
+        mut self,
+        listener: impl FnMut(
+            crate::gesture::recognizers::DragStartDetails,
+            &mut Window,
+            &mut App,
+        ) + 'static,
+    ) -> Self {
+        crate::gesture::__internal_on_pan_start(self.interactivity(), listener);
+        self
+    }
+
+    /// Attach a free-pan update callback.
+    fn on_pan_update(
+        mut self,
+        listener: impl FnMut(
+            crate::gesture::recognizers::DragUpdateDetails,
+            &mut Window,
+            &mut App,
+        ) + 'static,
+    ) -> Self {
+        crate::gesture::__internal_on_pan_update(self.interactivity(), listener);
+        self
+    }
+
+    /// Attach a free-pan end callback (carries `velocity`).
+    fn on_pan_end(
+        mut self,
+        listener: impl FnMut(
+            crate::gesture::recognizers::DragEndDetails,
+            &mut Window,
+            &mut App,
+        ) + 'static,
+    ) -> Self {
+        crate::gesture::__internal_on_pan_end(self.interactivity(), listener);
+        self
+    }
+
+    /// Attach a horizontal-drag start callback (S07).
+    fn on_horizontal_drag_start(
+        mut self,
+        listener: impl FnMut(
+            crate::gesture::recognizers::DragStartDetails,
+            &mut Window,
+            &mut App,
+        ) + 'static,
+    ) -> Self {
+        crate::gesture::__internal_on_horizontal_drag_start(self.interactivity(), listener);
+        self
+    }
+
+    /// Attach a horizontal-drag update callback.
+    fn on_horizontal_drag_update(
+        mut self,
+        listener: impl FnMut(
+            crate::gesture::recognizers::DragUpdateDetails,
+            &mut Window,
+            &mut App,
+        ) + 'static,
+    ) -> Self {
+        crate::gesture::__internal_on_horizontal_drag_update(self.interactivity(), listener);
+        self
+    }
+
+    /// Attach a horizontal-drag end callback.
+    fn on_horizontal_drag_end(
+        mut self,
+        listener: impl FnMut(
+            crate::gesture::recognizers::DragEndDetails,
+            &mut Window,
+            &mut App,
+        ) + 'static,
+    ) -> Self {
+        crate::gesture::__internal_on_horizontal_drag_end(self.interactivity(), listener);
+        self
+    }
+
+    /// Attach a vertical-drag start callback (S07).
+    fn on_vertical_drag_start(
+        mut self,
+        listener: impl FnMut(
+            crate::gesture::recognizers::DragStartDetails,
+            &mut Window,
+            &mut App,
+        ) + 'static,
+    ) -> Self {
+        crate::gesture::__internal_on_vertical_drag_start(self.interactivity(), listener);
+        self
+    }
+
+    /// Attach a vertical-drag update callback.
+    fn on_vertical_drag_update(
+        mut self,
+        listener: impl FnMut(
+            crate::gesture::recognizers::DragUpdateDetails,
+            &mut Window,
+            &mut App,
+        ) + 'static,
+    ) -> Self {
+        crate::gesture::__internal_on_vertical_drag_update(self.interactivity(), listener);
+        self
+    }
+
+    /// Attach a vertical-drag end callback.
+    fn on_vertical_drag_end(
+        mut self,
+        listener: impl FnMut(
+            crate::gesture::recognizers::DragEndDetails,
+            &mut Window,
+            &mut App,
+        ) + 'static,
+    ) -> Self {
+        crate::gesture::__internal_on_vertical_drag_end(self.interactivity(), listener);
+        self
+    }
+
+    /// Attach a multi-pointer scale start callback (S07).
+    fn on_scale_start(
+        mut self,
+        listener: impl FnMut(
+            crate::gesture::recognizers::ScaleStartDetails,
+            &mut Window,
+            &mut App,
+        ) + 'static,
+    ) -> Self {
+        crate::gesture::__internal_on_scale_start(self.interactivity(), listener);
+        self
+    }
+
+    /// Attach a multi-pointer scale update callback.
+    fn on_scale_update(
+        mut self,
+        listener: impl FnMut(
+            crate::gesture::recognizers::ScaleUpdateDetails,
+            &mut Window,
+            &mut App,
+        ) + 'static,
+    ) -> Self {
+        crate::gesture::__internal_on_scale_update(self.interactivity(), listener);
+        self
+    }
+
+    /// Attach a multi-pointer scale end callback.
+    fn on_scale_end(
+        mut self,
+        listener: impl FnMut(
+            crate::gesture::recognizers::ScaleEndDetails,
+            &mut Window,
+            &mut App,
+        ) + 'static,
+    ) -> Self {
+        crate::gesture::__internal_on_scale_end(self.interactivity(), listener);
+        self
+    }
+
     #[cfg(any(test, feature = "test-support"))]
     /// Set a key that can be used to look up this element's bounds
     /// in the [`crate::VisualTestContext::debug_bounds`] map
@@ -1740,6 +1970,15 @@ pub struct Interactivity {
     pub(crate) tooltip_builder: Option<TooltipBuilder>,
     pub(crate) window_control: Option<WindowControlArea>,
     pub(crate) hitbox_behavior: HitboxBehavior,
+    /// Gesture recognizers attached to this `Interactivity` (S07 T14).
+    /// Registered with the per-`Window` arena by T15 wiring inside
+    /// `Window::propagate_event`.
+    pub(crate) gesture_recognizers:
+        smallvec::SmallVec<[Box<dyn crate::gesture::GestureRecognizer>; 4]>,
+    /// `HitTestBehavior` recorded by `Interactivity::paint` into the
+    /// per-frame `Window::hit_test_behaviors` map (S07 T14).
+    /// Default `Opaque` matches Flutter's `GestureDetector` default.
+    pub(crate) hit_test_behavior: crate::gesture::HitTestBehavior,
     pub(crate) tab_index: Option<isize>,
     pub(crate) tab_group: bool,
     pub(crate) tab_stop: bool,

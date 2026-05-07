@@ -71,3 +71,266 @@ pub use pointer_signal::PointerSignalEvent;
 pub use recognizer::{GestureRecognizer, SemanticAction};
 pub use velocity_tracker::{PositionSample, Velocity, VelocityTracker};
 
+// =====================================================================
+// Internal fluent-builder helpers for `InteractiveElement` (T14).
+// `#[doc(hidden)]` — they appear in the public surface only because
+// the trait default-method bodies in `elements/div.rs` need to reach
+// them across the module boundary. Renaming or removing them is not
+// a public-API breaking change.
+// =====================================================================
+
+/// Find the recognizer of type `T` in `recs`, or push a new one
+/// constructed from `Default::default()` settings.
+#[doc(hidden)]
+fn find_or_push<T: GestureRecognizer + 'static>(
+    recs: &mut smallvec::SmallVec<[Box<dyn GestureRecognizer>; 4]>,
+    new: impl FnOnce() -> T,
+) -> &mut T {
+    let pos = recs
+        .iter_mut()
+        .position(|r| r.as_any_mut().is::<T>());
+    let idx = match pos {
+        Some(idx) => idx,
+        None => {
+            recs.push(Box::new(new()));
+            recs.len() - 1
+        }
+    };
+    recs[idx]
+        .as_any_mut()
+        .downcast_mut::<T>()
+        .expect("position() guarantees the type matches")
+}
+
+/// Borrow the gesture-recognizer vector from the supplied `Interactivity`.
+/// Hidden helper used by the fluent-builder macros.
+#[doc(hidden)]
+pub fn __recognizers_mut(
+    iv: &mut crate::elements::Interactivity,
+) -> &mut smallvec::SmallVec<[Box<dyn GestureRecognizer>; 4]> {
+    &mut iv.gesture_recognizers
+}
+
+#[doc(hidden)]
+pub fn __internal_on_tap(
+    iv: &mut crate::elements::Interactivity,
+    f: impl FnMut(recognizers::TapDetails, &mut crate::Window, &mut crate::App) + 'static,
+) {
+    let r = find_or_push(__recognizers_mut(iv), || {
+        recognizers::TapGestureRecognizer::new(&GestureSettings::default())
+    });
+    r.on_tap = Some(Box::new(f));
+}
+
+#[doc(hidden)]
+pub fn __internal_on_double_tap(
+    iv: &mut crate::elements::Interactivity,
+    f: impl FnMut(recognizers::DoubleTapDetails, &mut crate::Window, &mut crate::App) + 'static,
+) {
+    let r = find_or_push(__recognizers_mut(iv), || {
+        recognizers::DoubleTapGestureRecognizer::new(&GestureSettings::default())
+    });
+    r.on_double_tap = Some(Box::new(f));
+}
+
+#[doc(hidden)]
+pub fn __internal_on_long_press_start(
+    iv: &mut crate::elements::Interactivity,
+    f: impl FnMut(recognizers::LongPressDetails, &mut crate::Window, &mut crate::App) + 'static,
+) {
+    let r = find_or_push(__recognizers_mut(iv), || {
+        recognizers::LongPressGestureRecognizer::new(&GestureSettings::default())
+    });
+    r.on_long_press_start = Some(Box::new(f));
+}
+
+#[doc(hidden)]
+pub fn __internal_on_long_press_move(
+    iv: &mut crate::elements::Interactivity,
+    f: impl FnMut(recognizers::LongPressDetails, &mut crate::Window, &mut crate::App) + 'static,
+) {
+    let r = find_or_push(__recognizers_mut(iv), || {
+        recognizers::LongPressGestureRecognizer::new(&GestureSettings::default())
+    });
+    r.on_long_press_move = Some(Box::new(f));
+}
+
+#[doc(hidden)]
+pub fn __internal_on_long_press_end(
+    iv: &mut crate::elements::Interactivity,
+    f: impl FnMut(recognizers::LongPressDetails, &mut crate::Window, &mut crate::App) + 'static,
+) {
+    let r = find_or_push(__recognizers_mut(iv), || {
+        recognizers::LongPressGestureRecognizer::new(&GestureSettings::default())
+    });
+    r.on_long_press_end = Some(Box::new(f));
+}
+
+#[doc(hidden)]
+pub fn __internal_on_pan_start(
+    iv: &mut crate::elements::Interactivity,
+    f: impl FnMut(recognizers::DragStartDetails, &mut crate::Window, &mut crate::App) + 'static,
+) {
+    let r = find_or_push(__recognizers_mut(iv), || {
+        recognizers::PanGestureRecognizer::new(&GestureSettings::default())
+    });
+    *r = std::mem::replace(
+        r,
+        recognizers::PanGestureRecognizer::new(&GestureSettings::default()),
+    )
+    .on_start(f);
+}
+
+#[doc(hidden)]
+pub fn __internal_on_pan_update(
+    iv: &mut crate::elements::Interactivity,
+    f: impl FnMut(recognizers::DragUpdateDetails, &mut crate::Window, &mut crate::App) + 'static,
+) {
+    let r = find_or_push(__recognizers_mut(iv), || {
+        recognizers::PanGestureRecognizer::new(&GestureSettings::default())
+    });
+    *r = std::mem::replace(
+        r,
+        recognizers::PanGestureRecognizer::new(&GestureSettings::default()),
+    )
+    .on_update(f);
+}
+
+#[doc(hidden)]
+pub fn __internal_on_pan_end(
+    iv: &mut crate::elements::Interactivity,
+    f: impl FnMut(recognizers::DragEndDetails, &mut crate::Window, &mut crate::App) + 'static,
+) {
+    let r = find_or_push(__recognizers_mut(iv), || {
+        recognizers::PanGestureRecognizer::new(&GestureSettings::default())
+    });
+    *r = std::mem::replace(
+        r,
+        recognizers::PanGestureRecognizer::new(&GestureSettings::default()),
+    )
+    .on_end(f);
+}
+
+#[doc(hidden)]
+pub fn __internal_on_horizontal_drag_start(
+    iv: &mut crate::elements::Interactivity,
+    f: impl FnMut(recognizers::DragStartDetails, &mut crate::Window, &mut crate::App) + 'static,
+) {
+    let r = find_or_push(__recognizers_mut(iv), || {
+        recognizers::HorizontalDragGestureRecognizer::new(&GestureSettings::default())
+    });
+    *r = std::mem::replace(
+        r,
+        recognizers::HorizontalDragGestureRecognizer::new(&GestureSettings::default()),
+    )
+    .on_start(f);
+}
+
+#[doc(hidden)]
+pub fn __internal_on_horizontal_drag_update(
+    iv: &mut crate::elements::Interactivity,
+    f: impl FnMut(recognizers::DragUpdateDetails, &mut crate::Window, &mut crate::App) + 'static,
+) {
+    let r = find_or_push(__recognizers_mut(iv), || {
+        recognizers::HorizontalDragGestureRecognizer::new(&GestureSettings::default())
+    });
+    *r = std::mem::replace(
+        r,
+        recognizers::HorizontalDragGestureRecognizer::new(&GestureSettings::default()),
+    )
+    .on_update(f);
+}
+
+#[doc(hidden)]
+pub fn __internal_on_horizontal_drag_end(
+    iv: &mut crate::elements::Interactivity,
+    f: impl FnMut(recognizers::DragEndDetails, &mut crate::Window, &mut crate::App) + 'static,
+) {
+    let r = find_or_push(__recognizers_mut(iv), || {
+        recognizers::HorizontalDragGestureRecognizer::new(&GestureSettings::default())
+    });
+    *r = std::mem::replace(
+        r,
+        recognizers::HorizontalDragGestureRecognizer::new(&GestureSettings::default()),
+    )
+    .on_end(f);
+}
+
+#[doc(hidden)]
+pub fn __internal_on_vertical_drag_start(
+    iv: &mut crate::elements::Interactivity,
+    f: impl FnMut(recognizers::DragStartDetails, &mut crate::Window, &mut crate::App) + 'static,
+) {
+    let r = find_or_push(__recognizers_mut(iv), || {
+        recognizers::VerticalDragGestureRecognizer::new(&GestureSettings::default())
+    });
+    *r = std::mem::replace(
+        r,
+        recognizers::VerticalDragGestureRecognizer::new(&GestureSettings::default()),
+    )
+    .on_start(f);
+}
+
+#[doc(hidden)]
+pub fn __internal_on_vertical_drag_update(
+    iv: &mut crate::elements::Interactivity,
+    f: impl FnMut(recognizers::DragUpdateDetails, &mut crate::Window, &mut crate::App) + 'static,
+) {
+    let r = find_or_push(__recognizers_mut(iv), || {
+        recognizers::VerticalDragGestureRecognizer::new(&GestureSettings::default())
+    });
+    *r = std::mem::replace(
+        r,
+        recognizers::VerticalDragGestureRecognizer::new(&GestureSettings::default()),
+    )
+    .on_update(f);
+}
+
+#[doc(hidden)]
+pub fn __internal_on_vertical_drag_end(
+    iv: &mut crate::elements::Interactivity,
+    f: impl FnMut(recognizers::DragEndDetails, &mut crate::Window, &mut crate::App) + 'static,
+) {
+    let r = find_or_push(__recognizers_mut(iv), || {
+        recognizers::VerticalDragGestureRecognizer::new(&GestureSettings::default())
+    });
+    *r = std::mem::replace(
+        r,
+        recognizers::VerticalDragGestureRecognizer::new(&GestureSettings::default()),
+    )
+    .on_end(f);
+}
+
+#[doc(hidden)]
+pub fn __internal_on_scale_start(
+    iv: &mut crate::elements::Interactivity,
+    f: impl FnMut(recognizers::ScaleStartDetails, &mut crate::Window, &mut crate::App) + 'static,
+) {
+    let r = find_or_push(__recognizers_mut(iv), || {
+        recognizers::ScaleGestureRecognizer::new(&GestureSettings::default())
+    });
+    r.on_start = Some(Box::new(f));
+}
+
+#[doc(hidden)]
+pub fn __internal_on_scale_update(
+    iv: &mut crate::elements::Interactivity,
+    f: impl FnMut(recognizers::ScaleUpdateDetails, &mut crate::Window, &mut crate::App) + 'static,
+) {
+    let r = find_or_push(__recognizers_mut(iv), || {
+        recognizers::ScaleGestureRecognizer::new(&GestureSettings::default())
+    });
+    r.on_update = Some(Box::new(f));
+}
+
+#[doc(hidden)]
+pub fn __internal_on_scale_end(
+    iv: &mut crate::elements::Interactivity,
+    f: impl FnMut(recognizers::ScaleEndDetails, &mut crate::Window, &mut crate::App) + 'static,
+) {
+    let r = find_or_push(__recognizers_mut(iv), || {
+        recognizers::ScaleGestureRecognizer::new(&GestureSettings::default())
+    });
+    r.on_end = Some(Box::new(f));
+}
+

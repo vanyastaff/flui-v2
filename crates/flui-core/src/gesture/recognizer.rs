@@ -29,7 +29,13 @@ use crate::FocusHandle;
 /// in-flight asynchronous work (e.g. `LongPress` timers).
 /// Implementations MUST store `Task` handles such that dropping the
 /// recognizer drops the `Task` and cancels its future.
-pub trait GestureRecognizer {
+pub trait GestureRecognizer: 'static {
+    /// Downcast hook for the fluent-builder API on `InteractiveElement`.
+    /// Implementations should return `self` directly. The trait remains
+    /// object-safe; this method is the standard pattern for typed
+    /// downcasting through `Box<dyn GestureRecognizer>`.
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
+
     /// A short human-readable name (e.g. `"tap"`, `"long_press"`).
     /// Used in `log::*` `kv` fields.
     fn name(&self) -> &'static str;

@@ -4296,21 +4296,64 @@ impl Window {
                 gesture_sanitizer.convert(&event, gesture_pointer_state)
             };
 
-            // Query hit-test for each translated pointer event so the
-            // call site exists before T15 wires it into the arena.
-            // For hover events, diff against the prior hit-test to
-            // synthesize Enter/Exit transitions.
+            // Query hit-test for each translated pointer event,
+            // synthesize Enter/Exit transitions on hover, and dispatch
+            // through the arena. Recognizer registration is per-element
+            // and currently happens in T15 follow-up wiring inside
+            // `Interactivity::paint`; until that wiring lands, the
+            // arena will be empty for most pointer events and
+            // `arena.dispatch` is effectively a no-op. The call sites
+            // below are stable: T15-followup will populate the arena
+            // without touching `dispatch_event`.
             for pe in pointer_events.iter() {
                 let hit_test = self.hit_test(pe.position);
-                let Window {
-                    gesture_sanitizer,
-                    gesture_pointer_state,
-                    ..
-                } = self;
-                let _hover_diff = gesture_sanitizer.diff_hover(pe, &hit_test, gesture_pointer_state);
-                // T15 will: arena.dispatch(pe, hit_test, ...);
-                //   then `cx.propagate_event = true;`
-                //   then existing dispatch_mouse_event chain runs.
+                {
+                    let Window {
+                        gesture_sanitizer,
+                        gesture_pointer_state,
+                        ..
+                    } = self;
+                    let _hover_diff =
+                        gesture_sanitizer.diff_hover(pe, &hit_test, gesture_pointer_state);
+                }
+
+                // Arena pass — eager-accept fires; sweep on `Up`
+                // declares the first registered the winner; `Cancel`
+                // forces all entries `rejected`. The arena is keyed
+                // per-pointer; multiple events on the same pointer
+                // funnel through the same arena.
+                //
+                // The `mem::take` dance mirrors `dispatch_mouse_event`'s
+                // handling of `rendered_frame.mouse_listeners`: extract
+                // the arena (replacing with `Default`), dispatch
+                // (which needs `&mut self` for `&mut Window`), then
+                // restore the arena (which may have grown new entries
+                // from sibling element callbacks).
+                let mut arena = std::mem::take(self.gesture_binding.arena_mut());
+                arena.dispatch(pe.pointer_id, pe, self, cx);
+                match pe.phase {
+                    crate::gesture::PointerPhase::Up => {
+                        arena.sweep(pe.pointer_id, self, cx);
+                    }
+                    crate::gesture::PointerPhase::Cancel => {
+                        arena.cancel(pe.pointer_id, self, cx);
+                    }
+                    _ => {}
+                }
+                // Merge back: any entries the dispatched callbacks
+                // added land in the live arena alongside the
+                // restored one.
+                let mut live = std::mem::take(self.gesture_binding.arena_mut());
+                arena.arenas.extend(live.arenas.drain(..));
+                *self.gesture_binding.arena_mut() = arena;
+
+                // Boundary reset — guarantees that recognizer
+                // `cx.stop_propagation()` calls (forbidden by trait
+                // contract; verified by T17 tests) cannot suppress
+                // raw `on_mouse_*` listeners, preserving the
+                // `cx.active_drag` / `AnyDrag` contract. See the
+                // design doc § "Window::dispatch_event integration".
+                cx.propagate_event = true;
             }
         }
 

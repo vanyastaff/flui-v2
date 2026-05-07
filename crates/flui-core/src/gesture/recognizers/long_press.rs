@@ -96,6 +96,10 @@ impl LongPressGestureRecognizer {
 }
 
 impl GestureRecognizer for LongPressGestureRecognizer {
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
     fn name(&self) -> &'static str {
         "long_press"
     }
