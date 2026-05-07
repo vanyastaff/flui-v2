@@ -144,13 +144,34 @@ Verified by **T22** bench fixture (`cargo run -p flui-core --release --example g
 ### Phase E — Element + dispatch integration
 
 - [x] **T14:** Extend `Interactivity` with `gesture_recognizers: SmallVec<[Box<dyn GestureRecognizer>; 4]>` AND `hit_test_behavior: HitTestBehavior` (default `Opaque`). Fluent builders on `InteractiveElement`: `with_hit_test_behavior`, `on_tap`, `on_double_tap`, `on_long_press_{start,move,end}`, `on_pan_{start,update,end}`, `on_horizontal_drag_{start,update,end}`, `on_vertical_drag_{start,update,end}`, `on_scale_{start,update,end}`.
-### T15 follow-up backlog (Copilot review)
+### T15 — recognizer registration through paint+dispatch (LANDED)
 
-These deferred items must land together because they all depend on a unified paint-time recognizer-registration bridge:
+The minimal user-facing wiring is now in place: `Interactivity::paint`
+parks each frame's recognizers + `HitTestBehavior` keyed by `HitboxId`
+into a per-`Window` map (`pending_recognizers` and the existing
+`hit_test_behaviors`). On `PointerPhase::Down`, the dispatcher walks
+the hit-test result front-to-back, drains the map for each entry,
+and calls `recognizer.add_pointer` + `arena.add`. `Translucent` and
+`DeferToChild` entries forward through to elements behind them;
+`Opaque` ends the walk. Per-frame clear lives in `Window::draw`.
 
-- **D — `arena::dispatch` `mem::take` merge.** `arena.arenas.extend(live.arenas.drain(..))` can introduce duplicate `(PointerId, GestureArena)` entries if a recognizer callback adds a sibling registration on the same pointer mid-dispatch. Bench shows it cannot happen today (no live caller of `arena.add` from a callback), but T15 paint-time registration *is* a live caller. Fix: merge by `PointerId` (append entries into an existing arena for that pointer) when restoring after `mem::take`. Co-land with T15 wiring.
-- **I — DoubleTap `arena.hold` / `arena.release`.** `Window::dispatch_event` sweeps the arena on every `Up`. With current dispatch, `DoubleTapGestureRecognizer` cannot win because the first `Up` triggers a sweep that closes the arena before the second `Down` arrives. Fix: in T15 paint-time wiring, mark the arena as `held` after a `DoubleTap` recognizer's first `Up` and release on either successful second tap or `double_tap_timeout`. Architectural twin of D — both depend on the registration bridge knowing per-recognizer arena participation.
-- **K — `MouseExit` → `Removed` semantics.** `dispatch.rs::convert` translates `MouseExitEvent` ("mouse leaves the window") to `PointerPhase::Exit`, but `Exit` is documented as leaving a *hit-test target* (synthesized via `diff_hover`). T15 should retranslate window exit to `PointerPhase::Removed` (the documented "device left the application" phase) and let `diff_hover` synthesize per-target `Exit`s on its own. Touch / Stylus integration also goes through this rework.
+This makes the `on_tap` / `on_pan_*` / `on_horizontal_drag_*` /
+`on_vertical_drag_*` / `on_scale_*` fluent builders fire end-to-end
+through the production dispatch path — the public API is no longer
+purely decorative.
+
+### T15.5 follow-up backlog (Copilot review — deferred)
+
+The remaining wiring items are architecturally larger and intentionally
+deferred to a separate PR so this one does not balloon. Each is
+isolated and documented; none of them blocks the runtime path that
+T15 above unlocked.
+
+- **D — `arena::dispatch` `mem::take` merge.** `arena.arenas.extend(live.arenas.drain(..))` can introduce duplicate `(PointerId, GestureArena)` entries if a recognizer callback adds a sibling registration on the same pointer mid-dispatch. T15's paint-time registration runs **before** dispatch (not from inside a callback), so the duplicate path is currently unreachable in practice — but the merge logic is fragile and should be tightened to merge-by-`PointerId` before any in-callback registration ever lands.
+- **I — DoubleTap `arena.hold` / `arena.release`.** `Window::dispatch_event` sweeps the arena on every `Up`. The first `Up` triggers a sweep that closes the arena before the second `Down` arrives, so `DoubleTapGestureRecognizer` cannot win in the production path. Fix: detect `DoubleTap` participation in dispatch and `arena.hold` after the first `Up`, release on either second tap acceptance or `double_tap_timeout`. (The recognizer itself is correct; only the dispatcher integration is missing.)
+- **K — `MouseExit` → `Removed` semantics.** `dispatch.rs::convert` translates `MouseExitEvent` ("mouse leaves the window") to `PointerPhase::Exit`, but `Exit` is documented as leaving a *hit-test target* (synthesized via `diff_hover`). Retranslate window exit to `PointerPhase::Removed` and let `diff_hover` synthesize per-target `Exit`s on its own. Touch / Stylus integration also passes through this rework.
+- **End-to-end integration test through `Window::dispatch_event`.** A test that drives synthetic `MouseDown`/`MouseUp` `PlatformInput` events through the production path and asserts `on_tap` fires would lock T15. It needs `VisualTestContext` (currently gated behind `test-support`, which transitively requires `wayland` / `x11` features that do not build on Windows). The test will land alongside the workspace-level fix that decouples `test-support` from platform features.
+- **LongPress arena back-channel.** The recognizer's `arena_back_channel` (Weak<RefCell<GestureArenaManager>>) is still unwired — the timer fires but cannot call `arena.declare_winner`. Wiring requires the registration bridge to thread a `Weak<RefCell<...>>` from `GestureBinding` into each `LongPressGestureRecognizer` at registration time.
 
 ### Closed items
 

@@ -955,6 +955,21 @@ pub struct Window {
     /// `mouse_hit_test`).
     pub(crate) hit_test_behaviors:
         collections::FxHashMap<HitboxId, crate::gesture::HitTestBehavior>,
+    /// Per-frame map of recognizers registered by
+    /// `Interactivity::paint`, keyed by `HitboxId`. The dispatcher
+    /// drains entries on `PointerPhase::Down`: for each hitbox in the
+    /// hit-test result, the registered recognizers are inserted into
+    /// the per-pointer arena and their `add_pointer` is called.
+    /// Storing as `Rc<RefCell<Box<dyn ...>>>` lets the same instance
+    /// live both in this map (during paint→dispatch transit) and in
+    /// the arena (during the in-flight gesture). Cleared at the start
+    /// of each frame.
+    pub(crate) pending_recognizers: collections::FxHashMap<
+        HitboxId,
+        smallvec::SmallVec<
+            [std::rc::Rc<std::cell::RefCell<Box<dyn crate::gesture::GestureRecognizer>>>; 4],
+        >,
+    >,
     /// Per-`Window` pointer-state cache for the gesture dispatch path
     /// (T6 — wires the existing `dispatch_event` path through
     /// `gesture::dispatch::translate_*` before the existing
@@ -1458,6 +1473,7 @@ impl Window {
             mouse_position,
             mouse_hit_test: HitTest::default(),
             hit_test_behaviors: collections::FxHashMap::default(),
+            pending_recognizers: collections::FxHashMap::default(),
             gesture_pointer_state: crate::gesture::dispatch::WindowPointerState::default(),
             gesture_sanitizer: crate::gesture::dispatch::PointerSanitizer,
             gesture_binding: crate::gesture::GestureBinding::default(),
@@ -2323,6 +2339,10 @@ impl Window {
         // entries from previous frames accumulate forever and stale
         // behaviors leak across hitbox reuse — Copilot review B.
         self.hit_test_behaviors.clear();
+        // Same lifecycle for `pending_recognizers` (T15) — paint
+        // refills the map with that frame's gesture recognizers; the
+        // dispatcher drains them on `PointerPhase::Down`.
+        self.pending_recognizers.clear();
 
         // Restore the previously-used input handler.
         if let Some(input_handler) = self.platform_window.take_input_handler() {
@@ -4314,14 +4334,10 @@ impl Window {
             };
 
             // Query hit-test for each translated pointer event,
-            // synthesize Enter/Exit transitions on hover, and dispatch
-            // through the arena. Recognizer registration is per-element
-            // and currently happens in T15 follow-up wiring inside
-            // `Interactivity::paint`; until that wiring lands, the
-            // arena will be empty for most pointer events and
-            // `arena.dispatch` is effectively a no-op. The call sites
-            // below are stable: T15-followup will populate the arena
-            // without touching `dispatch_event`.
+            // synthesize Enter/Exit transitions on hover, register
+            // any recognizers parked by `Interactivity::paint` for
+            // hitboxes under the pointer, and dispatch through the
+            // arena.
             for pe in pointer_events.iter() {
                 let hit_test = self.hit_test(pe.position);
                 {
@@ -4333,16 +4349,42 @@ impl Window {
                     // Hover Enter/Exit synthesis. The call mutates
                     // `state.prior_hover_hitboxes` so the next frame's
                     // diff is correct, but the returned synthetic
-                    // events are not yet dispatched: T15 will route
-                    // them through arena/hover-listeners in the same
-                    // pass it wires recognizer registration. Leaving
-                    // the state-mutation in place keeps the diff
+                    // events are not yet dispatched: T15.5 will route
+                    // them through arena/hover-listeners. Leaving the
+                    // state-mutation in place keeps the diff
                     // bootstrapped — removing it would force the
                     // first dispatched frame after T15 to compare
                     // against an empty set and emit a flood of
                     // spurious Enters. (Copilot review C.)
                     let _hover_events =
                         gesture_sanitizer.diff_hover(pe, &hit_test, gesture_pointer_state);
+                }
+
+                // S07 T15 — recognizer registration. On `Down`, walk
+                // the hit-test result front-to-back and drain the
+                // recognizers that `Interactivity::paint` parked
+                // under each `HitboxId`. Each recognizer joins the
+                // arena keyed by `pe.pointer_id` and observes the
+                // initiating event via `add_pointer`, then continues
+                // to receive the rest of the gesture through the
+                // arena's `dispatch` chain below. `Translucent` /
+                // `DeferToChild` entries forward through to the next
+                // hitbox behind them; `Opaque` ends the walk.
+                if matches!(pe.phase, crate::gesture::PointerPhase::Down) {
+                    for entry in hit_test.iter() {
+                        let recs = self.pending_recognizers.remove(&entry.hitbox_id);
+                        if let Some(recs) = recs {
+                            let mut arena = std::mem::take(self.gesture_binding.arena_mut());
+                            for rec in recs.iter() {
+                                rec.borrow_mut().add_pointer(pe.pointer_id, pe);
+                                arena.add(pe.pointer_id, std::rc::Rc::clone(rec));
+                            }
+                            *self.gesture_binding.arena_mut() = arena;
+                        }
+                        if matches!(entry.behavior, crate::gesture::HitTestBehavior::Opaque) {
+                            break;
+                        }
+                    }
                 }
 
                 // Arena pass — eager-accept fires; sweep on `Up`

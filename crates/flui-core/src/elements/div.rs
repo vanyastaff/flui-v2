@@ -2121,6 +2121,14 @@ impl Interactivity {
             || self.drag_listener.is_some()
             || !self.drop_listeners.is_empty()
             || self.tooltip_builder.is_some()
+            // S07 T15 — elements that registered gesture recognizers
+            // through the fluent builders (`on_tap`, `on_pan_*`, …)
+            // need a hitbox so the gesture dispatcher can locate them
+            // on `PointerPhase::Down`. Without this gate, a div whose
+            // only interactivity is a tap recognizer would skip
+            // `insert_hitbox` and never appear in the hit-test result.
+            || !self.gesture_recognizers.is_empty()
+            || self.hit_test_behavior != crate::gesture::HitTestBehavior::Opaque
             || window.is_inspector_picking(cx)
     }
 
@@ -2239,6 +2247,47 @@ impl Interactivity {
                                 |window| {
                                     window.with_tab_group(tab_group, |window| {
                                         if let Some(hitbox) = hitbox {
+                                            // S07 T15 — register gesture recognizers and
+                                            // hit-test behavior for this element on the
+                                            // current frame. The dispatcher reads these on
+                                            // `PointerPhase::Down` to populate per-pointer
+                                            // arenas. Recognizers are promoted from
+                                            // `Box<dyn ...>` to `Rc<RefCell<Box<dyn ...>>>`
+                                            // so the same instance can live in both the
+                                            // pending map and the arena once registered.
+                                            // The originals are consumed (`mem::take`)
+                                            // because GPUI rebuilds the element tree on
+                                            // every render — fluent builders run again on
+                                            // the next render call and produce fresh
+                                            // recognizer instances.
+                                            window
+                                                .hit_test_behaviors
+                                                .insert(hitbox.id, self.hit_test_behavior);
+                                            let recs = std::mem::take(&mut self.gesture_recognizers);
+                                            if !recs.is_empty() {
+                                                let promoted: smallvec::SmallVec<
+                                                    [std::rc::Rc<
+                                                        std::cell::RefCell<
+                                                            Box<
+                                                                dyn crate::gesture::GestureRecognizer,
+                                                            >,
+                                                        >,
+                                                    >; 4],
+                                                > = recs
+                                                    .into_iter()
+                                                    .map(|b| {
+                                                        std::rc::Rc::new(
+                                                            std::cell::RefCell::new(b),
+                                                        )
+                                                    })
+                                                    .collect();
+                                                window
+                                                    .pending_recognizers
+                                                    .entry(hitbox.id)
+                                                    .or_default()
+                                                    .extend(promoted);
+                                            }
+
                                             #[cfg(debug_assertions)]
                                             self.paint_debug_info(
                                                 global_id, hitbox, &style, window, cx,
