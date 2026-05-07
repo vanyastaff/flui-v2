@@ -12,7 +12,7 @@ The project is currently in Phase I of a multi-phase roadmap focused on (1) extr
 - Entity / View / Element runtime derived from GPUI: `App`, `Entity`, `Context`, `Window`.
 - Painting primitives: `scene`, `path_builder`, `style`, Taffy-based layout, text system (cosmic-text / swash).
 - Async runtime: `scheduler`, `executor`, `queue`, `animation` with `AnimationController`.
-- Input pipeline: `input`, `interactive`, `key_dispatch`, `keymap`, `tab_stop`.
+- Input pipeline: `input`, `interactive`, `key_dispatch`, `keymap`, `tab_stop`, plus `gesture` (S07) — Flutter-style competing recognizers (`Tap`, `DoubleTap`, `LongPress`, `Pan`/`HorizontalDrag`/`VerticalDrag`, `Scale`), per-`Window` `GestureBinding`, explicit hit-test protocol with `HitTestBehavior` (`Opaque`/`Translucent`/`DeferToChild`), and a `VelocityTracker` (Flutter-LSQ port).
 - Type-safe routing via `flui-navigator` (nested routes, transitions, guards, middleware).
 - Procedural macros (`flui-macros`): `derive(Render)`, `derive(IntoElement)`, etc.
 - Skeleton crates ready for incremental population: `flui-platform`, `flui-animate`, `flui-a11y`, `flui-theme`, `flui-material`, `flui-widgets`.

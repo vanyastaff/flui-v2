@@ -27,7 +27,7 @@ Numbering convention:
 
 ### Phase II — Flutter-parity core subsystems (active strategic direction)
 
-- [ ] **S07 GestureArena** — competing recognizers (tap, double-tap, long-press, drag, scale, horizontal/vertical drag), hit-test protocol [Gap B]
+- [x] **S07 GestureArena** — competing recognizers (tap, double-tap, long-press, drag, scale, horizontal/vertical drag), hit-test protocol [Gap B]
 - [ ] **S08 Semantics protocol** — `SemanticsNode` tree, `SemanticsOwner`, actions, roles/hints/labels, hooks for `flui-a11y` [Gap F]
 - [ ] **S09 Canvas facade** — unified `Canvas` API over `scene` + `path_builder`; `saveLayer`, clips, transforms, blend modes [Gap C]
 - [ ] **S10 Image filters** — `ImageFilter` (blur, matrix), `ColorFilter`, `BackdropFilter`, `MaskFilter`. Depends on S09 [Gap C]
@@ -111,6 +111,7 @@ Numbering convention:
 | S01c behaviour pinning (non-rendering) | 2026-04-13 |
 | S01d extraction facades | 2026-04-13 |
 | S02a flui-platform crate skeleton | 2026-04-13 |
+| S07 GestureArena (competing recognizers, hit-test protocol, arena binding, settings, velocity tracker, demo, bench, properties) | 2026-05-07 |
 
 ## Cross-track dependencies
 

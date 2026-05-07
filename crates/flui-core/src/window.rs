@@ -946,6 +946,41 @@ pub struct Window {
     default_prevented: bool,
     mouse_position: Point<Pixels>,
     mouse_hit_test: HitTest,
+    /// Per-frame map populated by `Interactivity::paint` (T14)
+    /// recording each hitbox's `HitTestBehavior` (Opaque /
+    /// Translucent / DeferToChild). `Window::hit_test` queries this
+    /// map; entries default to `HitTestBehavior::Opaque` when the
+    /// hitbox is not associated with an `Interactivity` (painted-only
+    /// case). Cleared at the start of each frame (alongside
+    /// `mouse_hit_test`).
+    pub(crate) hit_test_behaviors:
+        collections::FxHashMap<HitboxId, crate::gesture::HitTestBehavior>,
+    /// Per-frame map of recognizers registered by
+    /// `Interactivity::paint`, keyed by `HitboxId`. The dispatcher
+    /// drains entries on `PointerPhase::Down`: for each hitbox in the
+    /// hit-test result, the registered recognizers are inserted into
+    /// the per-pointer arena and their `add_pointer` is called.
+    /// Storing as `Rc<RefCell<Box<dyn ...>>>` lets the same instance
+    /// live both in this map (during paint→dispatch transit) and in
+    /// the arena (during the in-flight gesture). Cleared at the start
+    /// of each frame.
+    pub(crate) pending_recognizers: collections::FxHashMap<
+        HitboxId,
+        smallvec::SmallVec<
+            [std::rc::Rc<std::cell::RefCell<Box<dyn crate::gesture::GestureRecognizer>>>; 4],
+        >,
+    >,
+    /// Per-`Window` pointer-state cache for the gesture dispatch path
+    /// (T6 — wires the existing `dispatch_event` path through
+    /// `gesture::dispatch::translate_*` before the existing
+    /// `dispatch_mouse_event` chain).
+    pub(crate) gesture_pointer_state: crate::gesture::dispatch::WindowPointerState,
+    /// `PointerSanitizer` for the gesture dispatch path. T20 grows
+    /// per-pointer state inside this; T4 ships it stateless.
+    pub(crate) gesture_sanitizer: crate::gesture::dispatch::PointerSanitizer,
+    /// Per-`Window` gesture arena + settings + sanitizer (T21). Owns
+    /// the recognizer-competition machinery.
+    pub(crate) gesture_binding: crate::gesture::GestureBinding,
     modifiers: Modifiers,
     capslock: Capslock,
     scale_factor: f32,
@@ -1437,6 +1472,11 @@ impl Window {
             default_prevented: true,
             mouse_position,
             mouse_hit_test: HitTest::default(),
+            hit_test_behaviors: collections::FxHashMap::default(),
+            pending_recognizers: collections::FxHashMap::default(),
+            gesture_pointer_state: crate::gesture::dispatch::WindowPointerState::default(),
+            gesture_sanitizer: crate::gesture::dispatch::PointerSanitizer,
+            gesture_binding: crate::gesture::GestureBinding::default(),
             modifiers,
             capslock,
             scale_factor,
@@ -2179,6 +2219,67 @@ impl Window {
         self.mouse_position
     }
 
+    /// Borrow the per-`Window` gesture binding (arena + settings +
+    /// sanitizer). See [`crate::gesture::GestureBinding`].
+    pub fn gesture_binding(&self) -> &crate::gesture::GestureBinding {
+        &self.gesture_binding
+    }
+
+    /// Mutably borrow the per-`Window` gesture binding.
+    pub fn gesture_binding_mut(&mut self) -> &mut crate::gesture::GestureBinding {
+        &mut self.gesture_binding
+    }
+
+    /// Mutate gesture thresholds. The S14 MediaQuery seam — when
+    /// `MediaQueryData::gesture_settings` lands, it routes through
+    /// this accessor.
+    pub fn gesture_settings_mut(&mut self) -> &mut crate::gesture::GestureSettings {
+        self.gesture_binding.settings_mut()
+    }
+
+    /// Compute a typed `HitTestResult` for `position` against the
+    /// rendered frame, paired with each entry's `HitTestBehavior`
+    /// from the per-frame [`Self::hit_test_behaviors`] map.
+    ///
+    /// Always honours `position`: walks `rendered_frame.hit_test(position)`
+    /// rather than relying on the cached `mouse_hit_test` (which is
+    /// only fresh for the current `mouse_position` and is updated
+    /// downstream inside `dispatch_mouse_event`). This matters in the
+    /// gesture pass that runs **before** `dispatch_mouse_event`:
+    /// recognizers receive a `HitTestResult` for the actual event
+    /// position, not for the previous frame's mouse position
+    /// (Copilot review A).
+    ///
+    /// Cost: O(n) over hitboxes in the rendered frame. Spatial
+    /// indexing (BVH/quadtree) is deferred to a P-track perf
+    /// milestone — current linear scan over `SmallVec<[HitboxId; 8]>`
+    /// is sufficient for trees of up to ~16 hitboxes typical of
+    /// `flui-core` consumers.
+    pub fn hit_test(&self, position: Point<Pixels>) -> crate::gesture::HitTestResult {
+        let mut result = crate::gesture::HitTestResult::default();
+        let frame_hit = self.rendered_frame.hit_test(position);
+        for &hitbox_id in frame_hit.ids.iter() {
+            let behavior = self
+                .hit_test_behaviors
+                .get(&hitbox_id)
+                .copied()
+                .unwrap_or(crate::gesture::HitTestBehavior::Opaque);
+            // SmallVec inline storage is 8; pushing more than 8 hits
+            // a one-time heap allocation that we accept for the rare
+            // very-deep-nesting case. T22 bench enforces the
+            // `<2µs/query` budget in the realistic 8-deep case.
+            //
+            // `HitTestEntry` is `#[non_exhaustive]` for downstream
+            // consumers; same-crate code can use the struct literal.
+            result.push(crate::gesture::HitTestEntry {
+                hitbox_id,
+                position,
+                behavior,
+            });
+        }
+        result
+    }
+
     /// Captures the pointer for the given hitbox. While captured, all mouse move and mouse up
     /// events will be routed to listeners that check this hitbox's `is_hovered` status,
     /// regardless of actual hit testing. This enables drag operations that continue
@@ -2232,6 +2333,16 @@ impl Window {
         debug_assert!(self.rendered_entity_stack.is_empty());
         self.invalidator.set_dirty(false);
         self.requested_autoscroll = None;
+
+        // Clear the per-frame `HitTestBehavior` map before painting
+        // refills it from `Interactivity::paint` (T14). Without this,
+        // entries from previous frames accumulate forever and stale
+        // behaviors leak across hitbox reuse — Copilot review B.
+        self.hit_test_behaviors.clear();
+        // Same lifecycle for `pending_recognizers` (T15) — paint
+        // refills the map with that frame's gesture recognizers; the
+        // dispatcher drains them on `PointerPhase::Down`.
+        self.pending_recognizers.clear();
 
         // Restore the previously-used input handler.
         if let Some(input_handler) = self.platform_window.take_input_handler() {
@@ -4175,6 +4286,146 @@ impl Window {
             },
             PlatformInput::KeyDown(_) | PlatformInput::KeyUp(_) => event,
         };
+
+        // S07 T6 — Gesture-pass scaffold.
+        //
+        // Translate the inbound `PlatformInput` into normalized
+        // `PointerEvent`s / `PointerSignalEvent`s for downstream
+        // consumption by the gesture arena (T15 will wire the arena
+        // dispatch + listener-chain reset). For T6 the translation
+        // runs and updates the per-`Window` `gesture_pointer_state`
+        // (so that delta / pressure / button-state caches stay
+        // current), but the produced events are discarded — recognizers
+        // do not exist yet (T7–T13).
+        //
+        // The arena pass MUST be isolated from the existing
+        // `dispatch_mouse_event` listener chain by an explicit
+        // `cx.propagate_event = true` reset, otherwise a recognizer's
+        // `cx.stop_propagation()` would silently break the
+        // `cx.active_drag` / `AnyDrag` contract — see
+        // `crate::gesture::recognizer` trait docs and the design doc
+        // § "Window::dispatch_event integration".
+        {
+            // Refresh the per-Window content bounds so the sanitizer
+            // can clamp out-of-bounds positions (Wayland decoration
+            // drag).
+            let bounds = self.bounds();
+            self.gesture_pointer_state.window_bounds = bounds;
+
+            // PointerSignalEvent (Scroll / Magnify) explicitly bypasses
+            // the gesture arena per the design — those events have no
+            // competition semantics. Today the legacy `on_scroll_wheel`
+            // / `on_pinch` listener chain in `dispatch_mouse_event`
+            // below still handles them; T15 will surface a typed
+            // listener API on `InteractiveElement` and dispatch from
+            // this site. Until then we deliberately do not call
+            // `gesture_sanitizer.convert_signal(...)` — Copilot review
+            // C flagged the old `let _signal = ...` as unused work.
+            // The translator method itself stays `pub(crate)` and
+            // covered by `dispatch.rs::tests` so T15 can flip the
+            // wiring in one site without re-discovering its shape.
+            let pointer_events = {
+                let Window {
+                    gesture_sanitizer,
+                    gesture_pointer_state,
+                    ..
+                } = self;
+                gesture_sanitizer.convert(&event, gesture_pointer_state)
+            };
+
+            // Query hit-test for each translated pointer event,
+            // synthesize Enter/Exit transitions on hover, register
+            // any recognizers parked by `Interactivity::paint` for
+            // hitboxes under the pointer, and dispatch through the
+            // arena.
+            for pe in pointer_events.iter() {
+                let hit_test = self.hit_test(pe.position);
+                {
+                    let Window {
+                        gesture_sanitizer,
+                        gesture_pointer_state,
+                        ..
+                    } = self;
+                    // Hover Enter/Exit synthesis. The call mutates
+                    // `state.prior_hover_hitboxes` so the next frame's
+                    // diff is correct, but the returned synthetic
+                    // events are not yet dispatched: T15.5 will route
+                    // them through arena/hover-listeners. Leaving the
+                    // state-mutation in place keeps the diff
+                    // bootstrapped — removing it would force the
+                    // first dispatched frame after T15 to compare
+                    // against an empty set and emit a flood of
+                    // spurious Enters. (Copilot review C.)
+                    let _hover_events =
+                        gesture_sanitizer.diff_hover(pe, &hit_test, gesture_pointer_state);
+                }
+
+                // S07 T15 — recognizer registration. On `Down`, walk
+                // the hit-test result front-to-back and drain the
+                // recognizers that `Interactivity::paint` parked
+                // under each `HitboxId`. Each recognizer joins the
+                // arena keyed by `pe.pointer_id` and observes the
+                // initiating event via `add_pointer`, then continues
+                // to receive the rest of the gesture through the
+                // arena's `dispatch` chain below. `Translucent` /
+                // `DeferToChild` entries forward through to the next
+                // hitbox behind them; `Opaque` ends the walk.
+                if matches!(pe.phase, crate::gesture::PointerPhase::Down) {
+                    for entry in hit_test.iter() {
+                        let recs = self.pending_recognizers.remove(&entry.hitbox_id);
+                        if let Some(recs) = recs {
+                            let mut arena = std::mem::take(self.gesture_binding.arena_mut());
+                            for rec in recs.iter() {
+                                rec.borrow_mut().add_pointer(pe.pointer_id, pe);
+                                arena.add(pe.pointer_id, std::rc::Rc::clone(rec));
+                            }
+                            *self.gesture_binding.arena_mut() = arena;
+                        }
+                        if matches!(entry.behavior, crate::gesture::HitTestBehavior::Opaque) {
+                            break;
+                        }
+                    }
+                }
+
+                // Arena pass — eager-accept fires; sweep on `Up`
+                // declares the first registered the winner; `Cancel`
+                // forces all entries `rejected`. The arena is keyed
+                // per-pointer; multiple events on the same pointer
+                // funnel through the same arena.
+                //
+                // The `mem::take` dance mirrors `dispatch_mouse_event`'s
+                // handling of `rendered_frame.mouse_listeners`: extract
+                // the arena (replacing with `Default`), dispatch
+                // (which needs `&mut self` for `&mut Window`), then
+                // restore the arena (which may have grown new entries
+                // from sibling element callbacks).
+                let mut arena = std::mem::take(self.gesture_binding.arena_mut());
+                arena.dispatch(pe.pointer_id, pe, self, cx);
+                match pe.phase {
+                    crate::gesture::PointerPhase::Up => {
+                        arena.sweep(pe.pointer_id, self, cx);
+                    }
+                    crate::gesture::PointerPhase::Cancel => {
+                        arena.cancel(pe.pointer_id, self, cx);
+                    }
+                    _ => {}
+                }
+                // Merge back: any entries the dispatched callbacks
+                // added land in the live arena alongside the
+                // restored one.
+                let mut live = std::mem::take(self.gesture_binding.arena_mut());
+                arena.arenas.extend(live.arenas.drain(..));
+                *self.gesture_binding.arena_mut() = arena;
+
+                // Boundary reset — guarantees that recognizer
+                // `cx.stop_propagation()` calls (forbidden by trait
+                // contract; verified by T17 tests) cannot suppress
+                // raw `on_mouse_*` listeners, preserving the
+                // `cx.active_drag` / `AnyDrag` contract. See the
+                // design doc § "Window::dispatch_event integration".
+                cx.propagate_event = true;
+            }
+        }
 
         if let Some(any_mouse_event) = event.mouse_event() {
             self.dispatch_mouse_event(any_mouse_event, cx);

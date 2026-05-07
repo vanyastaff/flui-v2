@@ -27,6 +27,10 @@ mod executor;
 mod platform_scheduler;
 pub(crate) use platform_scheduler::PlatformScheduler;
 mod geometry;
+/// Gesture arena, normalized pointer events, hit-test protocol, and
+/// competing recognizers (Tap, DoubleTap, LongPress, Drag, Scale).
+/// See `docs/superpowers/specs/2026-05-06-S07-gesture-arena-design.md`.
+pub mod gesture;
 mod global;
 mod input;
 mod inspector;
@@ -105,7 +109,35 @@ pub use flui_macros::{
     AppContext, IntoElement, Render, VisualContext, derive_inspector_reflection, register_action,
     test,
 };
+// `flui_macros::property_test` is intentionally NOT re-exported here.
+// The macro expansion emits `::flui_core::proptest::property_test`,
+// which does not exist in the `proptest = "1"` crate's default
+// feature set — that proc-macro attribute lives in `test-strategy` /
+// `proptest-attr-macro` and is not yet a workspace dependency. Until
+// then, downstream property tests should call `proptest::TestRunner`
+// directly (see the T23 properties in `gesture/arena.rs::tests` for
+// the working pattern). Adding the re-export back is a one-line
+// change once the macro source is wired.
 pub use geometry::*;
+// Gesture / pointer / hit-test (S07) — core types and arena facade.
+// `GestureArena`, `GestureArenaEntry`, `GestureArenaManager`, and
+// `PointerSanitizer` are deliberately omitted (pub(crate)-only per
+// the S07 T2 review). Per-symbol re-exports follow the S01a.3 flat
+// path discipline; do NOT introduce `pub use gesture::*;` glob.
+pub use gesture::{
+    GestureArenaTeam, GestureBinding, GestureDisposition, GestureRecognizer, GestureSettings,
+    HitTestBehavior, HitTestEntry, HitTestResult, PointerButtons, PointerEvent, PointerId,
+    PointerKind, PointerPhase, PointerSignalEvent, PositionSample, SemanticAction, Velocity,
+    VelocityTracker,
+};
+// Gesture concrete recognizers (S07).
+pub use gesture::recognizers::{
+    DoubleTapDetails, DoubleTapGestureRecognizer, DragEndDetails, DragStartDetails,
+    DragUpdateDetails, HorizontalDragGestureRecognizer, LongPressDetails,
+    LongPressGestureRecognizer, PanGestureRecognizer, ScaleEndDetails, ScaleGestureRecognizer,
+    ScaleStartDetails, ScaleUpdateDetails, TapDetails, TapDownDetails, TapGestureRecognizer,
+    TapUpDetails, VerticalDragGestureRecognizer,
+};
 pub use global::*;
 pub use http_client;
 pub use input::*;
