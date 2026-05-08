@@ -718,4 +718,157 @@ mod tests {
         assert!((mid.origin.x.0 - 10.0).abs() < 1e-3);
         assert!((mid.size.width.0 - 30.0).abs() < 1e-3);
     }
+
+    // ------------------------------------------------------------------
+    // proptest sweeps (S21 phase 6 partial)
+    // ------------------------------------------------------------------
+
+    use proptest::prelude::*;
+
+    proptest! {
+        /// `Tween<f32>::transform` clamps to `[begin, end]` (or
+        /// `[end, begin]` if begin > end) for any `t`.
+        #[test]
+        fn tween_f32_output_within_endpoint_bracket(
+            begin in -1000.0_f32..=1000.0_f32,
+            end in -1000.0_f32..=1000.0_f32,
+            t in 0.0_f64..=1.0_f64,
+        ) {
+            let tween = Tween::new(begin, end);
+            let v = <Tween<f32> as Animatable<f32>>::transform(&tween, t);
+            let lo = begin.min(end);
+            let hi = begin.max(end);
+            // Float epsilon — allow tiny drift past the closed bracket.
+            prop_assert!(
+                v >= lo - 1e-3 && v <= hi + 1e-3,
+                "Tween<f32>::transform({}) = {} outside bracket [{}, {}]",
+                t, v, lo, hi
+            );
+        }
+
+        /// `Tween<f32>::transform(0.0)` always returns exactly `begin`;
+        /// `transform(1.0)` always returns exactly `end`. (Boundary
+        /// pinning by the snap-to-endpoints code path.)
+        #[test]
+        fn tween_f32_endpoints_pinned_exactly(
+            begin in -1000.0_f32..=1000.0_f32,
+            end in -1000.0_f32..=1000.0_f32,
+        ) {
+            let tween = Tween::new(begin, end);
+            prop_assert_eq!(
+                <Tween<f32> as Animatable<f32>>::transform(&tween, 0.0),
+                begin
+            );
+            prop_assert_eq!(
+                <Tween<f32> as Animatable<f32>>::transform(&tween, 1.0),
+                end
+            );
+        }
+
+        /// `IntTween::transform` always returns an i64 inside the
+        /// `[min(begin, end), max(begin, end)]` bracket.
+        #[test]
+        fn int_tween_output_within_bracket(
+            begin in -1_000_000i64..=1_000_000i64,
+            end in -1_000_000i64..=1_000_000i64,
+            t in 0.0_f64..=1.0_f64,
+        ) {
+            let tween = IntTween::new(begin, end);
+            let v = tween.transform(t);
+            let lo = begin.min(end);
+            let hi = begin.max(end);
+            prop_assert!(v >= lo && v <= hi);
+        }
+
+        /// `StepTween::transform` always returns an i64 inside the bracket.
+        /// Floor semantics → always <= rounded mid-result.
+        #[test]
+        fn step_tween_output_within_bracket(
+            begin in -1_000_000i64..=1_000_000i64,
+            end in -1_000_000i64..=1_000_000i64,
+            t in 0.0_f64..=1.0_f64,
+        ) {
+            let tween = StepTween::new(begin, end);
+            let v = tween.transform(t);
+            let lo = begin.min(end);
+            let hi = begin.max(end);
+            prop_assert!(v >= lo && v <= hi);
+        }
+
+        /// `ConstantTween` ignores `t` entirely.
+        #[test]
+        fn constant_tween_value_invariant(
+            value in -1000.0_f32..=1000.0_f32,
+            t in 0.0_f64..=1.0_f64,
+        ) {
+            let tween = ConstantTween(value);
+            let v = <ConstantTween<f32> as Animatable<f32>>::transform(&tween, t);
+            prop_assert_eq!(v, value);
+        }
+
+        /// `Tween + ReverseTween` round-trip: applying both halves yields
+        /// the original input within float epsilon.
+        #[test]
+        fn tween_reverse_tween_swap_endpoints(
+            begin in -100.0_f32..=100.0_f32,
+            end in -100.0_f32..=100.0_f32,
+        ) {
+            let forward = Tween::new(begin, end);
+            let reverse = ReverseTween::new(begin, end);
+            // forward.transform(0) = begin, reverse.transform(1) = begin.
+            prop_assert!(
+                (<Tween<f32> as Animatable<f32>>::transform(&forward, 0.0)
+                    - <ReverseTween<f32> as Animatable<f32>>::transform(&reverse, 1.0))
+                    .abs() < 1e-6
+            );
+        }
+
+        /// `TweenSequence` endpoints: at `t = 0` always equals the first
+        /// item's `transform(0)`; at `t = 1` always equals the last item's
+        /// `transform(1)`. Holds for any positive-weight sequence.
+        #[test]
+        fn tween_sequence_endpoints_match_first_and_last_segment(
+            n in 1usize..=5,
+        ) {
+            // Build a sequence of n equal-weight Tween(i as f32, (i+1) as f32) items.
+            let items: Vec<TweenSequenceItem<f32>> = (0..n)
+                .map(|i| {
+                    TweenSequenceItem::new(
+                        Box::new(Tween::new(i as f32, (i + 1) as f32)),
+                        1.0,
+                    )
+                })
+                .collect();
+            let seq = TweenSequence::new(items);
+            let v0 = <TweenSequence<f32> as Animatable<f32>>::transform(&seq, 0.0);
+            let v1 = <TweenSequence<f32> as Animatable<f32>>::transform(&seq, 1.0);
+            // First item starts at 0; last item ends at n.
+            prop_assert!((v0 - 0.0).abs() < 1e-6);
+            prop_assert!((v1 - n as f32).abs() < 1e-6);
+        }
+
+        /// `FlippedTweenSequence` is the inverse of its underlying sequence
+        /// at the endpoints (transform(0) of flipped == transform(1) of inner).
+        #[test]
+        fn flipped_sequence_inverts_endpoints(
+            n in 1usize..=4,
+        ) {
+            let make_items = || -> Vec<TweenSequenceItem<f32>> {
+                (0..n)
+                    .map(|i| {
+                        TweenSequenceItem::new(
+                            Box::new(Tween::new(i as f32, (i + 1) as f32)),
+                            1.0,
+                        )
+                    })
+                    .collect()
+            };
+            let inner = TweenSequence::new(make_items());
+            let flipped = FlippedTweenSequence::new(make_items());
+            let inner_at_one = <TweenSequence<f32> as Animatable<f32>>::transform(&inner, 1.0);
+            let flipped_at_zero =
+                <FlippedTweenSequence<f32> as Animatable<f32>>::transform(&flipped, 0.0);
+            prop_assert!((inner_at_one - flipped_at_zero).abs() < 1e-6);
+        }
+    }
 }

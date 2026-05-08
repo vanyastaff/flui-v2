@@ -564,7 +564,16 @@ The `flui-animate` skeleton was created on 2026-04-13 but has never held real co
 
 ---
 
-## Phase 6 — Testing infrastructure & golden coverage
+## Phase 6 — Testing infrastructure & golden coverage ⏸ PARTIAL 2026-05-08
+
+**Progress (S21 phase 6):** ⏸ proptest sweeps for curves + tween landed; remaining infrastructure (criterion benches, animation-frame goldens via S01b headless harness, `cargo bloat` baseline, deterministic Ticker-driven multi-controller integration tests) explicitly deferred — non-blocking; existing 116 unit + property tests cover the core surface.
+
+- [x] **proptest sweeps for curves** — 11 property-based cases in `curve.rs`: all-curves-finite-output, monotone-curves-pin-endpoints, non-overshoot-curves-stay-in-unit-interval, Linear identity, Reversed/FlippedCurve reflection symmetries, Threshold step shape, SawTooth output bracket, standard-curves weakly-monotone, CurveTween+Linear identity at the f64 boundary.
+- [x] **proptest sweeps for tween family** — 7 property-based cases in `tween.rs`: Tween<f32> output bracket + endpoint pinning, IntTween / StepTween bracket containment, ConstantTween invariant, Tween/ReverseTween endpoint swap, TweenSequence first/last item endpoints, FlippedTweenSequence reflection.
+- [ ] **Deferred:** criterion benches (curve evaluation, AnimationController tick, Tween chain depth-N) — needs `criterion = "0.5"` dev-dep + `[[bench]]` entries.
+- [ ] **Deferred:** animation-frame goldens via S01b headless harness — 30-frame deterministic render + ULP-tolerant hash comparison; needs `approx = "0.5"` dev-dep.
+- [ ] **Deferred:** `cargo bloat` baseline pre/post Phase 1.
+- [ ] **Deferred:** TestApp-driven AnimationController integration tests covering animate_to / fling / velocity (require Context<V> instance).
 
 **Outcome:** Animation correctness regressions are caught by CI; T6 (visual regression for animations) gains its first concrete tests.
 

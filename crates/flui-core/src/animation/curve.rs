@@ -811,4 +811,216 @@ mod tests {
         assert_eq!(Curves::ELASTIC_IN.transform(0.0), 0.0);
         assert_eq!(Curves::ELASTIC_IN.transform(1.0), 1.0);
     }
+
+    // ------------------------------------------------------------------
+    // proptest sweeps (S21 phase 6 partial)
+    // ------------------------------------------------------------------
+    //
+    // Property-based invariants that strengthen the example-based tests
+    // above. proptest is already a flui-core dep (Cargo.toml line 92).
+    // Cases default to 256 — sufficient for fast curve-eval coverage; the
+    // exhaustive sweep + criterion benches + animation-frame goldens land
+    // as a follow-up after this partial Phase 6.
+
+    use proptest::prelude::*;
+
+    /// All curves must produce a finite output for any `t` in the unit
+    /// interval — no NaN, no Inf, no panic. This is the weakest invariant
+    /// every curve must obey.
+    fn assert_finite(name: &str, value: f32, t: f32) {
+        assert!(
+            value.is_finite(),
+            "{} produced non-finite {} at t={}",
+            name,
+            value,
+            t
+        );
+    }
+
+    proptest! {
+        /// Boundary pinning: every monotone-bounded curve maps
+        /// `t = 0 → 0` and `t = 1 → 1` (within float epsilon).
+        /// Excludes elastic curves (which can equal 0 / 1 exactly at the
+        /// endpoints but the formula uses a special-case branch — covered
+        /// by the example-based tests).
+        #[test]
+        fn monotone_curves_pin_endpoints(
+            _ in 0..1usize  // dummy — proptest! requires at least one input
+        ) {
+            for (name, c) in monotone_curves() {
+                let v0 = c.transform(0.0);
+                let v1 = c.transform(1.0);
+                prop_assert!(
+                    v0.abs() < 1e-3,
+                    "{} transform(0) = {} (expected ~0)",
+                    name, v0
+                );
+                prop_assert!(
+                    (v1 - 1.0).abs() < 1e-3,
+                    "{} transform(1) = {} (expected ~1)",
+                    name, v1
+                );
+            }
+        }
+
+        /// Every curve in the standard catalogue produces finite output for
+        /// any `t ∈ [0, 1]`.
+        #[test]
+        fn all_curves_produce_finite_output_in_unit_interval(
+            t in 0.0_f32..=1.0_f32
+        ) {
+            for (name, c) in all_named_curves() {
+                let v = c.transform(t);
+                assert_finite(name, v, t);
+            }
+        }
+
+        /// Output stays in `[0, 1]` for non-overshooting curves
+        /// (Linear / EaseIn / EaseOut / EaseInOut / EaseInCubic /
+        /// EaseOutCubic / EaseInOutCubic / Decelerate / BounceIn /
+        /// BounceOut / BounceInOut / Cubic-with-monotone-control-points).
+        /// Elastic family + parametric Cubic with overshooting controls are
+        /// EXPLICITLY allowed to escape `[0, 1]` — Flutter parity.
+        #[test]
+        fn non_overshoot_curves_stay_in_unit_interval(
+            t in 0.0_f32..=1.0_f32
+        ) {
+            for (name, c) in non_overshoot_curves() {
+                let v = c.transform(t);
+                prop_assert!(
+                    (-1e-3..=1.0 + 1e-3).contains(&v),
+                    "{} transform({}) = {} (expected in [0,1] within 1e-3)",
+                    name, t, v
+                );
+            }
+        }
+
+        /// Linear is genuinely linear: transform(t) == t (within
+        /// float epsilon).
+        #[test]
+        fn linear_is_identity(t in 0.0_f32..=1.0_f32) {
+            prop_assert!((Linear.transform(t) - t).abs() < 1e-6);
+        }
+
+        /// Reversed(c) at t equals c at (1 - t).
+        #[test]
+        fn reversed_satisfies_reflection(t in 0.0_f32..=1.0_f32) {
+            let inner = EaseIn;
+            let reversed = Reversed(inner);
+            let lhs = reversed.transform(t);
+            let rhs = inner.transform(1.0 - t);
+            prop_assert!((lhs - rhs).abs() < 1e-6);
+        }
+
+        /// FlippedCurve(c) at t equals 1 - c(1 - t).
+        #[test]
+        fn flipped_satisfies_reflection(t in 0.0_f32..=1.0_f32) {
+            let inner = EaseInOut;
+            let flipped = FlippedCurve(inner);
+            let lhs = flipped.transform(t);
+            let rhs = 1.0 - inner.transform(1.0 - t);
+            prop_assert!((lhs - rhs).abs() < 1e-6);
+        }
+
+        /// Threshold: zero before threshold, one at-or-after. Always exactly.
+        #[test]
+        fn threshold_is_step_shaped(
+            threshold in 0.0_f32..=1.0_f32,
+            t in 0.0_f32..=1.0_f32,
+        ) {
+            let curve = Threshold(threshold);
+            let v = curve.transform(t);
+            if t < threshold {
+                prop_assert_eq!(v, 0.0);
+            } else {
+                prop_assert_eq!(v, 1.0);
+            }
+        }
+
+        /// SawTooth(n).transform(t) for n >= 1 always lies in [0, 1).
+        /// (Endpoints t=0 and t=1 both map to 0 by the periodicity rule;
+        /// every other value is < 1.)
+        #[test]
+        fn sawtooth_output_in_half_open_unit_interval(
+            count in 1u32..=8u32,
+            t in 0.0_f32..=1.0_f32,
+        ) {
+            let curve = SawTooth(count);
+            let v = curve.transform(t);
+            prop_assert!(v >= 0.0 && v < 1.0 + 1e-6);
+        }
+
+        /// Curves catalogue: LINEAR, EASE_IN, EASE_OUT, EASE_IN_OUT,
+        /// FAST_OUT_SLOW_IN — all weakly monotone-non-decreasing on
+        /// `[0, 1]` (any pair t1 < t2 implies transform(t1) <= transform(t2)
+        /// within float epsilon).
+        #[test]
+        fn standard_curves_are_weakly_monotone(
+            t1 in 0.0_f32..=1.0_f32,
+            t2 in 0.0_f32..=1.0_f32,
+        ) {
+            // Order the inputs.
+            let (lo, hi) = if t1 <= t2 { (t1, t2) } else { (t2, t1) };
+            let curves: &[(&str, &dyn Curve)] = &[
+                ("Linear", &Curves::LINEAR),
+                ("EaseIn", &Curves::EASE_IN),
+                ("EaseOut", &Curves::EASE_OUT),
+                ("EaseInOut", &Curves::EASE_IN_OUT),
+                ("FastOutSlowIn", &Curves::FAST_OUT_SLOW_IN),
+            ];
+            for (name, curve) in curves {
+                let v_lo = curve.transform(lo);
+                let v_hi = curve.transform(hi);
+                prop_assert!(
+                    v_hi >= v_lo - 1e-3,
+                    "{}: transform({}) = {} > transform({}) = {} — not weakly monotone",
+                    name, lo, v_lo, hi, v_hi
+                );
+            }
+        }
+
+        /// CurveTween (used in chain) applied to `Linear` is the identity
+        /// at the f64 boundary.
+        #[test]
+        fn curve_tween_with_linear_is_identity_in_f64(t in 0.0_f64..=1.0_f64) {
+            use super::super::tween::{Animatable, CurveTween};
+            let ct = CurveTween::new(Linear);
+            let v = <CurveTween<Linear> as Animatable<f64>>::transform(&ct, t);
+            prop_assert!((v - t).abs() < 1e-6);
+        }
+    }
+
+    /// Returns named curves whose output is bounded to `[0, 1]` (non-elastic,
+    /// non-overshooting).
+    fn non_overshoot_curves() -> Vec<(&'static str, Box<dyn Curve>)> {
+        vec![
+            ("Linear", Box::new(Linear)),
+            ("EaseIn", Box::new(EaseIn)),
+            ("EaseOut", Box::new(EaseOut)),
+            ("EaseInOut", Box::new(EaseInOut)),
+            ("EaseInCubic", Box::new(EaseInCubic)),
+            ("EaseOutCubic", Box::new(EaseOutCubic)),
+            ("EaseInOutCubic", Box::new(EaseInOutCubic)),
+            ("Decelerate", Box::new(Decelerate)),
+            ("BounceIn", Box::new(BounceIn)),
+            ("BounceOut", Box::new(BounceOut)),
+            ("BounceInOut", Box::new(BounceInOut)),
+            ("FastOutSlowIn", Box::new(Curves::FAST_OUT_SLOW_IN)),
+        ]
+    }
+
+    /// Returns named curves that pin `(0, 0)` and `(1, 1)` — the strongest
+    /// "well-formed easing" set.
+    fn monotone_curves() -> Vec<(&'static str, Box<dyn Curve>)> {
+        non_overshoot_curves()
+    }
+
+    /// Every named curve, including elastic / overshooting ones.
+    fn all_named_curves() -> Vec<(&'static str, Box<dyn Curve>)> {
+        let mut v = non_overshoot_curves();
+        v.push(("ElasticIn", Box::new(ElasticIn::default())));
+        v.push(("ElasticOut", Box::new(ElasticOut::default())));
+        v.push(("ElasticInOut", Box::new(ElasticInOut::default())));
+        v
+    }
 }

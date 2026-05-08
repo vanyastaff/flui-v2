@@ -25,9 +25,29 @@ goldens + proptest sweep), 7.2 (mdbook chapter — to land with R9), 7.6
 8-pattern demo expansion + `examples/learn/animation.rs` migration off
 deprecated `easing::*` imports.
 
-**Total surface:** ~98 unit tests, ~3000 LoC across nine new/rewritten
+**Total surface:** **~116 unit + property tests** (98 example-based +
+18 new proptest invariants), ~3000 LoC across nine new/rewritten
 files. `cargo check --workspace --all-features` clean; zero new
 compile warnings.
+
+### Added — `flui-core::animation` (Phase 6 partial)
+
+- **proptest sweeps for `Curve` + `Animatable<T>` / `Tween` family**
+  (S21 phase 6 partial). 18 new property-based invariants covering
+  curve finite-output, monotone-curve endpoint pinning, non-overshoot
+  bracket containment, Linear identity, Reversed/FlippedCurve
+  reflection symmetries, Threshold step shape, SawTooth output bracket,
+  weakly-monotone catalogue curves, CurveTween+Linear identity at the
+  f64 boundary, Tween<f32> output bracket + endpoint pinning, IntTween
+  / StepTween bracket containment, ConstantTween invariant, Tween +
+  ReverseTween endpoint swap, TweenSequence first/last endpoints,
+  FlippedTweenSequence reflection. proptest is already a flui-core
+  dep (Cargo.toml line 92); no new dependencies needed.
+- **Deferred to a future Phase 6 follow-up:** criterion benches
+  (needs `criterion = "0.5"` dev-dep), animation-frame goldens via the
+  S01b headless harness (needs `approx = "0.5"` dev-dep), `cargo
+  bloat` baseline measurements, TestApp-driven integration tests for
+  AnimationController methods that require a `Context<V>` instance.
 
 ### Added — `flui-core::animation`
 
