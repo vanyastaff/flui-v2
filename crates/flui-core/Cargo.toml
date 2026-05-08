@@ -18,6 +18,7 @@ test-support = [
     "collections/test-support",
     "util/test-support",
     "http_client/test-support",
+    "dep:proptest",
 ]
 # Opt-in superset of `test-support` that also pulls platform feature flags.
 # Use this for integration tests that need real platform code (Linux wayland/x11,
@@ -89,7 +90,11 @@ parking_lot = "0.12.1"
 pin-project = "1.1.10"
 postage = { version = "0.5", features = ["futures-traits"] }
 profiling = "1"
-proptest = "1"
+# `proptest` is gated behind the `test-support` feature (see `[features]`)
+# and `[dev-dependencies]` — it is NOT a production dependency. Pre-S21 had a
+# duplicate non-optional entry that made proptest a production link dep for
+# every flui-core consumer (binary bloat). Made optional in S21 verify pass.
+proptest = { version = "1", optional = true }
 rand = "0.9"
 raw-window-handle = "0.6"
 refineable = { package = "gpui_refineable", version = "0.2.2" }

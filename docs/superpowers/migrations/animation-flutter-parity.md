@@ -22,7 +22,7 @@ block.
 | `Curve::EaseInOut`                         | `Curves::EASE_IN_OUT` or `EaseInOut`                 |
 | `Curve::Bounce`                            | `Curves::BOUNCE_IN_OUT` or `BounceInOut`             |
 | `Curve::Custom(arc)`                       | `CustomCurve(arc)` or `CustomCurve::new(closure)`    |
-| `Curve::Elastic`                           | `Curves::ELASTIC_IN_OUT` (defaults `period = 0.4`)   |
+| `Curve::Elastic` (period 0.3 hardcoded)    | `Curves::ELASTIC_IN_OUT` (period 0.4) — **visual shape differs**, see Elastic period note |
 | `controller.value()` (`f32`)               | `controller.value()` (`f32`, unchanged) — but the    |
 |                                            | `Animation<f64>` trait method also exists; reach it  |
 |                                            | via `Animation::value(&controller)` for `f64`        |
@@ -111,6 +111,36 @@ controller.curve(EaseInOut);
 controller.curve(BounceInOut);
 controller.curve(CustomCurve::new(|t| t * t * t));
 ```
+
+### Elastic period note (visual-shape change)
+
+Pre-S21 `Curve::Elastic` was parameter-less and used a **hard-coded
+`period = 0.3`**. Post-S21 `ElasticIn` / `ElasticOut` / `ElasticInOut`
+take an explicit `period` field that defaults to `0.4` (Flutter parity).
+The catalogue constants `Curves::ELASTIC_IN`, `Curves::ELASTIC_OUT`,
+`Curves::ELASTIC_IN_OUT` use the `0.4` default. If you depended on the
+exact pre-S21 oscillation pattern, construct the curve explicitly with
+`ElasticIn { period: 0.3 }` (or the variant you used).
+
+### `Curve::Spring` restoration
+
+The pre-S21 `Curve::Spring { damping, stiffness }` enum variant was
+inadvertently dropped during the enum→trait migration and restored in
+the S21 review-fix pass. **Migration:** replace
+`Curve::Spring { damping, stiffness }` with `Spring::new(damping, stiffness)`.
+For default tuning use `Curves::SPRING` (damping=10, stiffness=100;
+critically-damped fast settle).
+
+For richer parametrisation (initial velocity, custom mass) use
+`SpringSimulation` via `AnimationController::animate_with`.
+
+### `Cubic` field privacy
+
+`Cubic`'s `x1, y1, x2, y2` fields are now private. **Migration:**
+replace `Cubic { x1, y1, x2, y2 }` literal construction with
+`Cubic::new(x1, y1, x2, y2)` — the constructor `assert!`s
+`x1, x2 ∈ [0, 1]` to catch invalid CSS-cubic-bezier inputs that would
+otherwise misbehave in the Newton-Raphson solver.
 
 ### Phase 1.8b — Legacy `easing::*` free functions deprecated
 

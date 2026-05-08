@@ -106,7 +106,7 @@ pub use animation::{
     ElasticOut, FlippedCurve, FlippedTweenSequence, FrictionSimulation, GravitySimulation,
     IntTween, Interval, LazyListenable, Lerp, Linear, ListenerCallback, ListenerId, LocalListeners,
     LocalStatusListeners, ProxyAnimation, RectTween, ReverseAnimation, ReverseTween, Reversed,
-    SawTooth, Simulation, SizeTween, Split, SpringDescription, SpringSimulation,
+    SawTooth, Simulation, SizeTween, Split, Spring, SpringDescription, SpringSimulation,
     StatusListenerCallback, StepTween, Threshold, Ticker, TickerCanceled, TickerFuture,
     TickerFutureState, TickerProvider, Tolerance, TrainHoppingAnimation, Tween, TweenSequence,
     TweenSequenceItem, animated, animation_max, animation_mean, animation_min,

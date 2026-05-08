@@ -75,6 +75,29 @@ impl Clone for Box<dyn Curve> {
     }
 }
 
+/// `Box<dyn Curve>` itself implements `Curve`. This unlocks runtime-composed
+/// curve composition primitives (`Interval<Box<dyn Curve>>`,
+/// `Reversed<Box<dyn Curve>>`, `FlippedCurve<Box<dyn Curve>>`,
+/// `Split<Box<dyn Curve>, Box<dyn Curve>>`) — without this impl, those generic
+/// types are stack-only and cannot accept a runtime-chosen inner curve.
+///
+/// Added in the S21 review-fix pass; the previous code merely promised this
+/// in a doc-comment without actually implementing it.
+impl Curve for Box<dyn Curve> {
+    fn transform(&self, t: f32) -> f32 {
+        (**self).transform(t)
+    }
+    fn transform_internal(&self, t: f32) -> f32 {
+        (**self).transform_internal(t)
+    }
+    fn derivative_at(&self, t: f32) -> Option<f32> {
+        (**self).derivative_at(t)
+    }
+    fn clone_box(&self) -> Box<dyn Curve> {
+        (**self).clone_box()
+    }
+}
+
 // ============================================================================
 // Standard 1D easing curves
 // ============================================================================
@@ -175,8 +198,7 @@ simple_curve! {
 
 simple_curve! {
     /// Strongly decelerating curve — Flutter's `Curves.decelerate`.
-    /// Maps `t -> 1 - (1 - t)²` then re-shaped; in Flutter it's
-    /// `1 - (1 - t)² * (1 - t)`. We follow Flutter's formula.
+    /// Formula: `1 - (1 - t)²` (quadratic ease-out).
     Decelerate,
     |t| {
         let inv = 1.0 - t;
@@ -236,18 +258,46 @@ simple_curve! {
 /// `(x1, y1)`, `(x2, y2)` — corresponds to Flutter's
 /// [`Cubic`](https://api.flutter.dev/flutter/animation/Cubic-class.html)
 /// and to CSS `cubic-bezier(...)`.
+///
+/// Fields are private — `x1` and `x2` MUST be in `[0, 1]` for the Newton-Raphson
+/// solver to converge correctly (CSS cubic-bezier constraint). Construct via
+/// [`Cubic::new`], which `debug_assert!`s the constraint, or read components
+/// via the field accessors. Made private in the S21 review-fix pass; previously
+/// `pub` fields permitted illegal state without any validation.
 #[derive(Copy, Clone, Debug)]
 pub struct Cubic {
-    pub x1: f32,
-    pub y1: f32,
-    pub x2: f32,
-    pub y2: f32,
+    x1: f32,
+    y1: f32,
+    x2: f32,
+    y2: f32,
 }
 
 impl Cubic {
-    /// Construct a new cubic curve from two control points.
+    /// Construct a new cubic curve from two control points. In debug builds
+    /// asserts that `x1, x2 ∈ [0, 1]`.
     pub const fn new(x1: f32, y1: f32, x2: f32, y2: f32) -> Self {
+        // const fn debug_assert! is restricted; rely on assert! which is
+        // const-stable from Rust 1.79.
+        assert!(x1 >= 0.0 && x1 <= 1.0, "Cubic: x1 must be in [0, 1]");
+        assert!(x2 >= 0.0 && x2 <= 1.0, "Cubic: x2 must be in [0, 1]");
         Self { x1, y1, x2, y2 }
+    }
+
+    /// Read the first control point's `x` coordinate.
+    pub const fn x1(&self) -> f32 {
+        self.x1
+    }
+    /// Read the first control point's `y` coordinate.
+    pub const fn y1(&self) -> f32 {
+        self.y1
+    }
+    /// Read the second control point's `x` coordinate.
+    pub const fn x2(&self) -> f32 {
+        self.x2
+    }
+    /// Read the second control point's `y` coordinate.
+    pub const fn y2(&self) -> f32 {
+        self.y2
     }
 }
 
@@ -287,6 +337,50 @@ fn cubic_bezier_sample(t: f32, a: f32, b: f32) -> f32 {
 fn cubic_bezier_derivative(t: f32, a: f32, b: f32) -> f32 {
     let mt = 1.0 - t;
     3.0 * mt * mt * a + 6.0 * mt * t * (b - a) + 3.0 * t * t * (1.0 - b)
+}
+
+// ============================================================================
+// Spring (curve-based; replaces the pre-S21 `Curve::Spring` enum variant)
+// ============================================================================
+
+/// Damped-harmonic-oscillator curve. Successor to the pre-S21 `Curve::Spring`
+/// enum variant — kept in the trait API so `controller.curve(Spring { ... })`
+/// continues to work without forcing callers to switch to
+/// `animate_with(SpringSimulation)`.
+///
+/// Solves the underdamped or critically-damped response of
+/// `m·x'' + c·x' + k·(x − 1) = 0` over `t ∈ [0, 1]` with `m = 1`,
+/// `k = stiffness`, `c = damping`. For richer parametrisation (initial
+/// velocity, custom mass, configurable rest position) use
+/// `SpringSimulation` via [`AnimationController::animate_with`].
+#[derive(Copy, Clone, Debug)]
+pub struct Spring {
+    pub damping: f32,
+    pub stiffness: f32,
+}
+
+impl Spring {
+    /// Construct a new spring curve.
+    pub const fn new(damping: f32, stiffness: f32) -> Self {
+        Self { damping, stiffness }
+    }
+}
+
+impl Curve for Spring {
+    fn transform_internal(&self, t: f32) -> f32 {
+        let omega = self.stiffness.sqrt();
+        let zeta = self.damping / (2.0 * omega);
+        if zeta < 1.0 {
+            let wd = omega * (1.0 - zeta * zeta).sqrt();
+            1.0 - (-zeta * omega * t).exp() * ((zeta * omega * t / wd).sin() + (wd * t).cos())
+        } else {
+            // Critically- and over-damped both use the same closed form.
+            1.0 - (1.0 + omega * t) * (-omega * t).exp()
+        }
+    }
+    fn clone_box(&self) -> Box<dyn Curve> {
+        Box::new(*self)
+    }
 }
 
 // ============================================================================
@@ -614,6 +708,11 @@ impl Curves {
 
     /// "Ease" — CSS-flavored Cubic.
     pub const EASE: Cubic = Cubic::new(0.25, 0.1, 0.25, 1.0);
+
+    /// Default-tuned damped spring (S21 review-fix successor to the pre-S21
+    /// `Curve::Spring` enum variant). Mass = 1, stiffness = 100, damping = 10
+    /// → critically-damped fast settle.
+    pub const SPRING: Spring = Spring::new(10.0, 100.0);
 }
 
 // ============================================================================

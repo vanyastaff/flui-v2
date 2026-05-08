@@ -99,6 +99,51 @@ compile warnings.
   the ~30 globs tracked under roadmap item A2; the animation module's own
   `mod.rs` is the single curator.
 
+### Breaking — `flui-core::animation::AnimationStatus` is now `#[non_exhaustive]`
+
+- **`AnimationStatus` gained `#[non_exhaustive]`** (S21 phase 0). External
+  crates that match this enum must now include a wildcard arm (`_ => …`)
+  or risk failing to compile when a future variant lands. Inside flui-core
+  the enum remains exhaustively matchable (notably in
+  `combinator::reverse_status` — intentional compile-time gate). No
+  downstream flui-* crate currently matches `AnimationStatus`, so this is
+  forward-compatibility insurance for external consumers.
+
+### Breaking — `flui-core::animation::Cubic` field privacy
+
+- **`Cubic` fields are now private** (S21 review-fix). `pub x1, y1, x2, y2`
+  → private fields with `pub const fn x1() / y1() / x2() / y2()` accessors
+  and `pub const fn new(x1, y1, x2, y2) -> Self` constructor that
+  `assert!`s `x1, x2 ∈ [0, 1]` (CSS cubic-bezier convergence constraint
+  for the Newton-Raphson solver). **Migration:** replace
+  `Cubic { x1, y1, x2, y2 }` literal construction with `Cubic::new(...)`.
+
+### Changed — `flui-core::animation::Curve` family (S21 review-fix)
+
+- **`Spring` curve restored** as a successor to the pre-S21
+  `Curve::Spring { damping, stiffness }` enum variant — was inadvertently
+  dropped in the enum→trait migration. `Spring::new(damping, stiffness)`
+  builds the same underdamped/critically-damped curve as before;
+  `Curves::SPRING` is the catalogue default (damping=10, stiffness=100,
+  critically damped).
+- **`impl Curve for Box<dyn Curve>`** added — unlocks runtime-composed
+  `Interval<Box<dyn Curve>>`, `Reversed<Box<dyn Curve>>`,
+  `FlippedCurve<Box<dyn Curve>>`, `Split<Box<dyn Curve>, Box<dyn Curve>>`.
+  Previously the docstring on `Interval` claimed this worked but the
+  impl was missing.
+- **`Decelerate` doc comment corrected** — the comment incorrectly claimed
+  Flutter uses a cubic formula; both Flutter and our implementation use
+  `1 - (1 - t)²`. Comment fixed.
+
+### Note — `Curves::ELASTIC_*` period default differs from pre-S21
+
+The pre-S21 `Curve::Elastic` (parameter-less variant) used a hard-coded
+`period = 0.3`. The S21 successors `Curves::ELASTIC_IN` /
+`ELASTIC_OUT` / `ELASTIC_IN_OUT` (and `ElasticIn::default()` etc.) use
+`period = 0.4` (Flutter parity). **Migration:** if you depended on the
+exact pre-S21 oscillation shape, construct
+`ElasticIn { period: 0.3 }` (or the Out / InOut variant) directly.
+
 ### Breaking — `flui-core::animation::Curve`
 
 - **`Curve` is now a TRAIT, not an enum** (S21 phase 1). Concrete types

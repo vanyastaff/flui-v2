@@ -30,7 +30,7 @@ pub use controller::AnimationController;
 pub use curve::{
     BounceIn, BounceInOut, BounceOut, Cubic, Curve, Curves, CustomCurve, Decelerate, EaseIn,
     EaseInCubic, EaseInOut, EaseInOutCubic, EaseOut, EaseOutCubic, ElasticIn, ElasticInOut,
-    ElasticOut, FlippedCurve, Interval, Linear, Reversed, SawTooth, Split, Threshold,
+    ElasticOut, FlippedCurve, Interval, Linear, Reversed, SawTooth, Split, Spring, Threshold,
 };
 pub use curved_animation::CurvedAnimation;
 pub use lerp::Lerp;
