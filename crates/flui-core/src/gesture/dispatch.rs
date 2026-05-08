@@ -216,7 +216,7 @@ impl PointerSanitizer {
     }
 
     /// Translate one `PlatformInput` into a [`PointerSignalEvent`] if
-    /// it is a non-competitive signal (scroll, magnify); returns
+    /// it is a non-competitive signal (scroll or scale today); returns
     /// `None` otherwise.
     ///
     /// The live dispatch path feeds the result into

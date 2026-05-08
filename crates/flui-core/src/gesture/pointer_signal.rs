@@ -148,9 +148,8 @@ pub(crate) struct PointerSignalListenerId(pub(crate) usize);
 /// Result of resolving one pointer signal.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub(crate) enum PointerSignalRoute {
-    /// Temporary compatibility route: the already-existing
-    /// `on_scroll_wheel` / `on_pinch` listener chain handles the
-    /// original platform event.
+    /// Temporary compatibility marker for the already-existing
+    /// `on_scroll_wheel` / `on_pinch` listener chain.
     MouseListeners,
     /// A typed pointer-signal listener registered first and won.
     Listener(PointerSignalListenerId),
@@ -168,10 +167,11 @@ pub(crate) struct PointerSignalResolution {
 
 /// Per-window mediator for non-competitive pointer signals.
 ///
-/// Scroll and magnify signals are immediate: they never compete in the
-/// gesture arena, but at most one interested listener should handle
-/// each signal. During a dispatch pass listeners register in hit-test
-/// order; resolving the event picks the first registration.
+/// Scroll, scale, and scroll-inertia-cancel signals are immediate:
+/// they never compete in the gesture arena, but at most one interested
+/// listener should handle each signal. During a dispatch pass listeners
+/// register in hit-test order; resolving the event picks the first
+/// registration.
 #[derive(Default)]
 pub(crate) struct PointerSignalResolver {
     first_listener: Option<PointerSignalListenerId>,
@@ -236,13 +236,13 @@ impl PointerSignalResolver {
         route
     }
 
-    /// Resolve through the legacy mouse-event listener chain.
+    /// Record the compatibility route used by the legacy mouse-event
+    /// listener chain.
     ///
-    /// This keeps today's public `on_scroll_wheel` / `on_pinch`
-    /// behavior intact while making the non-arena signal path explicit
-    /// and observable. The future typed signal listener dispatch can
-    /// replace this call site with `begin_event` + `register` +
-    /// `resolve`.
+    /// The original platform event is still delivered later by
+    /// `Window::dispatch_mouse_event`; this method only records resolver
+    /// state. The future typed signal listener dispatch can replace this
+    /// call site with `begin_event` + `register` + `resolve`.
     pub(crate) fn resolve_to_mouse_listeners(
         &mut self,
         event: &PointerSignalEvent,

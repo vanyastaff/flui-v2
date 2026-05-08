@@ -210,10 +210,13 @@ impl GestureBinding {
         (&mut self.sanitizer, &mut self.pointer_state)
     }
 
-    /// Resolve a non-competitive pointer signal outside the arena,
-    /// then let the existing mouse listener chain handle the original
-    /// platform event. This is the compatibility bridge until typed
-    /// pointer-signal listeners are wired into `Interactivity`.
+    /// Record that a non-competitive pointer signal will continue
+    /// through the existing mouse listener path.
+    ///
+    /// The original platform event is still delivered by
+    /// `Window::dispatch_mouse_event`. This compatibility seam keeps
+    /// signal routing observable until typed pointer-signal listeners are
+    /// wired into `Interactivity`.
     pub(crate) fn resolve_pointer_signal_to_mouse_listeners(
         &mut self,
         event: &PointerSignalEvent,

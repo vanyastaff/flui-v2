@@ -4353,10 +4353,10 @@ impl Window {
             // competition semantics. We still normalize and resolve
             // them through `PointerSignalResolver` here so the future
             // typed signal-listener path has a single, testable seam.
-            // For compatibility the resolver currently records the
-            // signal and routes the original platform event into the
-            // legacy `on_scroll_wheel` / `on_pinch` listener chain
-            // below.
+            // For compatibility the resolver currently records only
+            // the route. The original platform event still reaches the
+            // legacy `on_scroll_wheel` / `on_pinch` listener chain via
+            // `dispatch_mouse_event` below.
             let mut pointer_signal = {
                 let (sanitizer, pointer_state) = self.gesture_binding.dispatch_split_mut();
                 sanitizer.convert_signal(&event, pointer_state)
