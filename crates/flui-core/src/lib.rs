@@ -102,14 +102,14 @@ pub use animation::{
     AnimationController, AnimationStatus, AnimationStyle, BounceIn, BounceInOut, BounceOut,
     BoundedFrictionSimulation, ChainedAnimatable, ColorTween, CompoundAnimation, ConstantTween,
     Cubic, Curve, CurveTween, CurvedAnimation, Curves, CustomCurve, Decelerate, EagerListenable,
-    EaseIn, EaseInCubic, EaseInOut, EaseInOutCubic, EaseOut, EaseOutCubic, ElasticIn,
-    ElasticInOut, ElasticOut, FlippedCurve, FlippedTweenSequence, FrictionSimulation,
-    GravitySimulation, IntTween, Interval, LazyListenable, Lerp, Linear, ListenerCallback,
-    ListenerId, LocalListeners, LocalStatusListeners, ProxyAnimation, RectTween, ReverseAnimation,
-    ReverseTween, Reversed, SawTooth, Simulation, SizeTween, Split, SpringDescription,
-    SpringSimulation, StatusListenerCallback, StepTween, Threshold, Ticker, TickerCanceled,
-    TickerFuture, TickerFutureState, TickerProvider, Tolerance, TrainHoppingAnimation, Tween,
-    TweenSequence, TweenSequenceItem, animated, animation_max, animation_mean, animation_min,
+    EaseIn, EaseInCubic, EaseInOut, EaseInOutCubic, EaseOut, EaseOutCubic, ElasticIn, ElasticInOut,
+    ElasticOut, FlippedCurve, FlippedTweenSequence, FrictionSimulation, GravitySimulation,
+    IntTween, Interval, LazyListenable, Lerp, Linear, ListenerCallback, ListenerId, LocalListeners,
+    LocalStatusListeners, ProxyAnimation, RectTween, ReverseAnimation, ReverseTween, Reversed,
+    SawTooth, Simulation, SizeTween, Split, SpringDescription, SpringSimulation,
+    StatusListenerCallback, StepTween, Threshold, Ticker, TickerCanceled, TickerFuture,
+    TickerFutureState, TickerProvider, Tolerance, TrainHoppingAnimation, Tween, TweenSequence,
+    TweenSequenceItem, animated, animation_max, animation_mean, animation_min,
 };
 pub use anyhow::Result;
 pub use app::*;

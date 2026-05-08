@@ -72,7 +72,9 @@ pub struct ChainedAnimatable<P, C, T> {
     _t: PhantomData<T>,
 }
 
-impl<P: Animatable<f64>, C: Animatable<T>, T: 'static> Animatable<T> for ChainedAnimatable<P, C, T> {
+impl<P: Animatable<f64>, C: Animatable<T>, T: 'static> Animatable<T>
+    for ChainedAnimatable<P, C, T>
+{
     fn transform(&self, t: f64) -> T {
         let intermediate = self.parent.transform(t);
         self.child.transform(intermediate)
@@ -315,10 +317,11 @@ impl SizeTween {
 
 impl Animatable<Size<Pixels>> for SizeTween {
     fn transform(&self, t: f64) -> Size<Pixels> {
+        // `Size<Pixels>` is `Copy` — no `.clone()` needed at the endpoints.
         if t <= 0.0 {
-            self.begin.clone()
+            self.begin
         } else if t >= 1.0 {
-            self.end.clone()
+            self.end
         } else {
             self.begin.lerp(&self.end, t as f32)
         }
@@ -341,10 +344,11 @@ impl RectTween {
 
 impl Animatable<Bounds<Pixels>> for RectTween {
     fn transform(&self, t: f64) -> Bounds<Pixels> {
+        // `Bounds<Pixels>` is `Copy` — no `.clone()` needed at the endpoints.
         if t <= 0.0 {
-            self.begin.clone()
+            self.begin
         } else if t >= 1.0 {
-            self.end.clone()
+            self.end
         } else {
             self.begin.lerp(&self.end, t as f32)
         }
@@ -512,32 +516,54 @@ mod tests {
     fn tween_animatable_endpoints_and_midpoint() {
         let tween = Tween::new(0.0_f32, 100.0);
         assert_eq!(<Tween<f32> as Animatable<f32>>::transform(&tween, 0.0), 0.0);
-        assert!(
-            (<Tween<f32> as Animatable<f32>>::transform(&tween, 0.5) - 50.0).abs() < 1e-3
+        assert!((<Tween<f32> as Animatable<f32>>::transform(&tween, 0.5) - 50.0).abs() < 1e-3);
+        assert_eq!(
+            <Tween<f32> as Animatable<f32>>::transform(&tween, 1.0),
+            100.0
         );
-        assert_eq!(<Tween<f32> as Animatable<f32>>::transform(&tween, 1.0), 100.0);
     }
 
     #[test]
     fn tween_clamps_out_of_range_input() {
         let tween = Tween::new(0.0_f32, 100.0);
-        assert_eq!(<Tween<f32> as Animatable<f32>>::transform(&tween, -0.5), 0.0);
-        assert_eq!(<Tween<f32> as Animatable<f32>>::transform(&tween, 1.5), 100.0);
+        assert_eq!(
+            <Tween<f32> as Animatable<f32>>::transform(&tween, -0.5),
+            0.0
+        );
+        assert_eq!(
+            <Tween<f32> as Animatable<f32>>::transform(&tween, 1.5),
+            100.0
+        );
     }
 
     #[test]
     fn reverse_tween_endpoints_swapped() {
         let tween = ReverseTween::new(0.0_f32, 100.0);
-        assert_eq!(<ReverseTween<f32> as Animatable<f32>>::transform(&tween, 0.0), 100.0);
-        assert_eq!(<ReverseTween<f32> as Animatable<f32>>::transform(&tween, 1.0), 0.0);
+        assert_eq!(
+            <ReverseTween<f32> as Animatable<f32>>::transform(&tween, 0.0),
+            100.0
+        );
+        assert_eq!(
+            <ReverseTween<f32> as Animatable<f32>>::transform(&tween, 1.0),
+            0.0
+        );
     }
 
     #[test]
     fn constant_tween_ignores_t() {
         let tween = ConstantTween(42i64);
-        assert_eq!(<ConstantTween<i64> as Animatable<i64>>::transform(&tween, 0.0), 42);
-        assert_eq!(<ConstantTween<i64> as Animatable<i64>>::transform(&tween, 0.5), 42);
-        assert_eq!(<ConstantTween<i64> as Animatable<i64>>::transform(&tween, 1.0), 42);
+        assert_eq!(
+            <ConstantTween<i64> as Animatable<i64>>::transform(&tween, 0.0),
+            42
+        );
+        assert_eq!(
+            <ConstantTween<i64> as Animatable<i64>>::transform(&tween, 0.5),
+            42
+        );
+        assert_eq!(
+            <ConstantTween<i64> as Animatable<i64>>::transform(&tween, 1.0),
+            42
+        );
     }
 
     #[test]
@@ -681,8 +707,14 @@ mod tests {
             1.0,
         )];
         let seq = TweenSequence::new(items);
-        assert_eq!(<TweenSequence<f32> as Animatable<f32>>::transform(&seq, 0.0), 0.0);
-        assert_eq!(<TweenSequence<f32> as Animatable<f32>>::transform(&seq, 1.0), 100.0);
+        assert_eq!(
+            <TweenSequence<f32> as Animatable<f32>>::transform(&seq, 0.0),
+            0.0
+        );
+        assert_eq!(
+            <TweenSequence<f32> as Animatable<f32>>::transform(&seq, 1.0),
+            100.0
+        );
     }
 
     #[test]
@@ -693,9 +725,15 @@ mod tests {
         ];
         let flipped = FlippedTweenSequence::new(items);
         // At t=0 → equivalent to underlying at t=1 → second segment end → Tween(1,0).transform(1.0) = 0.0
-        assert_eq!(<FlippedTweenSequence<f32> as Animatable<f32>>::transform(&flipped, 0.0), 0.0);
+        assert_eq!(
+            <FlippedTweenSequence<f32> as Animatable<f32>>::transform(&flipped, 0.0),
+            0.0
+        );
         // At t=1 → equivalent to underlying at t=0 → first segment start → Tween(0,1).transform(0.0) = 0.0
-        assert_eq!(<FlippedTweenSequence<f32> as Animatable<f32>>::transform(&flipped, 1.0), 0.0);
+        assert_eq!(
+            <FlippedTweenSequence<f32> as Animatable<f32>>::transform(&flipped, 1.0),
+            0.0
+        );
     }
 
     #[test]

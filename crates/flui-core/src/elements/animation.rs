@@ -178,8 +178,8 @@ impl<E: IntoElement + 'static> Element for ElementAnimationElement<E> {
             });
             let animation_ix = state.animation_ix;
 
-            let mut delta = elapsed_since(state.start)
-                / self.animations[animation_ix].duration.as_secs_f32();
+            let mut delta =
+                elapsed_since(state.start) / self.animations[animation_ix].duration.as_secs_f32();
 
             let mut done = false;
             if delta > 1.0 {

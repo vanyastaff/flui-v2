@@ -379,12 +379,7 @@ impl AnimationController {
     /// the controller defaults.
     ///
     /// **Flutter parity:** corresponds to `AnimationController.animateTo`.
-    pub fn animate_to(
-        &mut self,
-        target: f32,
-        style: AnimationStyle,
-        cx: &mut Context<Self>,
-    ) {
+    pub fn animate_to(&mut self, target: f32, style: AnimationStyle, cx: &mut Context<Self>) {
         let target = target.clamp(self.lower_bound, self.upper_bound);
         let current = self.value();
         let next_status = if target >= current {
@@ -422,12 +417,7 @@ impl AnimationController {
     /// the current value.
     ///
     /// **Flutter parity:** corresponds to `AnimationController.animateBack`.
-    pub fn animate_back(
-        &mut self,
-        target: f32,
-        style: AnimationStyle,
-        cx: &mut Context<Self>,
-    ) {
+    pub fn animate_back(&mut self, target: f32, style: AnimationStyle, cx: &mut Context<Self>) {
         let target = target.clamp(self.lower_bound, self.upper_bound);
         let current = self.value();
         log::debug!(
@@ -457,12 +447,7 @@ impl AnimationController {
     /// by the simulation choice (S14 wires it to `MediaQueryData.disableAnimations`).
     ///
     /// **Flutter parity:** corresponds to `AnimationController.fling`.
-    pub fn fling(
-        &mut self,
-        velocity: f32,
-        behavior: AnimationBehavior,
-        cx: &mut Context<Self>,
-    ) {
+    pub fn fling(&mut self, velocity: f32, behavior: AnimationBehavior, cx: &mut Context<Self>) {
         // Override behavior for this fling — does not change the controller's
         // default behaviour.
         let _ = behavior; // future: switch friction/spring constants per behaviour.

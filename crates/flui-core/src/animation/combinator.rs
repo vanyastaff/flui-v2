@@ -297,8 +297,7 @@ where
         let second_clone_for_first = Rc::clone(&second);
         let status_listeners_for_first = Rc::clone(&status_listeners);
         let first_status_id = first.add_status_listener(Rc::new(move |_| {
-            let combined =
-                combined_status(first_clone.status(), second_clone_for_first.status());
+            let combined = combined_status(first_clone.status(), second_clone_for_first.status());
             status_listeners_for_first.notify(combined);
         }));
 
@@ -306,8 +305,7 @@ where
         let second_clone = Rc::clone(&second);
         let status_listeners_for_second = Rc::clone(&status_listeners);
         let second_status_id = second.add_status_listener(Rc::new(move |_| {
-            let combined =
-                combined_status(first_clone_for_second.status(), second_clone.status());
+            let combined = combined_status(first_clone_for_second.status(), second_clone.status());
             status_listeners_for_second.notify(combined);
         }));
 
@@ -679,8 +677,14 @@ mod tests {
     #[test]
     fn always_stopped_returns_constant_value_and_forward_status() {
         let a = AlwaysStoppedAnimation::new(0.42_f64);
-        assert_eq!(<AlwaysStoppedAnimation<f64> as Animation<f64>>::value(&a), 0.42);
-        assert_eq!(<AlwaysStoppedAnimation<f64> as Animation<f64>>::status(&a), AnimationStatus::Forward);
+        assert_eq!(
+            <AlwaysStoppedAnimation<f64> as Animation<f64>>::value(&a),
+            0.42
+        );
+        assert_eq!(
+            <AlwaysStoppedAnimation<f64> as Animation<f64>>::status(&a),
+            AnimationStatus::Forward
+        );
     }
 
     #[test]
@@ -705,7 +709,10 @@ mod tests {
         let parent = TestSource::new(0.5, AnimationStatus::Forward);
         let proxy = ProxyAnimation::new(parent.clone() as Rc<dyn Animation<f64>>);
         assert_eq!(<ProxyAnimation<f64> as Animation<f64>>::value(&proxy), 0.5);
-        assert_eq!(<ProxyAnimation<f64> as Animation<f64>>::status(&proxy), AnimationStatus::Forward);
+        assert_eq!(
+            <ProxyAnimation<f64> as Animation<f64>>::status(&proxy),
+            AnimationStatus::Forward
+        );
     }
 
     #[test]
@@ -756,9 +763,7 @@ mod tests {
         assert_eq!(counter.get(), before + 1);
 
         // value() reads from new parent.
-        assert!(
-            (<ProxyAnimation<f64> as Animation<f64>>::value(&proxy) - 0.95).abs() < 1e-9
-        );
+        assert!((<ProxyAnimation<f64> as Animation<f64>>::value(&proxy) - 0.95).abs() < 1e-9);
     }
 
     #[test]
@@ -786,16 +791,28 @@ mod tests {
     fn reverse_flips_status() {
         let parent = TestSource::new(0.0, AnimationStatus::Forward);
         let rev = ReverseAnimation::new(parent.clone() as Rc<dyn Animation<f64>>);
-        assert_eq!(<ReverseAnimation as Animation<f64>>::status(&rev), AnimationStatus::Reverse);
+        assert_eq!(
+            <ReverseAnimation as Animation<f64>>::status(&rev),
+            AnimationStatus::Reverse
+        );
 
         parent.set_status(AnimationStatus::Completed);
-        assert_eq!(<ReverseAnimation as Animation<f64>>::status(&rev), AnimationStatus::Dismissed);
+        assert_eq!(
+            <ReverseAnimation as Animation<f64>>::status(&rev),
+            AnimationStatus::Dismissed
+        );
 
         parent.set_status(AnimationStatus::Reverse);
-        assert_eq!(<ReverseAnimation as Animation<f64>>::status(&rev), AnimationStatus::Forward);
+        assert_eq!(
+            <ReverseAnimation as Animation<f64>>::status(&rev),
+            AnimationStatus::Forward
+        );
 
         parent.set_status(AnimationStatus::Dismissed);
-        assert_eq!(<ReverseAnimation as Animation<f64>>::status(&rev), AnimationStatus::Completed);
+        assert_eq!(
+            <ReverseAnimation as Animation<f64>>::status(&rev),
+            AnimationStatus::Completed
+        );
     }
 
     #[test]
@@ -944,7 +961,11 @@ mod tests {
 
         // Hop: first crosses second (0.9 > 0.8).
         first.set_value(0.9);
-        assert_eq!(first.listeners.len(), 0, "first parent listener must be released after hop");
+        assert_eq!(
+            first.listeners.len(),
+            0,
+            "first parent listener must be released after hop"
+        );
         // Second parent still subscribed.
         assert_eq!(second.listeners.len(), 1);
 

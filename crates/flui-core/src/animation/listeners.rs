@@ -93,11 +93,7 @@ impl LocalListeners {
         for (id, cb) in &snapshot {
             // Guard against listeners removed by a previous callback in this
             // very dispatch — match Flutter's `_listeners.contains(...)` check.
-            let still_present = self
-                .inner
-                .borrow()
-                .iter()
-                .any(|(stored, _)| stored == id);
+            let still_present = self.inner.borrow().iter().any(|(stored, _)| stored == id);
             if still_present {
                 cb();
             }
@@ -174,11 +170,7 @@ impl LocalStatusListeners {
             .map(|(id, cb)| (*id, Rc::clone(cb)))
             .collect();
         for (id, cb) in &snapshot {
-            let still_present = self
-                .inner
-                .borrow()
-                .iter()
-                .any(|(stored, _)| stored == id);
+            let still_present = self.inner.borrow().iter().any(|(stored, _)| stored == id);
             if still_present {
                 cb(status);
             }
