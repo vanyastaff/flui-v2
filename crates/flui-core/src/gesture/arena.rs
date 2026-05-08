@@ -12,7 +12,7 @@
 //!
 //! See the design doc § "GestureArena and GestureArenaManager".
 
-use super::{DeliveredEvent, GestureRecognizer, PointerEvent, PointerId};
+use super::{DeliveredEvent, GestureRecognizer, PointerEvent, PointerId, PointerPhase};
 use smallvec::SmallVec;
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
@@ -84,6 +84,77 @@ impl GestureArena {
             hold_count: 0,
         }
     }
+
+    fn recognizer_at(&self, index: usize) -> Option<Rc<RefCell<Box<dyn GestureRecognizer>>>> {
+        self.entries.get(index).map(|e| Rc::clone(&e.recognizer))
+    }
+
+    fn loser_recognizers(
+        &self,
+        winner_index: usize,
+    ) -> SmallVec<[Rc<RefCell<Box<dyn GestureRecognizer>>>; 4]> {
+        self.entries
+            .iter()
+            .enumerate()
+            .filter_map(|(index, entry)| {
+                if index == winner_index {
+                    None
+                } else {
+                    Some(Rc::clone(&entry.recognizer))
+                }
+            })
+            .collect()
+    }
+
+    fn close(&mut self) {
+        self.is_open = false;
+        self.hold_count = 0;
+    }
+}
+
+fn is_terminal_phase(phase: PointerPhase) -> bool {
+    matches!(
+        phase,
+        PointerPhase::Up | PointerPhase::Cancel | PointerPhase::Removed
+    )
+}
+
+/// Snapshot of a pointer arena after terminal dispatch has run.
+///
+/// `Window::dispatch_event` uses this to decide whether it is safe to
+/// cancel held-arena timers and force-close stale state. Keeping the
+/// policy here prevents the window layer from reaching into arena
+/// internals.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ArenaTerminalResolution {
+    pub(crate) resolved: bool,
+    pub(crate) winner_declared: bool,
+    pub(crate) is_open: bool,
+    pub(crate) hold_count: u32,
+    pub(crate) entry_count: usize,
+}
+
+impl ArenaTerminalResolution {
+    fn no_arena() -> Self {
+        Self {
+            resolved: true,
+            winner_declared: false,
+            is_open: false,
+            hold_count: 0,
+            entry_count: 0,
+        }
+    }
+
+    fn from_arena(arena: &GestureArena) -> Self {
+        let winner_declared = arena.winner.is_some();
+        Self {
+            resolved: winner_declared || !arena.is_open,
+            winner_declared,
+            is_open: arena.is_open,
+            hold_count: arena.hold_count,
+            entry_count: arena.entries.len(),
+        }
+    }
 }
 
 /// Opaque, `Clone`-able handle a recognizer can hold to call back
@@ -120,7 +191,8 @@ impl ArenaBackChannel {
     /// `GestureArenaManager::declare_winner`: if the per-window arena
     /// is still alive and the entry index is in range, the named
     /// recognizer wins, every other entry on this pointer is notified
-    /// `rejected`, and the arena is closed (unless held).
+    /// `rejected`, and the arena stays open so the winner can stream
+    /// later `Move` / terminal events.
     ///
     /// Silent no-op if the arena has already been dropped (window
     /// teardown).
@@ -185,6 +257,40 @@ impl GestureArenaManager {
             .unwrap_or(0)
     }
 
+    /// Return the post-terminal resolution decision for one pointer.
+    ///
+    /// A missing arena is resolved because `dispatch`, `sweep`, or
+    /// `gc` already removed it. A winner-declared arena is also
+    /// resolved from the window layer's perspective: the winner owns
+    /// the stream and any held loser timers can be cancelled after the
+    /// terminal event has been delivered. The only unresolved terminal
+    /// shape is an open arena with no winner, e.g. DoubleTap after the
+    /// first held `Up` while it waits for a second tap or timeout.
+    pub(crate) fn terminal_resolution(&self, pointer_id: PointerId) -> ArenaTerminalResolution {
+        self.arenas
+            .iter()
+            .find(|(id, _)| *id == pointer_id)
+            .map(|(_, arena)| ArenaTerminalResolution::from_arena(arena))
+            .unwrap_or_else(ArenaTerminalResolution::no_arena)
+    }
+
+    /// Clone a recognizer entry for callback-side lifecycle work.
+    ///
+    /// This keeps recognizers that need back-channel callbacks from
+    /// reaching into `arenas` / `entries` directly while preserving
+    /// the existing short-borrow pattern: callers clone the `Rc`,
+    /// drop the arena borrow, then run user callbacks.
+    pub(crate) fn entry_recognizer(
+        &self,
+        pointer_id: PointerId,
+        entry_index: usize,
+    ) -> Option<Rc<RefCell<Box<dyn GestureRecognizer>>>> {
+        self.arenas
+            .iter()
+            .find(|(id, _)| *id == pointer_id)
+            .and_then(|(_, arena)| arena.recognizer_at(entry_index))
+    }
+
     /// Open an arena for `pointer_id` if none exists; insert
     /// `recognizer` at the back of the entries list (registration
     /// order).
@@ -219,6 +325,49 @@ impl GestureArenaManager {
             return;
         };
         if !arena.is_open {
+            return;
+        }
+
+        if let Some(winner_idx) = arena.winner {
+            let winner = arena.recognizer_at(winner_idx);
+            let Some(winner) = winner else {
+                arena.close();
+                self.gc(pointer_id);
+                return;
+            };
+
+            log::trace!(
+                target: "flui::gesture::arena",
+                phase = "winner_dispatch",
+                pointer_id = format!("{:?}", pointer_id),
+                winner_index = winner_idx,
+                event_phase = format!("{:?}", event.phase),
+                entry_count = arena.entries.len(),
+                hold_count = arena.hold_count;
+                "dispatching event to declared gesture winner"
+            );
+
+            let disposition = winner.borrow_mut().handle_event(
+                DeliveredEvent::at_event_position(event),
+                window,
+                cx,
+            );
+
+            if is_terminal_phase(event.phase) || matches!(disposition, GestureDisposition::Rejected)
+            {
+                log::trace!(
+                    target: "flui::gesture::arena",
+                    phase = "winner_terminal_close",
+                    pointer_id = format!("{:?}", pointer_id),
+                    winner_index = winner_idx,
+                    event_phase = format!("{:?}", event.phase),
+                    entry_count = arena.entries.len(),
+                    hold_count = arena.hold_count;
+                    "closing declared gesture winner arena"
+                );
+                arena.close();
+            }
+            self.gc(pointer_id);
             return;
         }
 
@@ -263,25 +412,41 @@ impl GestureArenaManager {
                 return;
             };
             arena.winner = Some(winner_idx);
+            log::trace!(
+                target: "flui::gesture::arena",
+                phase = "winner_declared",
+                pointer_id = format!("{:?}", pointer_id),
+                winner_index = winner_idx,
+                event_phase = format!("{:?}", event.phase),
+                entry_count = arena.entries.len(),
+                hold_count = arena.hold_count;
+                "gesture arena winner declared"
+            );
             // Reject everyone else.
-            let losers: SmallVec<[Rc<RefCell<Box<dyn GestureRecognizer>>>; 4]> = arena
-                .entries
-                .iter()
-                .enumerate()
-                .filter_map(|(i, e)| {
-                    if i == winner_idx {
-                        None
-                    } else {
-                        Some(Rc::clone(&e.recognizer))
-                    }
-                })
-                .collect();
+            let losers = arena.loser_recognizers(winner_idx);
             for loser in losers.iter() {
+                log::trace!(
+                    target: "flui::gesture::arena",
+                    phase = "loser_rejected",
+                    pointer_id = format!("{:?}", pointer_id),
+                    winner_index = winner_idx,
+                    event_phase = format!("{:?}", event.phase);
+                    "rejecting non-winning gesture recognizer"
+                );
                 loser.borrow_mut().rejected(pointer_id, window, cx);
             }
-            // Close the arena unless a recognizer is holding it.
-            if arena.hold_count == 0 {
-                arena.is_open = false;
+            if is_terminal_phase(event.phase) {
+                log::trace!(
+                    target: "flui::gesture::arena",
+                    phase = "winner_terminal_close",
+                    pointer_id = format!("{:?}", pointer_id),
+                    winner_index = winner_idx,
+                    event_phase = format!("{:?}", event.phase),
+                    entry_count = arena.entries.len(),
+                    hold_count = arena.hold_count;
+                    "closing winner declared on terminal event"
+                );
+                arena.close();
             }
         } else {
             // Drop rejected entries (in reverse so indices stay valid).
@@ -290,8 +455,27 @@ impl GestureArenaManager {
             };
             for &idx in to_drop.iter().rev() {
                 if idx < arena.entries.len() {
+                    log::trace!(
+                        target: "flui::gesture::arena",
+                        phase = "entry_dropped",
+                        pointer_id = format!("{:?}", pointer_id),
+                        rejected_index = idx,
+                        event_phase = format!("{:?}", event.phase),
+                        entry_count = arena.entries.len();
+                        "dropping rejected gesture arena entry"
+                    );
                     arena.entries.remove(idx);
                 }
+            }
+            if arena.entries.is_empty() {
+                log::trace!(
+                    target: "flui::gesture::arena",
+                    phase = "empty_terminal_close",
+                    pointer_id = format!("{:?}", pointer_id),
+                    event_phase = format!("{:?}", event.phase);
+                    "closing empty gesture arena after all recognizers rejected"
+                );
+                arena.close();
             }
         }
 
@@ -404,10 +588,24 @@ impl GestureArenaManager {
             .map(|e| Rc::clone(&e.recognizer))
             .collect();
         arena.winner = None;
-        arena.is_open = false;
-        arena.hold_count = 0;
+        arena.close();
         for r in entries.iter() {
             r.borrow_mut().rejected(pointer_id, window, cx);
+        }
+        self.gc(pointer_id);
+    }
+
+    /// Force-close a terminally resolved arena.
+    ///
+    /// `Window::dispatch_event` calls this only after
+    /// [`Self::terminal_resolution`] reports that the current
+    /// terminal event is resolved. That preserves held, unresolved
+    /// arenas such as DoubleTap's first `Up`, while still evicting
+    /// stale winner arenas before the next `Down` can append a new
+    /// recognizer batch.
+    pub(crate) fn close_resolved(&mut self, pointer_id: PointerId) {
+        if let Some((_, arena)) = self.arenas.iter_mut().find(|(id, _)| *id == pointer_id) {
+            arena.close();
         }
         self.gc(pointer_id);
     }
@@ -419,42 +617,9 @@ impl GestureArenaManager {
     /// Production caller is the LongPress timer task, which upgrades
     /// the per-pointer `Weak<RefCell<GestureArenaManager>>` injected
     /// at registration time and calls this method through the
-    /// resulting `Rc<RefCell<…>>` borrow.
-    ///
-    /// Force-close a resolved arena. Called by `Window::dispatch_event`
-    /// on the `Up` of a gesture whose winner was declared *outside*
-    /// the synchronous arena dispatch loop — typically via a
-    /// timer-driven `declare_winner` from
-    /// [`super::ArenaBackChannel`] (e.g.
-    /// `LongPressGestureRecognizer`'s timer accepting before `Up`
-    /// arrives).
-    ///
-    /// **Why this exists.** The natural close-on-Up path inside
-    /// `arena.dispatch`'s `accepted_index` block only sets
-    /// `is_open = false` when `hold_count == 0`. When a
-    /// `DoubleTap` (or any `needs_arena_hold = true` recognizer)
-    /// shares the arena, its release timer keeps `hold_count > 0`
-    /// past the gesture's resolution — leaving the arena alive in
-    /// `manager.arenas` even though its winner has been declared
-    /// and every entry is logically dead. Subsequent `Down`s on
-    /// the same `pointer_id` then *append* a fresh batch of
-    /// recognizers to that stale arena, and the user sees stacked
-    /// callbacks (e.g. two `on_long_press_start` firings for what
-    /// is perceptually a single hold).
-    ///
-    /// Call this method when the dispatcher already established
-    /// that the gesture is resolved (winner set, no entry waiting
-    /// for further input). It zeroes `hold_count`, marks the arena
-    /// closed, and gc's it from `manager.arenas` so the next
-    /// `Down` starts a fresh arena.
-    pub(crate) fn close_resolved(&mut self, pointer_id: PointerId) {
-        if let Some((_, arena)) = self.arenas.iter_mut().find(|(id, _)| *id == pointer_id) {
-            arena.is_open = false;
-            arena.hold_count = 0;
-        }
-        self.gc(pointer_id);
-    }
-
+    /// resulting `Rc<RefCell<…>>` borrow. The declared winner remains
+    /// open and receives later `Move` / terminal events through
+    /// [`Self::dispatch`].
     pub(crate) fn declare_winner(
         &mut self,
         pointer_id: PointerId,
@@ -469,22 +634,24 @@ impl GestureArenaManager {
             return;
         }
         arena.winner = Some(recognizer_index);
-        let losers: SmallVec<[Rc<RefCell<Box<dyn GestureRecognizer>>>; 4]> = arena
-            .entries
-            .iter()
-            .enumerate()
-            .filter_map(|(i, e)| {
-                if i == recognizer_index {
-                    None
-                } else {
-                    Some(Rc::clone(&e.recognizer))
-                }
-            })
-            .collect();
-        if arena.hold_count == 0 {
-            arena.is_open = false;
-        }
+        log::trace!(
+            target: "flui::gesture::arena",
+            phase = "back_channel_winner_declared",
+            pointer_id = format!("{:?}", pointer_id),
+            winner_index = recognizer_index,
+            entry_count = arena.entries.len(),
+            hold_count = arena.hold_count;
+            "gesture arena winner declared through back-channel"
+        );
+        let losers = arena.loser_recognizers(recognizer_index);
         for loser in losers.iter() {
+            log::trace!(
+                target: "flui::gesture::arena",
+                phase = "loser_rejected",
+                pointer_id = format!("{:?}", pointer_id),
+                winner_index = recognizer_index;
+                "rejecting non-winning gesture recognizer"
+            );
             loser.borrow_mut().rejected(pointer_id, window, cx);
         }
         self.gc(pointer_id);
@@ -768,6 +935,125 @@ mod tests {
                         // `dispatch` snapshots in registration order, so
                         // r0 (idx 0) runs first → r1 doesn't see it.
                         assert_eq!(m.rejected_calls, vec![p], "loser notified rejected");
+                    });
+                });
+        });
+    }
+
+    #[flui_core::test]
+    fn eager_winner_receives_updates_until_terminal_event(cx: &mut TestAppContext) {
+        let _ = cx.update(|cx| {
+            let _ = cx
+                .open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+                .unwrap()
+                .update(cx, |_, window, cx| {
+                    let mut arena = GestureArenaManager::default();
+                    let p = PointerId(0);
+                    let winner = boxed_mock(MockRecognizer::with_script(
+                        "winner",
+                        &[GestureDisposition::Accepted],
+                    ));
+                    let loser = boxed_mock(MockRecognizer::new("loser"));
+                    arena.add(p, Rc::clone(&winner));
+                    arena.add(p, Rc::clone(&loser));
+
+                    arena.dispatch(p, &pointer_event(PointerPhase::Move), window, cx);
+                    assert_eq!(
+                        arena.arena_count(),
+                        1,
+                        "non-terminal eager accept keeps arena alive for winner updates",
+                    );
+                    with_mock(&loser, |m| {
+                        assert_eq!(m.rejected_calls, vec![p], "loser rejected once");
+                    });
+
+                    arena.dispatch(p, &pointer_event(PointerPhase::Move), window, cx);
+                    with_mock(&winner, |m| {
+                        assert_eq!(
+                            m.handle_calls,
+                            vec![(p, PointerPhase::Move), (p, PointerPhase::Move),],
+                            "declared winner receives later Move events",
+                        );
+                    });
+                    with_mock(&loser, |m| {
+                        assert_eq!(
+                            m.handle_calls.len(),
+                            0,
+                            "loser is not dispatched after rejection",
+                        );
+                        assert_eq!(
+                            m.rejected_calls,
+                            vec![p],
+                            "loser is not rejected repeatedly",
+                        );
+                    });
+
+                    arena.dispatch(p, &pointer_event(PointerPhase::Up), window, cx);
+                    assert_eq!(
+                        arena.arena_count(),
+                        0,
+                        "terminal Up closes streaming winner arena",
+                    );
+                    with_mock(&winner, |m| {
+                        assert_eq!(
+                            m.handle_calls,
+                            vec![
+                                (p, PointerPhase::Move),
+                                (p, PointerPhase::Move),
+                                (p, PointerPhase::Up),
+                            ],
+                            "declared winner receives terminal Up before gc",
+                        );
+                    });
+                });
+        });
+    }
+
+    #[flui_core::test]
+    fn back_channel_winner_receives_updates_until_terminal_event(cx: &mut TestAppContext) {
+        let _ = cx.update(|cx| {
+            let _ = cx
+                .open_window(Default::default(), |_, cx| cx.new(|_| crate::EmptyView))
+                .unwrap()
+                .update(cx, |_, window, cx| {
+                    let mut arena = GestureArenaManager::default();
+                    let p = PointerId(0);
+                    let loser = boxed_mock(MockRecognizer::new("loser"));
+                    let winner = boxed_mock(MockRecognizer::new("winner"));
+                    arena.add(p, Rc::clone(&loser));
+                    arena.add(p, Rc::clone(&winner));
+
+                    arena.declare_winner(p, 1, window, cx);
+                    assert_eq!(
+                        arena.arena_count(),
+                        1,
+                        "back-channel winner keeps arena alive until terminal event",
+                    );
+                    with_mock(&loser, |m| {
+                        assert_eq!(m.rejected_calls, vec![p], "loser rejected once");
+                    });
+
+                    arena.dispatch(p, &pointer_event(PointerPhase::Move), window, cx);
+                    arena.dispatch(p, &pointer_event(PointerPhase::Up), window, cx);
+                    assert_eq!(
+                        arena.arena_count(),
+                        0,
+                        "terminal Up closes back-channel winner arena",
+                    );
+                    with_mock(&winner, |m| {
+                        assert_eq!(
+                            m.handle_calls,
+                            vec![(p, PointerPhase::Move), (p, PointerPhase::Up)],
+                            "back-channel winner receives move and terminal up",
+                        );
+                        assert!(m.rejected_calls.is_empty(), "winner not rejected");
+                    });
+                    with_mock(&loser, |m| {
+                        assert_eq!(
+                            m.rejected_calls,
+                            vec![p],
+                            "loser is not rejected repeatedly",
+                        );
                     });
                 });
         });

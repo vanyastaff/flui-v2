@@ -11,7 +11,8 @@
 
 use super::arena::GestureArenaManager;
 use super::dispatch::{PointerSanitizer, WindowPointerState};
-use super::{GestureRecognizer, GestureSettings, PointerId};
+use super::pointer_signal::{PointerSignalResolver, PointerSignalRoute};
+use super::{GestureRecognizer, GestureSettings, PointerId, PointerSignalEvent};
 use crate::{AppContext, Task};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -81,6 +82,7 @@ pub struct GestureBinding {
     settings: GestureSettings,
     sanitizer: PointerSanitizer,
     pointer_state: WindowPointerState,
+    pointer_signal_resolver: PointerSignalResolver,
     /// Per-pointer release timers for arenas held by recognizers that
     /// opted into [`RecognizerLifecycle::needs_arena_hold`] (DoubleTap).
     /// Dropping a `Task<()>` cancels its underlying future, so:
@@ -111,6 +113,7 @@ impl GestureBinding {
             settings: GestureSettings::default(),
             sanitizer: PointerSanitizer,
             pointer_state: WindowPointerState::default(),
+            pointer_signal_resolver: PointerSignalResolver::default(),
             arena_hold_timers: collections::FxHashMap::default(),
         }
     }
@@ -205,6 +208,18 @@ impl GestureBinding {
         &mut self,
     ) -> (&mut PointerSanitizer, &mut WindowPointerState) {
         (&mut self.sanitizer, &mut self.pointer_state)
+    }
+
+    /// Resolve a non-competitive pointer signal outside the arena,
+    /// then let the existing mouse listener chain handle the original
+    /// platform event. This is the compatibility bridge until typed
+    /// pointer-signal listeners are wired into `Interactivity`.
+    pub(crate) fn resolve_pointer_signal_to_mouse_listeners(
+        &mut self,
+        event: &PointerSignalEvent,
+    ) -> PointerSignalRoute {
+        self.pointer_signal_resolver
+            .resolve_to_mouse_listeners(event)
     }
 
     /// Register a recognizer for `pointer_id`'s arena, driving every

@@ -143,6 +143,13 @@ impl LongPressGestureRecognizer {
         let dy = p.y.0 - self.down_position.y.0;
         dx * dx + dy * dy
     }
+
+    fn reset(&mut self) {
+        self.pointer = None;
+        self.accepted = false;
+        self.timer = None;
+        self.pointer_indexes.clear();
+    }
 }
 
 impl GestureRecognizer for LongPressGestureRecognizer {
@@ -264,12 +271,7 @@ impl GestureRecognizer for LongPressGestureRecognizer {
                         // arena borrow before calling user code.
                         let recognizer_rc = {
                             let arena = arena_rc.borrow();
-                            arena
-                                .arenas
-                                .iter()
-                                .find(|(pid, _)| *pid == pointer_id)
-                                .and_then(|(_, a)| a.entries.get(idx))
-                                .map(|e| std::rc::Rc::clone(&e.recognizer))
+                            arena.entry_recognizer(pointer_id, idx)
                         };
                         let Some(rec_rc) = recognizer_rc else {
                             return;
@@ -303,7 +305,7 @@ impl GestureRecognizer for LongPressGestureRecognizer {
             }
             PointerPhase::Move => {
                 if self.distance_sq(event.local_position) > (self.slop.0).powi(2) {
-                    self.timer = None; // drops the task → cancels future
+                    self.reset();
                     GestureDisposition::Rejected
                 } else if self.accepted {
                     if let Some(cb) = self.on_long_press_move.as_mut() {
@@ -323,7 +325,6 @@ impl GestureRecognizer for LongPressGestureRecognizer {
             }
             PointerPhase::Up => {
                 let was_accepted = self.accepted;
-                self.timer = None; // drops the task → cancels future
                 if was_accepted {
                     if let Some(cb) = self.on_long_press_end.as_mut() {
                         cb(
@@ -335,13 +336,15 @@ impl GestureRecognizer for LongPressGestureRecognizer {
                             cx,
                         );
                     }
+                    self.reset();
                     GestureDisposition::Accepted
                 } else {
+                    self.reset();
                     GestureDisposition::Rejected
                 }
             }
             PointerPhase::Cancel | PointerPhase::Removed => {
-                self.timer = None;
+                self.reset();
                 GestureDisposition::Rejected
             }
             _ => GestureDisposition::Possible,
@@ -360,17 +363,11 @@ impl GestureRecognizer for LongPressGestureRecognizer {
 
     fn rejected(
         &mut self,
-        pointer_id: PointerId,
+        _pointer_id: PointerId,
         _window: &mut crate::Window,
         _cx: &mut crate::App,
     ) {
-        // Drop the timer to cancel the future and clear the entry
-        // slot for this pointer (single-shot LongPress only ever
-        // tracks one in-flight pointer, but staying defensive
-        // matches the per-pointer storage shape).
-        self.timer = None;
-        self.accepted = false;
-        self.pointer_indexes.retain(|(pid, _)| *pid != pointer_id);
+        self.reset();
     }
 
     fn semantic_actions(&self) -> &'static [SemanticAction] {
@@ -478,6 +475,7 @@ mod tests {
                     let mut lp = LongPressGestureRecognizer::new(&GestureSettings::default());
                     let down = pe(PointerPhase::Down, p(0.0, 0.0), PointerButtons::PRIMARY);
                     lp.add_pointer(PointerId(0), de(&down));
+                    lp.set_arena_back_channel(PointerId(0), ArenaBackChannel::empty(), 0);
                     assert_eq!(
                         lp.handle_event(de(&down), window, cx),
                         GestureDisposition::Possible
@@ -491,6 +489,14 @@ mod tests {
                     assert!(
                         lp.timer.is_none(),
                         "drop-on-cancel pattern: rejecting clears the timer Task"
+                    );
+                    assert!(
+                        lp.pointer.is_none(),
+                        "self-rejection clears tracked pointer state"
+                    );
+                    assert!(
+                        lp.pointer_indexes.is_empty(),
+                        "self-rejection clears back-channel entry slots"
                     );
                 });
         });

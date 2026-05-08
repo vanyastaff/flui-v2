@@ -1,7 +1,7 @@
 //! `PointerPanZoomEvent` and `PanZoomPhase` — native trackpad
 //! pan-zoom-rotate gesture event family.
 //!
-//! Distinct from [`super::PointerSignalEvent::Magnify`] (which is a
+//! Distinct from [`super::PointerSignalEvent::Scale`] (which is a
 //! scalar-only delta) because pan-zoom carries pan + scale + rotation
 //! tuples. Lives as a sibling type to `PointerEvent` and
 //! `PointerSignalEvent` rather than as variants on `PointerPhase`
@@ -46,7 +46,7 @@ pub enum PanZoomPhase {
 ///
 /// Emitted by platforms that surface pan + zoom + rotation as one
 /// composite gesture (macOS two-finger trackpad gesture). Distinct
-/// from a scalar [`super::PointerSignalEvent::Magnify`].
+/// from a scalar [`super::PointerSignalEvent::Scale`].
 ///
 /// `#[non_exhaustive]` reserves space for future per-platform fields.
 /// Construction is platform-side only; downstream observers consume
