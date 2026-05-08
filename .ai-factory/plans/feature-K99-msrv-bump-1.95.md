@@ -80,8 +80,8 @@ From `.ai-factory/RESEARCH.md` (Active Summary):
 
 ### Phase 6 — Spec + ROADMAP closure
 
-- [ ] **Task 15.** Author design spec at `docs/superpowers/specs/2026-05-08-K99-msrv-bump-1.95-design.md` following project convention (reference `2026-04-13-S01a3-explicit-re-export-list-design.md`).
-- [ ] **Task 16.** Mark K99 done in `.ai-factory/ROADMAP.md` — flip checkbox + add completion-date row to `## Completed` table.
+- [x] **Task 15.** Author design spec at `docs/superpowers/specs/2026-05-08-K99-msrv-bump-1.95-design.md` following project convention (reference `2026-04-13-S01a3-explicit-re-export-list-design.md`). → **Done.** Note: prior commit (95cb96e4a9) had aggressively deleted the entire `docs/superpowers/` directory — directory recreated as part of K99. Spec follows Context/Goals/Non-goals/Current state/Design/API surface/Migration/Testing/Open questions/Done criteria/Cross-references/Unblocks structure.
+- [x] **Task 16.** Mark K99 done in `.ai-factory/ROADMAP.md` — flip checkbox + add completion-date row to `## Completed` table. → **Done.** Checkbox flipped, completion entry added (2026-05-08).
 
 ## Task Dependencies
 
