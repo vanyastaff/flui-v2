@@ -472,12 +472,20 @@ impl TrainHoppingAnimation {
         }));
         this.first_value_id.set(Some(first_value_id));
 
-        let listeners_clone = Rc::clone(&this.listeners);
-        let first_status_id = first.add_status_listener(StatusListenerCallback::new(move |_| {
-            // Status from first only matters until we hop. Forward via value
-            // listeners (status fan-out happens through second after hop).
-            let _ = &listeners_clone; // referenced to keep alive
-        }));
+        // First parent's status changes fire status listeners while we are
+        // still showing `first`. Once a hop has retired the first parent, the
+        // weak upgrade fails (or the borrowed slot is `None`) and we drop the
+        // notification — `second`'s status listener (registered below) takes
+        // over.
+        let this_for_first_status = Rc::downgrade(&this);
+        let first_status_id =
+            first.add_status_listener(StatusListenerCallback::new(move |status| {
+                if let Some(s) = this_for_first_status.upgrade() {
+                    if s.first.borrow().is_some() {
+                        s.status_listeners.notify(status);
+                    }
+                }
+            }));
         this.first_status_id.set(Some(first_status_id));
 
         // Second parent: always forwards (it's the eventual owner).
@@ -507,11 +515,22 @@ impl TrainHoppingAnimation {
         let first = self.first.borrow().as_ref().map(Rc::clone);
         if let Some(first) = first {
             let current_sign = (first.value() - self.second.value()).signum();
-            // A hop fires when:
-            // - the initial sign was non-zero (parents started apart), AND
-            // - the current sign is opposite (or zero — exact crossing).
+            // A hop fires when either:
+            //   (a) the parents started apart (`initial != 0`) and the sign
+            //       has flipped or hit an exact crossing (`current_sign == 0
+            //       || current_sign != initial`), or
+            //   (b) the parents started equal (`initial == 0`) and they have
+            //       since diverged in either direction. Flutter's
+            //       `TrainHoppingAnimation` treats the equal-start case as
+            //       "hop-ready"; without (b) we'd be stuck on the first
+            //       parent forever even after they clearly cross.
             let initial = self.initial_sign.get();
-            if initial != 0.0 && current_sign != initial {
+            let should_hop = if initial == 0.0 {
+                current_sign != 0.0
+            } else {
+                current_sign != initial
+            };
+            if should_hop {
                 log::debug!(
                     target: "flui_core::animation::combinator",
                     "TrainHoppingAnimation: hop fired — disposing first parent"

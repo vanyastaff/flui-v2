@@ -34,7 +34,7 @@ The project is currently in Phase I of a multi-phase roadmap focused on (1) extr
 
 See `.ai-factory/ARCHITECTURE.md` for detailed architecture guidelines (folder layout, dependency rules, layer communication, code examples, anti-patterns).
 
-Pattern: **Layered + Cargo workspace** — five layers (platform → core → widgets/animate/a11y → navigator → app), each realized as a Cargo crate so layering is enforced mechanically by the dependency graph.
+Pattern: **Layered + Cargo workspace** — five layers (platform → core → widgets/a11y → navigator → app), each realized as a Cargo crate so layering is enforced mechanically by the dependency graph. Animation primitives live in `flui-core::animation`; widget-level animation builders are planned to extend `flui-widgets` in a future milestone.
 
 ## Architecture Notes
 

@@ -58,7 +58,7 @@ impl ElementAnimation {
     /// Set the easing curve. Takes precedence over `with_easing()` if both are set.
     /// Accepts any type implementing
     /// [`Curve`](crate::animation::Curve) — typically a constant from
-    /// [`Curves`](crate::animation::curve::Curves) (e.g.
+    /// [`Curves`](crate::animation::Curves) (e.g.
     /// `Curves::EASE_IN_OUT`).
     pub fn curve<C: crate::animation::Curve>(mut self, curve: C) -> Self {
         self.curve = Some(Box::new(curve));

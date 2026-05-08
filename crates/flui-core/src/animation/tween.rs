@@ -389,12 +389,24 @@ pub struct TweenSequence<T: 'static> {
 }
 
 impl<T: 'static> TweenSequence<T> {
-    /// Construct from a non-empty list of weighted items. Total weight must
-    /// be positive; panics otherwise.
+    /// Construct from a non-empty list of weighted items.
+    ///
+    /// Each item weight must be strictly positive and finite — zero,
+    /// negative, or non-finite individual weights would either collapse a
+    /// segment to zero span or break the strict monotonicity of
+    /// `cumulative`, making segment selection in `transform` undefined.
+    /// Total weight is also validated for positivity/finiteness as a
+    /// belt-and-braces check (e.g. against silent overflow on extreme inputs).
     pub fn new(items: Vec<TweenSequenceItem<T>>) -> Self {
         assert!(
             !items.is_empty(),
             "TweenSequence requires at least one item"
+        );
+        assert!(
+            items
+                .iter()
+                .all(|item| item.weight.is_finite() && item.weight > 0.0),
+            "TweenSequence: each item weight must be strictly positive and finite"
         );
         let total: f64 = items.iter().map(|i| i.weight).sum();
         assert!(

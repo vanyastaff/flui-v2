@@ -213,8 +213,17 @@ pub struct BoundedFrictionSimulation {
 }
 
 impl BoundedFrictionSimulation {
+    /// Construct a friction simulation clamped to `[min, max]`.
+    ///
+    /// Panics if `min > max` — this is a programmer-error invariant, not a
+    /// runtime condition, and silently swapping bounds would mask bugs at the
+    /// caller. Asserted unconditionally (not `debug_assert!`) so release
+    /// builds also enforce the contract.
     pub fn new(drag: f32, position: f32, velocity: f32, min: f32, max: f32) -> Self {
-        debug_assert!(min <= max, "BoundedFrictionSimulation: min must be <= max");
+        assert!(
+            min <= max,
+            "BoundedFrictionSimulation: min ({min}) must be <= max ({max})"
+        );
         Self {
             inner: FrictionSimulation::new(drag, position, velocity),
             min,
@@ -229,8 +238,13 @@ impl Simulation for BoundedFrictionSimulation {
     }
 
     fn dx(&self, t: f32) -> f32 {
+        // Use inclusive comparisons to keep `dx` and `is_done` consistent:
+        // when `is_done(t) == true` (the position has reached a bound), the
+        // reported velocity is zero. Without the inclusive bound, a particle
+        // starting at exactly `min` or `max` would report non-zero velocity
+        // even though `is_done` already says we've pinned.
         let raw = self.inner.x(t);
-        if raw < self.min || raw > self.max {
+        if raw <= self.min || raw >= self.max {
             // We've hit a bound — velocity is effectively zero (clamped).
             0.0
         } else {

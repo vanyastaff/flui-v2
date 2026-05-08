@@ -348,11 +348,15 @@ fn cubic_bezier_derivative(t: f32, a: f32, b: f32) -> f32 {
 /// continues to work without forcing callers to switch to
 /// `animate_with(SpringSimulation)`.
 ///
-/// Solves the underdamped or critically-damped response of
+/// Solves the underdamped, critically-damped, or overdamped response of
 /// `m·x'' + c·x' + k·(x − 1) = 0` over `t ∈ [0, 1]` with `m = 1`,
 /// `k = stiffness`, `c = damping`. For richer parametrisation (initial
 /// velocity, custom mass, configurable rest position) use
 /// `SpringSimulation` via [`AnimationController::animate_with`].
+///
+/// Invalid parameters (`stiffness <= 0.0`, non-finite values) fall back to
+/// `Curves::LINEAR` rather than emitting `NaN`/`Inf`; controllers that need
+/// strict validation should use `SpringSimulation`.
 #[derive(Copy, Clone, Debug)]
 pub struct Spring {
     pub damping: f32,
@@ -368,13 +372,29 @@ impl Spring {
 
 impl Curve for Spring {
     fn transform_internal(&self, t: f32) -> f32 {
+        // Guard invalid parameters: a non-positive stiffness collapses the
+        // model (omega == 0 ⇒ zeta == NaN/Inf). Falling back to linear keeps
+        // `Curve::transform` finite for misuse without panicking.
+        if !self.stiffness.is_finite() || self.stiffness <= 0.0 || !self.damping.is_finite() {
+            return t;
+        }
         let omega = self.stiffness.sqrt();
         let zeta = self.damping / (2.0 * omega);
         if zeta < 1.0 {
+            // Underdamped — oscillatory response.
             let wd = omega * (1.0 - zeta * zeta).sqrt();
             1.0 - (-zeta * omega * t).exp() * ((zeta * omega * t / wd).sin() + (wd * t).cos())
+        } else if zeta > 1.0 {
+            // Overdamped — two distinct real roots `r1 = -ω(ζ − √(ζ²−1))`,
+            // `r2 = -ω(ζ + √(ζ²−1))`. With initial conditions
+            // `x(0) = 0`, `x'(0) = 0` (rest position at 1), the response is
+            //   x(t) = 1 - (r2·e^{r1 t} - r1·e^{r2 t}) / (r2 - r1).
+            let s = (zeta * zeta - 1.0).sqrt();
+            let r1 = -omega * (zeta - s);
+            let r2 = -omega * (zeta + s);
+            1.0 - (r2 * (r1 * t).exp() - r1 * (r2 * t).exp()) / (r2 - r1)
         } else {
-            // Critically- and over-damped both use the same closed form.
+            // Critically damped.
             1.0 - (1.0 + omega * t) * (-omega * t).exp()
         }
     }

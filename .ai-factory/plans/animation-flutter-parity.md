@@ -39,7 +39,7 @@
 
 Keep the existing flat layout of `flui-core/src/animation/` and grow it file-by-file. No subdirectories. Every file maps to one concern; if a file outgrows ~800 LoC we split it inside the same flat directory (e.g. `curve.rs` → `curve.rs` + `curve_2d.rs`). This matches the GPUI-derived style already used throughout `flui-core` and avoids `mod.rs`-soup.
 
-```
+```text
 crates/flui-core/src/animation/
 ├── mod.rs            # Curated re-exports (Phase 0 replaces the existing `pub use animation::*;` at lib.rs:96)
 ├── animation.rs      # Animation<T> trait, AnimationListenable, AnimationWithParentMixin

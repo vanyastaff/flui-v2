@@ -190,16 +190,27 @@ For raw listener subscription (separate from the existing
 `cx.observe(&entity, ...)` pattern):
 
 ```rust
-use flui_core::Animation;
+use flui_core::{Animation, ListenerCallback};
 
-let id = controller.read(cx).add_listener(Rc::new(|| {
+let id = controller.read(cx).add_listener(ListenerCallback::new(|| {
     // fired on every controller transition
 }));
 controller.read(cx).remove_listener(id);
 ```
 
-Both subscription paths fire once per transition — they do not
-double-fire.
+`ListenerCallback` wraps an `Rc<dyn Fn()>` — the API takes the wrapper,
+not a bare closure or `Rc`, so listener identity is opaque
+(`ListenerId` rather than callback equality).
+
+**Both subscription paths fan out from the same controller, so a
+single transition fires both `cx.observe(&entity, ...)` listeners and
+any raw `add_listener` listeners exactly once each.** They are
+independent channels: `cx.observe` is the entity-aware path that
+re-renders the host widget, while `add_listener` is the lower-level
+path used inside combinators (`CurvedAnimation`, `ProxyAnimation`,
+…). If you subscribe via *both* on the same controller you will see
+two callbacks per transition (one per channel) — that is the same
+shape as Flutter's `addListener` + `Listenable` overlap, not a bug.
 
 ### `Animatable<T>` + Tween family
 
