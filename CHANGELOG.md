@@ -107,6 +107,31 @@ incrementally; only completed phases appear below.
   (no dangling notifications). Establishes the listener-forwarding pattern
   Phase 3 combinators reuse.
 
+### Added — `flui-core::animation` (Phase 2)
+
+- **`Animatable<T>` trait** + **`AnimatableExt`** extension trait (S21 phase
+  2). Object-safe parametric value-producer; `transform(t: f64) -> T`
+  matches Flutter's f64 surface. `chain<P: Animatable<f64>>(self, parent)`
+  composes animatables — typically used as
+  `Tween::new(0, 100).chain(CurveTween::new(EaseInOut))`. The chained
+  output is `ChainedAnimatable<P, C, T>` (no boxing required for
+  monomorphized stacks).
+- **Tween family**: `Tween<T: Lerp>` (now implements `Animatable<T>` in
+  addition to its existing inherent `transform(t: f32)` for backward
+  compat), `ConstantTween<T>`, `ReverseTween<T>` (lerp in reverse
+  direction), `CurveTween<C>` (`Animatable<f64>` applying a curve to
+  `t`), `IntTween` (round-to-nearest), `StepTween` (floor),
+  `ColorTween` (`Animatable<Option<Hsla>>` with Flutter-parity
+  null-aware lerp — `None` → same-hue transparent endpoint avoids the
+  hue-flip artifact a naive lerp-to-zero-color would introduce),
+  `SizeTween`, `RectTween`.
+- **`TweenSequence<T>` + `TweenSequenceItem<T>`** — weighted segment
+  sequence with normalized cumulative boundaries; `O(N)` lookup for
+  typical small sequences. `FlippedTweenSequence<T>` runs the underlying
+  sequence backward.
+- **`Lerp for Bounds<Pixels>`** — composes the existing `Lerp` impls for
+  `Point<Pixels>` and `Size<Pixels>`. Required by `RectTween`.
+
 ### Deprecated — `flui-core::elements::animation::easing`
 
 - Legacy free functions `easing::linear`, `easing::quadratic`,

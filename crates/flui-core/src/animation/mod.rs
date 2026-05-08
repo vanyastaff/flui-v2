@@ -34,4 +34,8 @@ pub use simulation::{
 };
 pub use status::AnimationStatus;
 pub use ticker::{Ticker, TickerCanceled, TickerFuture, TickerFutureState, TickerProvider};
-pub use tween::Tween;
+pub use tween::{
+    Animatable, AnimatableExt, ChainedAnimatable, ColorTween, ConstantTween, CurveTween,
+    FlippedTweenSequence, IntTween, RectTween, ReverseTween, SizeTween, StepTween, Tween,
+    TweenSequence, TweenSequenceItem,
+};

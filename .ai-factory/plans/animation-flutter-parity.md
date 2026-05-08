@@ -345,6 +345,17 @@ _None — `.ai-factory/RESEARCH.md` does not exist. The Flutter API page at http
 
 **Outcome:** Complete `Animatable<T>`/`Tween<T>` surface with composition (`chain`), every Flutter Tween subtype, and `TweenSequence`.
 
+**Progress (S21 phase 2):** ✅ complete 2026-05-08.
+
+- [x] 2.1 — `Animatable<T>` trait (object-safe) + `AnimatableExt::chain` extension trait + `ChainedAnimatable<P, C, T>` composition type. `evaluate(&dyn Animation<f64>)` convenience helper.
+- [x] 2.2 — `Tween<T: Lerp>` implements `Animatable<T>` with boundary-stable lerp (snap to endpoints rather than rely on float round-off). Inherent `transform(t: f32)` retained for callers that already work in `f32`.
+- [x] 2.3 — `ConstantTween<T>`, `ReverseTween<T>` (lerp in reverse direction), `CurveTween<C: Curve>` (`Animatable<f64>` applying a curve to `t`).
+- [x] 2.4 — `IntTween` (round-to-nearest), `StepTween` (floor) with documented rounding-direction difference.
+- [x] 2.5 — `ColorTween` accepts `Option<Hsla>` with Flutter-parity null-aware lerp (None → fully-transparent same-hue endpoint, no hue flip), `SizeTween`, `RectTween`. **`Lerp for Bounds<Pixels>`** added (composes existing `Lerp for Point<Pixels>` + `Lerp for Size<Pixels>`).
+- [x] 2.6 — `TweenSequence<T>` with weighted items normalized to `[0, 1]` cumulative array; `TweenSequenceItem<T>` with `Box<dyn Animatable<T>>`; `FlippedTweenSequence<T>` runs the underlying sequence backward (`1 - t` flip).
+- [x] 2.7 — `Tween::chain(other)` ergonomic via `AnimatableExt::chain` blanket impl on every `Animatable<T> + Sized`.
+- [x] 2.8 — ~22 unit tests cover boundary values, clamping, ColorTween null-aware lerp, weighted segments, FlippedTweenSequence, panic-on-empty-sequence, `Lerp for Bounds<Pixels>`, chain composition.
+
 ### Tasks
 
 - **2.1 `Animatable<T>` trait.**
