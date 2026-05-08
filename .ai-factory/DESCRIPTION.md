@@ -32,23 +32,29 @@ The project is currently in Phase I of a multi-phase roadmap focused on (1) extr
 
 ## Architecture
 
-See `.ai-factory/ARCHITECTURE.md` for detailed architecture guidelines (folder layout, dependency rules, layer communication, code examples, anti-patterns).
+See `.ai-factory/ARCHITECTURE.md` for detailed architecture guidelines (folder layout, dependency rules, tier communication, code examples, anti-patterns).
 
-Pattern: **Layered + Cargo workspace** — five layers (platform → core → widgets/a11y → navigator → app), each realized as a Cargo crate so layering is enforced mechanically by the dependency graph. Animation primitives live in `flui-core::animation`; widget-level animation builders are planned to extend `flui-widgets` in a future milestone.
+Pattern: **Three-Tier Layered + Cargo Workspace** — the project is organized into three strategic tiers, each realized as one or more Cargo crates so tiering is enforced mechanically by the dependency graph.
+
+```
+Tier C — Ecosystem    flui-widgets, flui-material, flui-cupertino, flui-theme,
+                      flui-a11y, flui-navigator, third-party widget crates
+Tier B — Framework    flui-framework (PLANNED — Phase II-F)
+                      Widget + Key + State + BuildCx + Provider + reconciliation
+Tier A — Engine       flui-core (single-crate runtime), flui-platform, flui-macros
+```
+
+The Engine tier (A) is the GPU/runtime substrate forked from `gpui-ce`. The Framework tier (B) is the Flutter-style developer-experience layer that does NOT yet exist — it is the central work item for the next strategic phase. The Ecosystem tier (C) is everything app authors and the community write on top.
 
 ## Architecture Notes
 
-The project intentionally avoids replicating Flutter's deep internal layering (an earlier v1 attempt with `flui-foundation`/`flui-engine`/`flui-rendering`/etc. was abandoned). Instead the architecture replicates Flutter's **feature surface** on top of GPUI's single-level engine. The 5-layer model documented in `README.md` reflects user-facing layering, not engine internals:
+**flui-v2 is a hard fork of `gpui-ce`**, not a tracking fork. Upstream `gpui-ce` (and Zed's GPUI) became inactive on framework-level evolution; flui-v2 takes ownership of the trajectory and diverges as needed. Breaking changes from upstream are the entire point of the fork — there is no upstream-sync commitment, no semver compatibility with `gpui`, and no obligation to preserve GPUI's public API. Selected upstream fixes may be cherry-picked, but it is a one-way pull, not a two-way sync.
 
-```
-Layer 5: Application (your app, examples, demos)
-Layer 4: flui-navigator (routing, transitions, guards, middleware)
-Layer 3: flui-widgets / flui-a11y (widget library + a11y; animation primitives live in flui-core::animation, widget-level animation builders extend flui-widgets in future)
-Layer 2: flui-core (entity system, views, elements, layout, styling, input, executor)
-Layer 1: Platform backends (Metal / DirectX / wgpu / Wayland / X11)
-```
+The project intentionally avoids replicating Flutter's deep internal layering (an earlier v1 attempt with `flui-foundation`/`flui-engine`/`flui-rendering`/etc. was abandoned). Instead the architecture replicates Flutter's **feature surface** on top of GPUI's single-level engine. The Engine tier deliberately stays single-crate (`flui-core`); architectural layering happens **on top of** the engine through the Framework tier, not inside it.
 
-Per the active roadmap, the long-term direction is to peel Layer 1 out of `flui-core` into the dedicated `flui-platform` crate. Approximately 42,936 LoC across 80 files under `crates/flui-core/src/platform/**` are scheduled to migrate via specs S02 through S06. The new `flui-platform` skeleton already exists at `crates/flui-platform/`, populated incrementally per `docs/superpowers/specs/`.
+The Framework tier replaces Flutter's 4-tree internal model (Widget / Element / RenderObject / Layer) with **"2 structures + 1 cache"**: an immutable Widget config struct, the existing `flui-core::Element` runtime, and a flat `HashMap<ElementId, Box<dyn State>>` for surviving stateful data. Rust ownership lets us collapse Flutter's internal trees into a much smaller framework — this is the central justification for choosing Rust as the implementation language.
+
+Per the current roadmap, Phase I (platform extraction, S01–S06) is FROZEN after S01 + S02a; S02b–S06 are deferred to Phase III when a real new-platform driver lands (iOS / Android / Web). Active work is split across two parallel tracks: Phase II — Engine completeness (S08 Semantics, S09 Canvas, S10 Filters, S12 Focus, S13 Text, S14 MediaQuery, S15 Assets), and Phase II-F — Framework layer (Widget / Key / State / BuildCx / Provider / reconciliation, spec series SF##). The new `flui-platform` skeleton exists at `crates/flui-platform/` but stays unpopulated until Phase III. The new `flui-framework` crate is to be created at the start of Phase II-F.
 
 Authoritative architectural and migration context lives in `docs/superpowers/specs/` and `docs/superpowers/plans/`. Specialized review subagents (`flui-arch-reviewer`, `migration-risk-adversary`, `wgpu-gpu-reviewer`, `rust-api-migration-auditor`) are configured in `.claude/agents/` and should be used proactively on changes touching the runtime or platform code.
 

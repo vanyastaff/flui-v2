@@ -4,7 +4,15 @@
 
 ## Project Overview
 
-flui-v2 is a Flutter-inspired, GPU-accelerated UI framework for Rust, built on the foundation of `gpui-ce`. It is currently in Phase I of a roadmap focused on extracting platform-specific code from `flui-core` into a dedicated `flui-platform` crate. See `.ai-factory/DESCRIPTION.md` for full details.
+flui-v2 is a Flutter-inspired, GPU-accelerated UI framework for Rust. It is a **hard fork** of `gpui-ce` (the community edition of Zed's GPUI runtime); upstream became inactive on framework-level evolution and flui-v2 owns the trajectory now, diverging from upstream as needed. The strategic goal is a full UI ecosystem in Rust with Flutter-equivalent developer experience and ecosystem reach.
+
+The architecture is organized into **three tiers**:
+
+- **Tier A — Engine:** `flui-core` (single-crate runtime, forked from gpui-ce), `flui-platform` (skeleton, Phase III), `flui-macros` (proc macros).
+- **Tier B — Framework:** `flui-framework` (PLANNED, Phase II-F) — Widget, Key, State, BuildCx, Provider, reconciliation. The Flutter-DX layer.
+- **Tier C — Ecosystem:** `flui-widgets`, `flui-material`, `flui-cupertino`, `flui-theme`, `flui-a11y`, `flui-navigator`, third-party widget crates.
+
+**Current status:** Phase I (platform extraction) is FROZEN after S01 + S02a — S02b–S06 are deferred to Phase III. **Active work is Phase 0-K Kernel Cleanup** (K-track) — repaying 24+ items of architectural debt in `flui-core` (broken Provider, no Widget identity / `Key`, `Render::&mut self` semantics, Element trait param explosion, AppCell, action globals, undefined re-entrancy contract, leaky coordinate-space type-safety, no layout cache, etc.) that block a healthy Framework tier. Critical chain is sequential: `K99 (MSRV 1.95) → K15 → K07 → K05 → K01 → K02 → K03 → K04`. Phase II (Engine completeness — S08 Semantics, S09 Canvas, S10 Filters, S12 Focus, S13 Text, S14 MediaQuery, S15 Assets) runs in parallel with K-track since most specs are additive. Phase II-F (Framework tier — spec series SF##) is **gated on K-track critical chain completion**. Done: S07 Gesture, S07.5b PointerEvent surface, S21 Animation. See `.ai-factory/DESCRIPTION.md`, `.ai-factory/ROADMAP.md`, and `.ai-factory/RESEARCH.md` for full details.
 
 ## Tech Stack
 

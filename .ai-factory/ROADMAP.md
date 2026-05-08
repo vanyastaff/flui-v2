@@ -1,11 +1,20 @@
 # Project Roadmap
 
-> Flutter-inspired, GPU-accelerated UI framework for Rust on top of `gpui-ce`. Phase I (platform extraction) is FROZEN after S01 + S02a; the active strategic direction is Phase II (Flutter-parity core subsystems), with parallel cross-cutting tracks for performance, architecture hygiene, testing infrastructure, and release readiness.
+> Flutter-inspired, GPU-accelerated UI framework for Rust. **Hard fork** of `gpui-ce` — upstream became inactive on framework-level work; flui-v2 owns the trajectory now and diverges as needed.
+>
+> Architecture is organized into three tiers (see `.ai-factory/ARCHITECTURE.md`):
+> - **Tier A — Engine:** `flui-core`, `flui-platform`, `flui-macros`.
+> - **Tier B — Framework:** `flui-framework` (PLANNED, Phase II-F) — Widget / Key / State / BuildCx / Provider / reconciliation.
+> - **Tier C — Ecosystem:** `flui-widgets`, `flui-material`, `flui-cupertino`, `flui-theme`, `flui-a11y`, `flui-navigator`, third-party crates.
+>
+> Phase I (platform extraction) is FROZEN after S01 + S02a. **Active strategic work begins with Phase 0-K (Kernel Cleanup)** — fixing foundational issues in `flui-core` (broken Provider, no Widget Identity, `Render::&mut self` semantics, effect/frame contract, Element param explosion, AppCell, action globals, re-entrancy contract). The Framework tier (Phase II-F) and remaining Engine completeness (Phase II) are gated on Kernel Cleanup completion of the critical chain (K15 → K07 → K05 → K01 → K02 → K03 → K04). Cross-cutting tracks (performance, architecture hygiene, testing infrastructure, release readiness) run continuously.
 
-Authoritative spec lives in `docs/superpowers/specs/2026-04-13-flui-core-roadmap.md`. This file is the high-level milestone tracker — keep it in sync with the spec, with `git log`, and with new specs as they land.
+Authoritative spec for Phase II (Engine track) lives in `docs/superpowers/specs/2026-04-13-flui-core-roadmap.md`. The Phase 0-K and Phase II-F (Framework) spec series will live alongside in `docs/superpowers/specs/` as they land. This file is the high-level milestone tracker — keep it in sync with the specs, with `git log`, and with new specs as they land.
 
 Numbering convention:
-- **S##** — feature specs (already in `docs/superpowers/specs/`)
+- **K##** — Kernel cleanup specs (Phase 0-K — flui-core architectural debt repaid before Framework tier work)
+- **S##** — Engine feature specs (already in `docs/superpowers/specs/`)
+- **SF##** — Framework tier specs (Phase II-F — Widget/Key/State/BuildCx/etc., gated on K-track critical chain)
 - **P#** — performance & GPU optimizations
 - **A#** — architecture & API hygiene
 - **T#** — testing & quality infrastructure
@@ -25,7 +34,65 @@ Numbering convention:
 - [x] **S02a flui-platform crate skeleton** — empty workspace member with minimal `Cargo.toml` + doc-only `lib.rs`; reserved slot for future Phase III work
 - [ ] **S02b–S06 platform migration (DEFERRED)** — `Platform` trait flip and per-platform code moves (wgpu/Linux, macOS, Windows, Web). Re-opened only when a concrete Phase III driver (iOS / Android / Web) forces a real platform-abstraction boundary.
 
-### Phase II — Flutter-parity core subsystems (active strategic direction)
+### Phase 0-K — Kernel Cleanup (gates Phase II-F; runs in parallel with Phase II additive work)
+
+> **Why this phase exists:** an architectural audit of `flui-core` (recorded in `.ai-factory/RESEARCH.md`) identified 24+ issues spanning critical/high/medium priority that block a healthy Framework tier. The Provider system is fundamentally broken (thread-local global, no reactivity, fragile push/pop). There is no Widget identity / `Key` mechanism. `Render::&mut self` makes widgets mutable owners of state, contradicting Flutter's pure-build model. Effect/frame ordering is undefined. The `Element` trait has 6-7 args per method. `AppCell = RefCell<App>` is marked "remove after stabilization". Action system is global statics via `inventory`. Re-entrancy contract is undocumented. `Rc<RefCell<…>>` lurks on hot paths. Coordinate-space type-safety is leaky.
+>
+> Building Framework on top of these is constructing on cracks. Phase 0-K repays the debt first.
+>
+> **Critical chain (sequential — gates Phase II-F start):**
+> `K99 → K15 → K07 → K05 → K01 → K02 → K03 → K04`
+>
+> **Internal-org track (parallel after K05):** K06, K08, K10, K11
+>
+> **Independent track (any order):** K12, K13, K14, K16, K17, K20, K21, K22
+>
+> **Hygiene track (continuous, parallel slots):** K90 — K98
+>
+> **Done criteria for Phase 0-K:** all critical-chain specs land; `cargo test --workspace` green; bench harness shows no regression > 5% on tracked metrics; `flui-arch-reviewer` audit pass on the cleaned `flui-core`.
+
+#### K-track: critical chain (sequential)
+
+- [ ] **K99 MSRV bump to Rust 1.95+** — workspace Cargo.toml, rust-toolchain.toml, CI matrix update. Unlocks: AFIT + RPITIT + edition-2024 lifetime captures (allow `Widget::build(&self) -> impl Widget` without `Box<dyn>`), async closures stable, `let-chains` stable, `lazy_cell` stable. Single-PR mechanical change. **Prerequisite for all subsequent K-specs.**
+- [ ] **K15 Re-entrancy contract** — document and enforce semantics for `update_window` inside `update_window`, `update_entity` inside callback, `setState` inside `did_update_widget`. Either queue (preferred) or panic with structured error (acceptable). No undefined `RefCell::borrow_mut` panics. Adds property-tests covering re-entry scenarios. **HIGH-RISK** — touches every callback in the system.
+- [ ] **K07 AppCell removal — token-based borrow model** — replaces `AppCell = RefCell<App>` (marked "remove after stabilization") with token-based mutual-exclusion. Closes E3 from `docs/promt.md`. **HIGH-RISK** — every callback signature changes.
+- [ ] **K05 Element trait → context object** — `&mut PaintCx<'_>` / `&mut LayoutCx<'_>` / `&mut PrepaintCx<'_>` replace 6-7-arg method signatures. Closes E5, E6 from `docs/promt.md`. **API-BREAKING** for every custom Element. Unblocks K01-K04 by giving them clean borrow surfaces.
+- [ ] **K01 Provider rewrite — per-Window InheritedRegistry, reactive** — replaces `provider/stack.rs` thread-local global. Subscriptions via `BuildCx::inherit<T>()`. Theme/MediaQuery/DefaultTextStyle become trivial on top. Closes E1 from `docs/promt.md`. **HIGH-RISK API-BREAKING.**
+- [ ] **K02 Element identity & Key** — stable identity for Elements via `Key` enum (Local source-location, Value user-provided, Global cross-tree). `#[track_caller]` for stable Local Key without explicit annotation. Lays groundwork for SF01-SF02. Generalizes `AnyView::cached` so stateless widgets cache too. **HIGH-RISK API-BREAKING.**
+- [ ] **K03 Render → Build separation** — keep existing `Render::render(&mut self)` as low-level Engine-substrate trait (Zed-style imperative UI). Add new pure `Widget::build(&self, cx: &BuildCx<'_>) -> impl Widget` trait for Framework tier. Both coexist in Engine; only Framework uses `Widget`. Closes the `&mut self` semantic mismatch (#3 in audit). **HIGH-RISK API-BREAKING.**
+- [ ] **K04 Effect / Frame contract** — define structured frame phases (`preFrame` callbacks → `tick` → `layout` → `prepaint` → `paint` → `postFrame` callbacks → `idle`). `Effect::Defer` placement-aware. Per-phase deadlines (per `docs/promt.md` §3.1). Drain order documented and tested. **HIGH-RISK** — alters App scheduler.
+
+#### K-track: internal organization (parallel after K05)
+
+- [ ] **K06 Window decomposition + ownership split** — split `window.rs` (6123 lines, 222 pub methods) into `window/{lifecycle,layout,paint,hit_test,dispatch,focus,state,frame,actions}.rs`. Beyond cosmetic — split Window's monolithic borrow domain into `BuildOwner` / `PipelineOwner` / `SemanticsOwner` (Flutter-style independent owners). Closes E13 from `docs/promt.md`. **API-BREAKING** for any code depending on Window field access patterns.
+- [ ] **K08 Action subtree dispatcher** — replace global `inventory::collect!` action registry with per-subtree `Actions(actions: {...}, child: ...)` model. Per-Window and per-Entity actions become possible. Plugin extensibility. Closes E3 partially. **API-BREAKING** for action API consumers.
+- [ ] **K10 Style decomposition** — replace 38-flat-field `Style` with composition (`LayoutStyle`, `SpacingStyle`, `BoxDecoration`, `TextStyle`, `EffectsStyle`, `InteractionStyle`). Cache key per sub-struct enables fine-grained diffing. Closes E11 from `docs/promt.md`. **API-BREAKING** for style consumers.
+- [ ] **K11 Hit-test arena** — replace `FxHashMap<HitboxId, …>` with `Vec<HitTestEntry>` indexed by `HitboxId(u32).0`. O(1) without hash. Closes E4 from `docs/promt.md`.
+
+#### K-track: independent items (any order)
+
+- [ ] **K12 Drop order codification + entity cycle detection** — codify `App` field ordering with rationale; debug-build assertion for `Entity<T>` cycles via cross-Entity Weak refs (audit-driven). Closes E13's drop-ordering hand-control concern.
+- [ ] **K13 Arena allocator audit** — assess 16 `unsafe` blocks (12 in `arena.rs`, 2 in `window.rs`, others). Decision: keep custom unsafe (current trade-off) vs migrate to `bumpalo`/`typed_arena` (fewer unsafe, similar perf). Document the chosen path. Run `wgpu-gpu-reviewer` if scene-arena interaction touched.
+- [ ] **K14 Subscription backpressure + bounds** — bound `SubscriberSet` by max-subscribers; add metrics for high-frequency events (mouse_move). Low priority.
+- [ ] **K16 Coordinate-space type-safety** — replace bidirectional `From<f32> for Pixels` with `Pixels::new(f32)` ctor + `into_f32()`; remove `impl From<DevicePixels> for ScaledPixels` (requires scale factor); add sealed conversion traits. Closes audit-finding B (geometry.rs:3012, 2772, 2784).
+- [ ] **K17 Test harness simplification** — `flui_core::testing` module exposing `WidgetTester`-style API: spin up minimal App, mount widget, query layout tree, simulate events, assert. Reduces unit-test cost from "spin up Application::test()" to ~5 lines. Closes audit-finding E.
+- [ ] **K20 Layout cache** — cache `Taffy` results keyed by `hash(LayoutStyle + SpacingStyle + Constraints)`. Skip Taffy for unchanged subtrees. Closes E7 from `docs/promt.md` and audit-finding C.
+- [ ] **K21 Text-shape cache audit + LRU** — verify what cosmic-text shaping cache covers; add LRU bound; per-frame budget assertion. Closes audit-finding D.
+- [ ] **K22 Inspector intro API** — read-only tree traversal trait (`InspectableElement`). No UI yet, just the substrate that future inspector / DevTools will hook into. Cheap now, expensive to retrofit later. Closes audit-finding F.
+
+#### K-track: hygiene (parallel slots, continuous)
+
+- [ ] **K90 Rebrand "GPUI" → "flui"** — 157 mentions across 25 files including public docstrings (`lib.rs:90, 269`, `prelude.rs:1`) and `_ownership_and_data_flow.rs` doctests using `gpui_platform::application()` (which doesn't exist). Closes E16 from `docs/promt.md`. Strategic, not cosmetic — signals fork autonomy.
+- [ ] **K91 29 globs → explicit re-exports** — continuation of S01a.3 precedent. Closes E17 from `docs/promt.md` and roadmap A2.
+- [ ] **K92 derive_more 0.99 → 2.x** — outdated dependency (2021); used in 10 files. Closes E18 from `docs/promt.md`.
+- [ ] **K93 TODO/FIXME/dead_code triage** — 47 TODO/FIXME markers + 13 `#[allow(dead_code|unused)]`. Convert to GitHub issues or fix immediately. Closes E19 from `docs/promt.md`.
+- [ ] **K94 Prelude expansion** — add `Pixels`, `px`, `point`, `size`, `Hsla`, `rgb`, `rgba`, `SharedString` to existing trait re-exports. Closes E20 from `docs/promt.md`.
+- [ ] **K95 with_context().unwrap() → expect helpers** — closes E21 from `docs/promt.md`.
+- [ ] **K96 unwrap_or_else(|| panic!(...)) → expect** — closes E22 from `docs/promt.md`.
+- [ ] **K97 scene.rs missing_docs → real docs** — closes E23 from `docs/promt.md`.
+- [ ] **K98 `_ownership_and_data_flow.rs` rewrite** — fix broken doctests using non-existent `gpui_platform::application()`. Document is rendered in rustdoc (`#[cfg(doc)] pub mod _ownership_and_data_flow`) — currently embarrassing. Closes audit-finding #24.
+
+### Phase II — Flutter-parity core subsystems (Engine completeness; runs alongside Phase 0-K)
 
 - [x] **S07 GestureArena** — competing recognizers (tap, double-tap, long-press, drag, scale, horizontal/vertical drag), hit-test protocol [Gap B]
 - [x] **S07.5 GestureArena — T15 wiring follow-up** — `RecognizerLifecycle` extensibility seam, LongPress arena back-channel, DoubleTap arena hold/release, per-window settings flow, `MouseExit → Removed` semantics, gesture-state consolidation, `test-support` decoupling, end-to-end integration test, recognizer-extension contributor doc
@@ -39,6 +106,25 @@ Numbering convention:
 - [ ] **S13 Text parity** — `StrutStyle`, `TextDecoration`, `FontFeatures`, `FontVariations`, selection rendering, IME composition preview [Gap D]
 - [ ] **S14 MediaQuery completeness** — accessibility flags (highContrast, disableAnimations, accessibleNavigation), gestureSettings, SystemChrome [Gap H]
 - [ ] **S15 Asset bundle** — resolution-aware variants, locale variants, structured manifest format [Gap I]
+
+### Phase II-F — Framework tier (Flutter developer experience)
+
+> **GATING:** Phase II-F starts only after the Phase 0-K critical chain (K99 → K15 → K07 → K05 → K01 → K02 → K03 → K04) lands. SF01 in particular depends on K01 (Provider), K02 (Key + identity), K03 (Widget::build separation), K05 (Element ctx-object). Starting Framework before kernel cleanup means rebuilding it after — wasted work.
+>
+> **Goal:** Build the `flui-framework` crate (Tier B) that makes flui feel like Flutter for app authors. Currently the project has Engine (Tier A) and skeleton Ecosystem crates (Tier C), but no Framework tier — app code reaches into engine primitives directly. This track creates the missing layer.
+>
+> Success criterion: a third-party widget crate can be implemented against the stable `flui-framework` public API without touching `flui-core` internals. This is the operational definition of "Flutter ecosystem parity" for flui-v2.
+>
+> Architectural invariant: "**2 structures + 1 cache, not 4 trees**" (see `.ai-factory/ARCHITECTURE.md` §"Framework Tier Internals"). Widget = immutable config; Element = existing flui-core runtime; State = flat `HashMap<ElementId, Box<dyn State>>`. No RenderObject as separate tree, no Layer tree (Scene already in Engine).
+
+- [ ] **SF01 Widget + Key trait** — `Widget` trait (immutable, `&self` build), `StatefulWidget` trait, `Key` enum (Local / Value / Global), `derive(Widget)` macro skeleton in `flui-macros`. Establishes the public surface of `flui-framework`. Depends on: K02 (identity & Key), K03 (Widget::build separation), K05 (Element ctx-object).
+- [ ] **SF02 Reconciliation algorithm** — sibling matching by `(TypeId, Key)`, `did_update_widget` / `dispose` lifecycle hooks, position-fallback when keys absent, duplicate-key collision handling (debug panic / release fallback). O(siblings) per level invariant. Depends on: SF01, K15 (re-entrancy contract — reconcile may trigger setState).
+- [ ] **SF03 BuildCx + Provider** — `BuildCx<'_>` context object, `read<T>()` / `inherit<T>()` distinction, per-Window `InheritedRegistry`. Provider mechanism itself is built in K01; SF03 wraps it with `BuildCx` ergonomics. Depends on: SF01, K01 (Provider rewrite).
+- [ ] **SF04 State<W> + StateMap** — `WidgetState<W>` trait with `build` / `did_update_widget` / `dispose`, flat `HashMap<ElementId, Box<dyn State>>` with reuse semantics, `Entity<S>` interop for state that wants engine-level reactivity. Depends on: SF01, SF02, K07 (AppCell removal).
+- [ ] **SF05 setState + dirty-list + rebuild scheduling** — `cx.handler(...)` / explicit `setState` API, dirty propagation through the App effect queue, rebuild ordering invariants, allocation-free hot path. Depends on: SF03, SF04, K04 (Effect/Frame contract).
+- [ ] **SF06 InheritedWidget analog** — `Theme`, `MediaQuery`, `DefaultTextStyle`, `Localizations` patterns built on SF03's Provider. Cross-track: feeds S14 (MediaQuery completeness) and Tier C theme work. Depends on: SF03.
+- [ ] **SF07 Widget → Element compilation adapter** — Framework-tier adapter mounting Widget tree onto Engine's Element tree. Distinct from the existing `Component<C: RenderOnce>` (Engine substrate, one-shot). The adapter lives in `flui-framework`, not `flui-core`. Depends on: SF01–SF05.
+- [ ] **SF08 Async widgets** — `StreamBuilder<T>`, `FutureBuilder<T>`, with cancellation tied to `dispose`. Depends on: SF04, SF05.
 
 ### Phase III — New platform embeddings (future)
 
@@ -92,14 +178,15 @@ Numbering convention:
 - [ ] **R7 CI matrix expansion** — add Windows debug build (per S01a.4 repair), macOS aarch64, scheduled (nightly) full-matrix runs; current CI is per-OS check/clippy/test/fmt only
 - [ ] **R8 CONTRIBUTING.md** — workflow expectations, when to invoke each review subagent (`flui-arch-reviewer`, `migration-risk-adversary`, `wgpu-gpu-reviewer`, `rust-api-migration-auditor`), commit message style, PR checklist
 - [ ] **R9 mdbook user guide** — hosted on GitHub Pages: getting started, widget catalogue, navigator routing, theming, examples gallery
-- [ ] **R10 Migration guide from `gpui-ce`** — formalize the `extern crate flui_core as gpui;` pattern shown in `README.md`; document expected upstream-sync cadence
+- [ ] **R10 One-way port guide from `gpui-ce`** — formalize the `extern crate flui_core as gpui;` pattern shown in `README.md` as a **one-way migration aid** for porting Zed-style code to flui, NOT a sync mechanism. Document the divergence: API differences, removed APIs, the hard-fork posture. Selected upstream fixes may be cherry-picked but flui-v2 makes no upstream-sync commitment.
 
 ### Out of scope (gated on roadmap completion)
 
-- Higher-level widget crates (`flui-widgets`, `flui-material`, `flui-theme`)
+- **Tier C ecosystem populating** (`flui-widgets`, `flui-material`, `flui-cupertino`, `flui-theme` build-out beyond skeletons) — gated on Phase II-F (Framework tier) reaching SF05 minimum, since widgets need Widget+State+setState to be implementable.
 - `flui-cli`, `flui-build`, `flui-test`, `flui-golden`, `flui-devtools`
 - Dart VM / platform channels (we are native-only)
-- Replicating Flutter's internal layer tree (GPUI's scene already solves this)
+- Replicating Flutter's internal 4-tree model (Widget/Element/RenderObject/Layer) — Framework tier uses "2 structures + 1 cache" instead. See `.ai-factory/ARCHITECTURE.md`.
+- Tracking-fork relationship with `gpui-ce` (we are a hard fork)
 - DevTools / inspector / performance overlay (P1 instrumentation is a prerequisite, not a substitute)
 
 ## Completed
@@ -128,6 +215,19 @@ Numbering convention:
 - **S08 → S17, S18**: semantics protocol must land before mobile platforms can plug accessibility into it.
 - **A4 + A3 → R8**: tracing + error-handling guidance feed CONTRIBUTING.md.
 - **S01b lock infrastructure → T6**: visual regression expansion reuses the S01b harness; do not build a parallel one.
+- **K99 → K15 → K07 → K05 → K01 → K02 → K03 → K04**: Phase 0-K critical chain. Sequential. Gates all SF specs.
+- **K05 → K06, K08, K10, K11**: internal-org K-specs unlock after Element ctx-object lands.
+- **K01 → SF03**: Provider mechanism (K01) is the actual implementation; SF03 is the BuildCx ergonomics wrapper.
+- **K02 → SF01, SF02**: Element identity & Key are the substrate; SF01 defines the trait, SF02 uses it for reconciliation.
+- **K03 → SF01**: Widget::build separation establishes the type-level distinction Framework relies on.
+- **K04 → SF05**: Effect/Frame contract underpins setState scheduling.
+- **K07 → SF04, SF05**: AppCell removal allows clean ownership for State<W> mutation.
+- **SF01 → SF02 → SF04 → SF05**: Framework tier core path. SF05 (`setState` + dirty-list) is the gate that unblocks Tier C ecosystem build-out.
+- **SF03 → SF06 → S14**: Provider mechanism unblocks `MediaQuery.of()`, which closes the developer-facing half of S14 (MediaQuery completeness). The accessibility-flag plumbing in S14 still needs Engine work.
+- **SF03 → existing E1 closure**: SF03's per-Window `InheritedRegistry` replaces `flui-core::provider::stack`'s thread-local global, closing the E1 issue from `docs/promt.md`.
+- **SF05 → Tier C populating**: widget crates (`flui-widgets`, `flui-material`) cannot be meaningfully implemented until `setState` lands. Tier C build-out is gated on SF05.
+- **S21 (done) → SF04**: `Animation<T>` trait family is consumed by Framework's `AnimatedBuilder` / animation-aware widgets. Available now.
+- **S07.5b (done) → SF05**: `GestureBinding` is consumed by Framework gesture detector widgets. Available now.
 
 ## Anti-goals for cross-cutting tracks
 
@@ -135,3 +235,7 @@ Numbering convention:
 - ❌ Do not treat A2 / A8 as license to rewrite the public surface in one big PR; each is a curated, reviewable change.
 - ❌ Do not introduce R-track tooling (semver-checks, deny, release-plz) before the first publishable surface exists — premature gating is friction without value.
 - ❌ Do not start S17/S18 (mobile) without S08 (semantics protocol) and S16 (headless renderer baseline).
+- ❌ Do not implement Framework tier (Phase II-F) inside `flui-core`. It lives in `flui-framework` (new crate). Engine and Framework are separate crates by design — see `.ai-factory/ARCHITECTURE.md`.
+- ❌ Do not start populating Tier C widget crates (Container, Row, Stack, Material widgets) before SF05 (`setState` + dirty-list) lands. Widgets without rebuild semantics are dead-ends.
+- ❌ Do not preserve `gpui-ce` API for backwards compatibility. flui-v2 is a hard fork — divergence is the design goal, not a regression.
+- ❌ Do not re-introduce v1's multi-crate engine split (`flui-foundation` / `flui-engine` / `flui-rendering` / …). Engine stays single-crate (`flui-core`).
