@@ -39,7 +39,7 @@
 
 Keep the existing flat layout of `flui-core/src/animation/` and grow it file-by-file. No subdirectories. Every file maps to one concern; if a file outgrows ~800 LoC we split it inside the same flat directory (e.g. `curve.rs` → `curve.rs` + `curve_2d.rs`). This matches the GPUI-derived style already used throughout `flui-core` and avoids `mod.rs`-soup.
 
-```
+```text
 crates/flui-core/src/animation/
 ├── mod.rs            # Curated re-exports (Phase 0 replaces the existing `pub use animation::*;` at lib.rs:96)
 ├── animation.rs      # Animation<T> trait, AnimationListenable, AnimationWithParentMixin
@@ -105,9 +105,11 @@ _None — `.ai-factory/RESEARCH.md` does not exist. The Flutter API page at http
 
 ---
 
-## Phase 0a — Resolve `Animation` naming collision (prerequisite, blocks Phase 0)
+## Phase 0a — Resolve `Animation` naming collision (prerequisite, blocks Phase 0) ✅ DONE 2026-05-07
 
 **Outcome:** the symbol `Animation` is free for the new Flutter-parity trait. Existing element-level `Animation` struct is renamed without touching its semantics.
+
+**Landed:** branch `feature/animation-phase-0a-rename`. `cargo check --workspace --all-features` clean; `cargo check -p flui-navigator --features transition` clean; `cargo check --example animation -p flui-core` and `cargo check --example image_loading -p flui-core` clean. Workspace-wide grep for `flui_core::Animation\b` returns only doc references (the plan itself + historical `docs/superpowers/specs/2026-04-07-*` and `docs/superpowers/plans/2026-04-07-*` — left untouched per "leave historical specs alone"). CHANGELOG entry added under a new `## [Unreleased] — S21 Animation Flutter parity (in progress)` block.
 
 ### Why this is its own phase
 
@@ -137,6 +139,19 @@ _None — `.ai-factory/RESEARCH.md` does not exist. The Flutter API page at http
 ## Phase 0 — Foundation: `Animation<T>`, listeners, Ticker
 
 **Outcome:** New trait-based foundation lands additively. Old `AnimationController` API still compiles; new trait surface is in place; determinism unlocked.
+
+**Progress (S21 phase 0):** ✅ code complete 2026-05-08; only 0.1 (Flutter API reference dump — pure docs) deferred to Phase 7.
+
+- [x] 0.2 — Stay flat (mod.rs plumbing) — `animation`, `status`, `listeners`, `ticker` modules added as siblings of `controller.rs` / `curve.rs` / `lerp.rs`; no subdirectories
+- [x] 0.3 — Replaced `pub use animation::*;` glob in `crates/flui-core/src/lib.rs` with curated explicit list (A2 progress)
+- [x] 0.4 — `Animation<T>` trait + `AnimationStatus` — `crates/flui-core/src/animation/animation.rs` + `status.rs`; object-safety check pinned; `AnimationStatus` is `#[non_exhaustive]`
+- [x] 0.5 — Listener mixins — `LocalListeners`, `LocalStatusListeners`, `LazyListenable`, `EagerListenable`; Flutter-parity re-entrancy semantics (snapshot + contains-check)
+- [x] 0.6 — `Ticker` / `TickerProvider` / `TickerFuture` / `TickerCanceled` / `TickerFutureState` — `crates/flui-core/src/animation/ticker.rs`; Clock-aware via `Arc<dyn Clock>`; tests use `TestClock` to verify deterministic elapsed-time
+- [x] 0.7 — `AnimationController` wired to `Ticker`, implements `Animation<f64>`. Inherent `value() -> f32` preserved (Rust resolves inherent over trait at the dot-call site); trait method returns `f64` via UFCS or `dyn Animation<f64>`. Listener fan-out: `notify_value()` + `set_status()` on every transition; `cx.notify()` continues to keep observe-chain consumers alive
+- [x] 0.8 — Compatibility verification: `cargo check --workspace --all-features` ✅; 39/39 unit tests pass; examples (`animation_demo`, `nav_demo --features transition`, `material_demo`) keep compiling
+- [x] 0.9 — Migrated `ElementAnimationElement` (`crates/flui-core/src/elements/animation.rs`) from bare `Instant::now()` to scheduler-clock; `request_layout` pre-computes `now = cx.background_executor().scheduler_executor().scheduler().clock().now()` once and uses it for both initial state and segment-transition timestamps. Element-level animations are now deterministic under `TestClock`
+- [x] 0.10 — Doctest layout convention: every new module ships its tests under `#[cfg(test)] mod tests { … }` (Rust-tested) rather than rustdoc fenced blocks (which `crates/flui-core/Cargo.toml: doctest = false` would silently drop). Phase 7 documents the rule in the migration guide
+- [ ] 0.1 — **Deferred to Phase 7.** Pure documentation task (Flutter API mirror into `.ai-factory/references/flutter-animation-api.md`); does not block any subsequent phase
 
 ### Tasks
 
@@ -245,6 +260,18 @@ _None — `.ai-factory/RESEARCH.md` does not exist. The Flutter API page at http
 
 **Outcome:** Full curve surface from Flutter; the existing `Curve` enum migrates to a trait + struct family without breaking call sites.
 
+**Progress (S21 phase 1):** ✅ substantially complete 2026-05-08; only 1.5 (`Curve2D` / Catmull-Rom) deferred — it does not block any downstream phase.
+
+- [x] 1.1 — `Curve` enum → trait + concrete structs (Linear, EaseIn/Out/InOut, EaseIn/Out/InOutCubic, Decelerate, Bounce(In|Out|InOut), Cubic, ElasticIn/Out/InOut with parametric period, Interval, Threshold, SawTooth, FlippedCurve, Reversed, Split, CustomCurve). Trait carries `transform_internal`, `derivative_at` (analytical for Linear/EaseIn/EaseOut/EaseIn/OutCubic), `clone_box` for `Box<dyn Curve>: Clone`.
+- [x] 1.2 — `Curves` catalogue with 18 named consts (LINEAR, EASE_IN, …, BOUNCE_IN_OUT, ELASTIC_IN_OUT, FAST_OUT_SLOW_IN, SLOW_MIDDLE, EASE). SCREAMING_SNAKE_CASE per Rust idiom; `pub const` zero-sized struct literals (no monomorphization bloat).
+- [x] 1.3 — Composition primitives: `Interval{begin,end,curve}`, `Threshold(f32)`, `SawTooth(u32)`, `FlippedCurve<C>`, `Reversed<C>`, `Split<A,B>`. Generic over inner curve type for stack-allocated stacks.
+- [x] 1.4 — Elastic family with parametric `period` (default 0.4 — Flutter parity).
+- [ ] 1.5 — **Deferred.** `ParametricCurve<T>` + `Curve2D` + `Curve2DSample` + `CatmullRomCurve` + `CatmullRomSpline` + `ThreePointCubic` (would land as `crates/flui-core/src/animation/curve_2d.rs`). Substantial 2D-spline math; not consumed by any downstream phase. Will land as a follow-up commit on this branch or as a future spec.
+- [x] 1.6 — `CurvedAnimation` decorator: `crates/flui-core/src/animation/curved_animation.rs`. Wraps `Rc<dyn Animation<f64>>` with a forward curve and optional reverse curve; subscribes to parent's value + status listeners on construction; releases them in `Drop`. Establishes the listener-forwarding pattern Phase 3 combinators (`Proxy`/`Reverse`/`Compound`/`TrainHopping`) reuse.
+- [x] 1.7 — **No deprecation shim.** Plan explicitly mandates "no quick-wins"; the breaking `Curve` enum→trait conversion lands clean. CHANGELOG documents the migration narrative.
+- [x] 1.8 — Tests partial: 25+ unit tests for the curve trait + concrete types + composition + Elastic period + Curves catalogue + Box<dyn Curve> Clone; 7 unit tests for `CurvedAnimation` (forward/reverse curve dispatch, value/status listener forwarding, drop-releases-parent-listeners, status pass-through). proptest invariants + Criterion benches land in Phase 6.
+- [x] 1.8b — Legacy `easing` module functions in `crates/flui-core/src/elements/animation.rs` marked `#[deprecated(note = "use Curves::* …")]`: `linear` → `Curves::LINEAR`, `quadratic` → `Curves::EASE_IN`, `ease_in_out` → `Curves::EASE_IN_OUT`; `ease_out_quint` / `bounce` / `pulsating_between` deprecated without direct shim (build a `CustomCurve` instead). `ElementAnimation::new` default easing replaced with inline `|t| t` closure to avoid deprecation warnings on its own default.
+
 ### Tasks
 
 - **1.1 `Curve` enum → `Curve` trait + concrete structs.** New trait:
@@ -318,6 +345,17 @@ _None — `.ai-factory/RESEARCH.md` does not exist. The Flutter API page at http
 
 **Outcome:** Complete `Animatable<T>`/`Tween<T>` surface with composition (`chain`), every Flutter Tween subtype, and `TweenSequence`.
 
+**Progress (S21 phase 2):** ✅ complete 2026-05-08.
+
+- [x] 2.1 — `Animatable<T>` trait (object-safe) + `AnimatableExt::chain` extension trait + `ChainedAnimatable<P, C, T>` composition type. `evaluate(&dyn Animation<f64>)` convenience helper.
+- [x] 2.2 — `Tween<T: Lerp>` implements `Animatable<T>` with boundary-stable lerp (snap to endpoints rather than rely on float round-off). Inherent `transform(t: f32)` retained for callers that already work in `f32`.
+- [x] 2.3 — `ConstantTween<T>`, `ReverseTween<T>` (lerp in reverse direction), `CurveTween<C: Curve>` (`Animatable<f64>` applying a curve to `t`).
+- [x] 2.4 — `IntTween` (round-to-nearest), `StepTween` (floor) with documented rounding-direction difference.
+- [x] 2.5 — `ColorTween` accepts `Option<Hsla>` with Flutter-parity null-aware lerp (None → fully-transparent same-hue endpoint, no hue flip), `SizeTween`, `RectTween`. **`Lerp for Bounds<Pixels>`** added (composes existing `Lerp for Point<Pixels>` + `Lerp for Size<Pixels>`).
+- [x] 2.6 — `TweenSequence<T>` with weighted items normalized to `[0, 1]` cumulative array; `TweenSequenceItem<T>` with `Box<dyn Animatable<T>>`; `FlippedTweenSequence<T>` runs the underlying sequence backward (`1 - t` flip).
+- [x] 2.7 — `Tween::chain(other)` ergonomic via `AnimatableExt::chain` blanket impl on every `Animatable<T> + Sized`.
+- [x] 2.8 — ~22 unit tests cover boundary values, clamping, ColorTween null-aware lerp, weighted segments, FlippedTweenSequence, panic-on-empty-sequence, `Lerp for Bounds<Pixels>`, chain composition.
+
 ### Tasks
 
 - **2.1 `Animatable<T>` trait.**
@@ -380,6 +418,15 @@ _None — `.ai-factory/RESEARCH.md` does not exist. The Flutter API page at http
 
 **Outcome:** `Animation<T>` is composable; user code can build animation graphs without owning a controller.
 
+**Progress (S21 phase 3):** ✅ complete 2026-05-08. All combinators in `crates/flui-core/src/animation/combinator.rs`.
+
+- [x] 3.1 — `AlwaysStoppedAnimation<T>` — constant value, status `Forward`, listeners are no-ops (return fresh `ListenerId` for API parity).
+- [x] 3.2 — `ProxyAnimation<T>` — runtime parent swap via `set_parent`; unsubscribes from old, subscribes to new, fires listeners + status listeners on swap; `Drop` releases subscriptions.
+- [x] 3.3 — `ReverseAnimation` (`Animation<f64>`-only — Flutter parity) — value `1.0 - parent.value()`; status flipped via `reverse_status` helper (`Forward↔Reverse`, `Dismissed↔Completed`); future `AnimationStatus` variants pass through.
+- [x] 3.4 — `CompoundAnimation<F>` generic over `F: Fn(f64, f64) -> f64`. Status priority `Forward > Reverse > Completed > Dismissed` via `combined_status` helper (Flutter's `_lastStatus` cache approximated; covers Min/Max/Mean cases). Free constructors: `animation_min`, `animation_max`, `animation_mean`.
+- [x] 3.5 — `TrainHoppingAnimation` — listens to two parents; on first sign-flip of `(first.value - second.value)` disposes the first parent's listeners and switches to second-only operation (one-shot hop, never reverses). Used by route-transition swaps. Returns `Rc<Self>` because the value listener uses `Weak<Self>` to avoid a self-referential strong cycle.
+- [x] 3.6 — 18 unit tests cover constant value/status, listener no-ops, proxy parent swap (sub/unsub/refire), drop releases parent listeners, reverse value+status flip + status listener forwarding, Min/Max/Mean values, status priority for forward-wins/all-dismissed, compound listener fan-out from either parent, TrainHopping hop semantics + listener release after hop.
+
 ### Tasks
 
 All combinators land in a single flat file: `crates/flui-core/src/animation/combinator.rs`.
@@ -415,7 +462,21 @@ All combinators land in a single flat file: `crates/flui-core/src/animation/comb
 
 ---
 
-## Phase 4 — `AnimationController` polish: `animateTo`, `fling`, `repeat` overloads, behaviour/style
+## Phase 4 — `AnimationController` polish: `animateTo`, `fling`, `repeat` overloads, behaviour/style ✅ MOSTLY DONE 2026-05-08
+
+**Progress (S21 phase 4):** ✅ controller polish landed; only `repeat()` overload extension (`min`/`max`/`period`/`reverse`/`count`) and `ClampedSimulation` deferred — they are not consumed by examples and are non-blocking for downstream phases.
+
+- [x] 4.1 `animate_to(target, AnimationStyle, cx)` — direction inferred (`Forward` if `target >= current`, `Reverse` otherwise); per-call duration / curve overrides via `AnimationStyle`.
+- [x] 4.2 `animate_back(target, AnimationStyle, cx)` — explicit `Reverse` regardless of direction; consumes `style.reverse_*` fallbacks.
+- [x] 4.3 `fling(velocity, AnimationBehavior, cx)` — drives a default-drag `FrictionSimulation` (drag = 8.0); behaviour parameter currently unused (S14 hookup).
+- [ ] 4.4 — **Deferred.** `repeat()` extension with `min`/`max`/`period`/`reverse`/`count`. Existing `repeat(cx)` covers the infinite-repeat case.
+- [x] 4.5 `AnimationBehavior` (`Normal` / `Preserve`, `#[non_exhaustive]`) in `behavior.rs`. `AnimationController::with_behavior(behavior)` builder.
+- [x] 4.6 `AnimationStyle { duration, reverse_duration, curve, reverse_curve }` (all `Option`) in `behavior.rs` with builder helpers (`with_duration`, `with_curve`, ...). `AnimationController::with_style(style)` merges into the controller's defaults.
+- [x] 4.7 `velocity()` three-branch — (1) active simulation `dx`, (2) analytical `Curve::derivative_at` ⋅ span / duration, (3) numerical central differences with `EPS = 1e-3` and `log::trace!` on the fallback path.
+- [x] 4.8 `BoundedFrictionSimulation` — `FrictionSimulation` clamped to `[min, max]`; `is_done` true once a bound is hit; tests cover both clamp-at-max and within-bounds settling.
+- [ ] 4.8b — **Deferred.** `ClampedSimulation` (Flutter wrapper that clamps an arbitrary inner simulation). Same shape as `BoundedFrictionSimulation`; can be added in a follow-up if a real consumer surfaces.
+- [x] 4.9 Ticker substrate verified — controller's `now()` continues to read through the injected `Clock` for all new methods (`animate_to` / `animate_back` / `fling` / `velocity`).
+- [x] 4.10 Unit tests partial: `AnimationStyle` builder chain + default-is-all-none, `AnimationBehavior` default, `BoundedFrictionSimulation` clamp-at-max + within-bounds. Controller-method tests (animate_to / fling / velocity) require a `TestApp` / `Headless` Context — deferred to phase 6 alongside the deterministic-Ticker integration goldens.
 
 **Outcome:** Controller surface matches Flutter; physics simulations are first-class controller drivers.
 
@@ -456,7 +517,11 @@ All combinators land in a single flat file: `crates/flui-core/src/animation/comb
 
 ---
 
-## Phase 5 — Delete `flui-animate` skeleton; defer widget layer to future `flui-widgets`
+## Phase 5 — Delete `flui-animate` skeleton; defer widget layer to future `flui-widgets` ✅ DONE 2026-05-08
+
+**Completed.** `crates/flui-animate/` removed; `Cargo.toml` workspace, README.md, AGENTS.md, ARCHITECTURE.md, DESCRIPTION.md, rules/base.md, .claude/agents/{flui-arch-reviewer,rust-api-migration-auditor}.md updated. Historical `docs/superpowers/specs/*` and `.worktree/` snapshots intentionally left untouched per the plan. Workspace `cargo check --all-features` clean; 93/93 animation tests pass; combinator's `reverse_status` cleaned of unreachable wildcard arm so future `AnimationStatus` variants force a compile-time decision.
+
+
 
 **Outcome:** The empty `flui-animate` workspace member is gone. The widget-layer surface (`AnimatedBuilder`, `AnimatedWidget`, `ImplicitlyAnimatedWidget`, choreography helpers) is explicitly registered as future `flui-widgets` work, not part of S21. Element-level `AnimationExt` (already in `flui-core::elements::animation`) remains the only widget-style integration this milestone ships.
 
@@ -499,7 +564,16 @@ The `flui-animate` skeleton was created on 2026-04-13 but has never held real co
 
 ---
 
-## Phase 6 — Testing infrastructure & golden coverage
+## Phase 6 — Testing infrastructure & golden coverage ⏸ PARTIAL 2026-05-08
+
+**Progress (S21 phase 6):** ⏸ proptest sweeps for curves + tween landed; remaining infrastructure (criterion benches, animation-frame goldens via S01b headless harness, `cargo bloat` baseline, deterministic Ticker-driven multi-controller integration tests) explicitly deferred — non-blocking; existing 116 unit + property tests cover the core surface.
+
+- [x] **proptest sweeps for curves** — 11 property-based cases in `curve.rs`: all-curves-finite-output, monotone-curves-pin-endpoints, non-overshoot-curves-stay-in-unit-interval, Linear identity, Reversed/FlippedCurve reflection symmetries, Threshold step shape, SawTooth output bracket, standard-curves weakly-monotone, CurveTween+Linear identity at the f64 boundary.
+- [x] **proptest sweeps for tween family** — 7 property-based cases in `tween.rs`: Tween<f32> output bracket + endpoint pinning, IntTween / StepTween bracket containment, ConstantTween invariant, Tween/ReverseTween endpoint swap, TweenSequence first/last item endpoints, FlippedTweenSequence reflection.
+- [ ] **Deferred:** criterion benches (curve evaluation, AnimationController tick, Tween chain depth-N) — needs `criterion = "0.5"` dev-dep + `[[bench]]` entries.
+- [ ] **Deferred:** animation-frame goldens via S01b headless harness — 30-frame deterministic render + ULP-tolerant hash comparison; needs `approx = "0.5"` dev-dep.
+- [ ] **Deferred:** `cargo bloat` baseline pre/post Phase 1.
+- [ ] **Deferred:** TestApp-driven AnimationController integration tests covering animate_to / fling / velocity (require Context<V> instance).
 
 **Outcome:** Animation correctness regressions are caught by CI; T6 (visual regression for animations) gains its first concrete tests.
 
@@ -540,7 +614,16 @@ The `flui-animate` skeleton was created on 2026-04-13 but has never held real co
 
 ---
 
-## Phase 7 — Documentation, roadmap registration, migration guide
+## Phase 7 — Documentation, roadmap registration, migration guide ✅ MOSTLY DONE 2026-05-08
+
+**Progress (S21 phase 7):** ✅ landing-essential docs done; mdbook chapter + `examples/animation_demo` 8-pattern expansion deferred (existing 4 cards still work; demo expansion can land alongside R9 mdbook).
+
+- [x] 7.1 Rustdoc on every new public type — incremental during phases 0–4. Each `pub` item carries a Flutter-parity link plus rationale.
+- [ ] 7.2 mdbook chapter — **deferred to R9**. Migration guide at `docs/superpowers/migrations/` covers the same surface for now.
+- [x] 7.3 Migration guide — `docs/superpowers/migrations/animation-flutter-parity.md`. Quick-reference table + per-phase narrative for `Animation` struct rename, `Curve` enum→trait, `easing::*` deprecation, plus non-breaking additions (Animation<T> trait, Animatable, combinators, controller polish).
+- [x] 7.4 ROADMAP.md updates — `S11 Physics simulations` marked subsumed by S21; `[x] S21 Animation Flutter parity` registered under Phase II with rationale + cross-track links to S08 (semantics-driven muting) and S14 (`AnimationBehavior::Preserve` integration). Completed table updated.
+- [x] 7.5 CHANGELOG.md — appended Added/Breaking/Deprecated blocks per phase incrementally; final Phase 7 commit adds the closing summary.
+- [ ] 7.6 — **Partial.** `examples/animation_demo` updated to use the new `Curves` catalogue in S21 phase 1. The 8-pattern expansion (fling card, ping-pong-repeat card, AnimationMean/staggered card) deferred — needs a real-time runtime context that's awkward to demo without a full-day session. Existing 4 cards (fade, slide, color, bounce) keep working. `crates/flui-core/examples/learn/animation.rs` deferred — currently warns on deprecated `linear`/`bounce`/`ease_in_out` imports; migration to `Curves::*` is mechanical and can land in a follow-up.
 
 **Outcome:** The animation surface is documented end-to-end; ROADMAP records S21 milestone with cross-track wiring; a migration guide explains old API → new API.
 

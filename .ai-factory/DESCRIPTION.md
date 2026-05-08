@@ -15,7 +15,7 @@ The project is currently in Phase I of a multi-phase roadmap focused on (1) extr
 - Input pipeline: `input`, `interactive`, `key_dispatch`, `keymap`, `tab_stop`, plus `gesture` (S07 + S07.5 + S07.5b) — Flutter-style competing recognizers (`Tap`, `DoubleTap`, `LongPress`, `Pan`/`HorizontalDrag`/`VerticalDrag`, `Scale`), per-`Window` `GestureBinding`, explicit hit-test protocol with `HitTestBehavior` (`Opaque`/`Translucent`/`DeferToChild`), and a `VelocityTracker` (Flutter-LSQ port). After S07.5: DoubleTap holds the arena past the first `Up` and releases on a per-pointer timeout, LongPress accepts via a timer-driven arena back-channel, and the `RecognizerLifecycle` trait is the canonical extensibility seam for new recognizers. After S07.5b: `PointerEvent` carries `Option<PressureSample>` (mouse-class events default `None`; macOS Force Touch surfaces real values), a `provenance` enum distinguishes platform vs sanitizer-synthesised events, `timestamp` is split into `timestamp` + `source_timestamp` for resampler/semantics-aware velocity tracking, and `PointerPanZoomEvent` exists as a sibling type. Hit-test entries record an optional `Affine2` `target-local → window-local` transform (Flutter convention) pushed via the RAII `HitTestScope` guard, which the dispatcher inverts once per delivery to compute `DeliveredEvent.local_position`. Recognizers consume events via `DeliveredEvent<'_>` with explicit `local_position`, gate admission via the per-recognizer `AllowedButtonsFilter`, and share a unified per-pointer `set_arena_back_channel(pid, bc, idx)` lifecycle hook. The arena `hold_count: u32` counter replaces the previous boolean.
 - Type-safe routing via `flui-navigator` (nested routes, transitions, guards, middleware).
 - Procedural macros (`flui-macros`): `derive(Render)`, `derive(IntoElement)`, etc.
-- Skeleton crates ready for incremental population: `flui-platform`, `flui-animate`, `flui-a11y`, `flui-theme`, `flui-material`, `flui-widgets`.
+- Skeleton crates ready for incremental population: `flui-platform`, `flui-a11y`, `flui-theme`, `flui-material`, `flui-widgets`. (The `flui-animate` skeleton was removed in S21 phase 5 — animation primitives live in `flui-core::animation`; widget-layer animation builders are deferred to the existing `flui-widgets` crate.)
 
 ## Tech Stack
 
@@ -34,7 +34,7 @@ The project is currently in Phase I of a multi-phase roadmap focused on (1) extr
 
 See `.ai-factory/ARCHITECTURE.md` for detailed architecture guidelines (folder layout, dependency rules, layer communication, code examples, anti-patterns).
 
-Pattern: **Layered + Cargo workspace** — five layers (platform → core → widgets/animate/a11y → navigator → app), each realized as a Cargo crate so layering is enforced mechanically by the dependency graph.
+Pattern: **Layered + Cargo workspace** — five layers (platform → core → widgets/a11y → navigator → app), each realized as a Cargo crate so layering is enforced mechanically by the dependency graph. Animation primitives live in `flui-core::animation`; widget-level animation builders are planned to extend `flui-widgets` in a future milestone.
 
 ## Architecture Notes
 
@@ -43,7 +43,7 @@ The project intentionally avoids replicating Flutter's deep internal layering (a
 ```
 Layer 5: Application (your app, examples, demos)
 Layer 4: flui-navigator (routing, transitions, guards, middleware)
-Layer 3: flui-widgets / flui-animate / flui-a11y (widget library, animation, a11y)
+Layer 3: flui-widgets / flui-a11y (widget library + a11y; animation primitives live in flui-core::animation, widget-level animation builders extend flui-widgets in future)
 Layer 2: flui-core (entity system, views, elements, layout, styling, input, executor)
 Layer 1: Platform backends (Metal / DirectX / wgpu / Wayland / X11)
 ```

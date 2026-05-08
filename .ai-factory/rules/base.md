@@ -4,7 +4,7 @@
 
 ## Naming Conventions
 
-- **Crates:** `flui-<area>` kebab-case (`flui-core`, `flui-platform`, `flui-navigator`, `flui-widgets`, `flui-animate`, `flui-a11y`, `flui-theme`, `flui-material`, `flui-macros`).
+- **Crates:** `flui-<area>` kebab-case (`flui-core`, `flui-platform`, `flui-navigator`, `flui-widgets`, `flui-a11y`, `flui-theme`, `flui-material`, `flui-macros`).
 - **Lib targets:** snake_case mirroring the crate (`flui_core`, `flui_platform`, `flui_navigator`, ...).
 - **Modules / files:** snake_case (`metal_renderer.rs`, `path_builder.rs`, `key_dispatch.rs`).
 - **Types / traits / enums:** UpperCamelCase (`App`, `Entity`, `Window`, `Element`, `AnimationController`).

@@ -44,7 +44,8 @@
 //!
 //! - [`pointer_event`] — `PointerEvent`, `PointerKind`, `PointerPhase`,
 //!   `PointerId`, `PointerButtons`. The normalized wire format.
-//! - [`pointer_signal`] — `PointerSignalEvent` (`Scroll` | `Magnify`),
+//! - [`pointer_signal`] — `PointerSignalEvent`
+//!   (`Scroll` | `Scale` | `ScrollInertiaCancel`),
 //!   non-competitive signals that bypass the arena.
 //! - [`hit_test`] — `HitTestEntry`, `HitTestResult`, `HitTestBehavior`.
 //!   Reuses the existing `Hitbox` infrastructure.
@@ -206,7 +207,7 @@
 //! - **`HitTestBehavior` ≠ `HitboxBehavior`.** They are orthogonal —
 //!   see the table on [`hit_test::HitTestBehavior`]. Setting one does
 //!   not change the other.
-//! - **`PointerSignalEvent` (Scroll/Magnify) bypasses the arena.**
+//! - **`PointerSignalEvent` bypasses the arena.**
 //!   Do not register a recognizer expecting to compete on scroll
 //!   data. Use `on_scroll_wheel` or the dedicated pinch recognizer
 //!   instead.
@@ -324,7 +325,7 @@ pub use pointer_event::{
     DeliveredEvent, PointerButtons, PointerEvent, PointerEventProvenance, PointerId, PointerKind,
     PointerPhase, PressureSample,
 };
-pub use pointer_signal::PointerSignalEvent;
+pub use pointer_signal::{PointerSignalData, PointerSignalEvent, PointerSignalSource};
 pub use recognizer::{GestureRecognizer, RecognizerLifecycle, SemanticAction};
 pub use velocity_tracker::{PositionSample, Velocity, VelocityTracker};
 

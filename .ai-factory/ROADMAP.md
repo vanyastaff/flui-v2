@@ -33,7 +33,8 @@ Numbering convention:
 - [ ] **S08 Semantics protocol** — `SemanticsNode` tree, `SemanticsOwner`, actions, roles/hints/labels, hooks for `flui-a11y` [Gap F]
 - [ ] **S09 Canvas facade** — unified `Canvas` API over `scene` + `path_builder`; `saveLayer`, clips, transforms, blend modes [Gap C]
 - [ ] **S10 Image filters** — `ImageFilter` (blur, matrix), `ColorFilter`, `BackdropFilter`, `MaskFilter`. Depends on S09 [Gap C]
-- [ ] **S11 Physics simulations** — `Spring`, `Friction`, `Gravity`, `ScrollPhysics` integrated with `AnimationController` [Gap E]
+- [ ] ~~**S11 Physics simulations**~~ — **subsumed by S21** (Phases 0/4/6 cover `Spring`/`Friction`/`Gravity`/`BoundedFriction` integration with `AnimationController`; `ScrollPhysics` deferred to a future scrollable-views spec) [Gap E]
+- [x] **S21 Animation Flutter parity** — Trait-shaped `Animation<T>` + listener mixins + `Ticker`/`Clock` injection + full `Curve` trait family + `Curves` catalogue + `Animatable<T>` + complete Tween family + `TweenSequence` + combinators (`AlwaysStopped`, `Proxy`, `Reverse`, `Compound`/`Min`/`Max`/`Mean`, `TrainHopping`) + `CurvedAnimation` + controller polish (`animate_to`, `animate_back`, `fling`, `velocity` 3-branch, `AnimationBehavior`, `AnimationStyle`, `BoundedFrictionSimulation`). `Animation` struct renamed to `ElementAnimation` (S21 phase 0a, breaking). `flui-animate` skeleton deleted (S21 phase 5); widget-layer animation primitives deferred to the existing `flui-widgets` crate as a future S21-followup. Plan: `.ai-factory/plans/animation-flutter-parity.md`. Partially closes A2 (one re-export glob removed in phase 0.3) and A8 (`AnimationStatus` + `AnimationBehavior` are `#[non_exhaustive]`). Cross-track: feeds S08 (semantics needs `Animation<T>` for accessibility-driven muting via `MediaQueryData.disableAnimations`) and S14 (the `AnimationBehavior::Preserve` integration lands when MediaQuery's `disableAnimations` flag is wired). Deferred follow-ups: 2D/Catmull-Rom curves (phase 1.5), `repeat()` overload extension + `ClampedSimulation` (phase 4.4/4.8b), criterion benches + animation-frame goldens + proptest sweep (phase 6), Flutter API reference dump + mdbook chapter (phase 1 / R9).
 - [ ] **S12 Focus traversal** — directional traversal, `FocusTraversalPolicy`, `FocusScope` groups [Gap B]
 - [ ] **S13 Text parity** — `StrutStyle`, `TextDecoration`, `FontFeatures`, `FontVariations`, selection rendering, IME composition preview [Gap D]
 - [ ] **S14 MediaQuery completeness** — accessibility flags (highContrast, disableAnimations, accessibleNavigation), gestureSettings, SystemChrome [Gap H]
@@ -116,6 +117,7 @@ Numbering convention:
 | S07 GestureArena (competing recognizers, hit-test protocol, arena binding, settings, velocity tracker, demo, bench, properties) | 2026-05-07 |
 | S07.5 GestureArena T15 follow-up (RecognizerLifecycle, back-channel, hold/release, per-window settings, end-to-end test, contributor doc) | 2026-05-07 |
 | S07.5b GestureArena pre-roster cleanup (PointerEvent surface upgrade, Affine2 + HitTestScope RAII, DeliveredEvent, unified back-channel hook + per-pointer LongPress storage, hold_count counter, AllowedButtonsFilter, CHANGELOG.md) | 2026-05-07 |
+| S21 Animation Flutter parity (Animation<T> trait + listeners + Ticker, Curve trait family + Curves catalogue, Animatable + Tween family + TweenSequence, combinators, CurvedAnimation, controller polish, flui-animate skeleton removed) | 2026-05-08 |
 
 ## Cross-track dependencies
 
