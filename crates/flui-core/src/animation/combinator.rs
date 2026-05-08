@@ -840,10 +840,7 @@ mod tests {
     fn animation_min_returns_smaller() {
         let a = TestSource::new(0.3, AnimationStatus::Forward);
         let b = TestSource::new(0.7, AnimationStatus::Forward);
-        let combined = animation_min(
-            a as Rc<dyn Animation<f64>>,
-            b as Rc<dyn Animation<f64>>,
-        );
+        let combined = animation_min(a as Rc<dyn Animation<f64>>, b as Rc<dyn Animation<f64>>);
         assert!((combined.value() - 0.3).abs() < 1e-9);
     }
 
@@ -851,10 +848,7 @@ mod tests {
     fn animation_max_returns_larger() {
         let a = TestSource::new(0.3, AnimationStatus::Forward);
         let b = TestSource::new(0.7, AnimationStatus::Forward);
-        let combined = animation_max(
-            a as Rc<dyn Animation<f64>>,
-            b as Rc<dyn Animation<f64>>,
-        );
+        let combined = animation_max(a as Rc<dyn Animation<f64>>, b as Rc<dyn Animation<f64>>);
         assert!((combined.value() - 0.7).abs() < 1e-9);
     }
 
@@ -862,10 +856,7 @@ mod tests {
     fn animation_mean_returns_average() {
         let a = TestSource::new(0.2, AnimationStatus::Forward);
         let b = TestSource::new(0.8, AnimationStatus::Forward);
-        let combined = animation_mean(
-            a as Rc<dyn Animation<f64>>,
-            b as Rc<dyn Animation<f64>>,
-        );
+        let combined = animation_mean(a as Rc<dyn Animation<f64>>, b as Rc<dyn Animation<f64>>);
         assert!((combined.value() - 0.5).abs() < 1e-9);
     }
 
@@ -873,10 +864,7 @@ mod tests {
     fn compound_status_priority_forward_wins() {
         let a = TestSource::new(0.0, AnimationStatus::Reverse);
         let b = TestSource::new(0.0, AnimationStatus::Forward);
-        let combined = animation_min(
-            a as Rc<dyn Animation<f64>>,
-            b as Rc<dyn Animation<f64>>,
-        );
+        let combined = animation_min(a as Rc<dyn Animation<f64>>, b as Rc<dyn Animation<f64>>);
         assert_eq!(combined.status(), AnimationStatus::Forward);
     }
 
@@ -884,10 +872,7 @@ mod tests {
     fn compound_status_both_dismissed() {
         let a = TestSource::new(0.0, AnimationStatus::Dismissed);
         let b = TestSource::new(0.0, AnimationStatus::Dismissed);
-        let combined = animation_min(
-            a as Rc<dyn Animation<f64>>,
-            b as Rc<dyn Animation<f64>>,
-        );
+        let combined = animation_min(a as Rc<dyn Animation<f64>>, b as Rc<dyn Animation<f64>>);
         assert_eq!(combined.status(), AnimationStatus::Dismissed);
     }
 
