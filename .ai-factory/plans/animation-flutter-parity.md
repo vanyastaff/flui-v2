@@ -105,9 +105,11 @@ _None — `.ai-factory/RESEARCH.md` does not exist. The Flutter API page at http
 
 ---
 
-## Phase 0a — Resolve `Animation` naming collision (prerequisite, blocks Phase 0)
+## Phase 0a — Resolve `Animation` naming collision (prerequisite, blocks Phase 0) ✅ DONE 2026-05-07
 
 **Outcome:** the symbol `Animation` is free for the new Flutter-parity trait. Existing element-level `Animation` struct is renamed without touching its semantics.
+
+**Landed:** branch `feature/animation-phase-0a-rename`. `cargo check --workspace --all-features` clean; `cargo check -p flui-navigator --features transition` clean; `cargo check --example animation -p flui-core` and `cargo check --example image_loading -p flui-core` clean. Workspace-wide grep for `flui_core::Animation\b` returns only doc references (the plan itself + historical `docs/superpowers/specs/2026-04-07-*` and `docs/superpowers/plans/2026-04-07-*` — left untouched per "leave historical specs alone"). CHANGELOG entry added under a new `## [Unreleased] — S21 Animation Flutter parity (in progress)` block.
 
 ### Why this is its own phase
 

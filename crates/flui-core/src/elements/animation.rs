@@ -9,8 +9,14 @@ pub use easing::*;
 use smallvec::SmallVec;
 
 /// An animation that can be applied to an element.
+///
+/// Renamed from `Animation` in S21 phase 0a to free the `Animation` symbol for the
+/// new Flutter-parity `Animation<T>` trait that lands in `flui_core::animation` (Phase 0).
+/// For higher-level declarative animations driven by listeners and a `Ticker`, see
+/// `flui_core::animation::AnimationController` and the `animated()` wrapper. Widget-level
+/// animation builders will arrive with the `flui-widgets` crate as a future S21 follow-up.
 #[derive(Clone)]
-pub struct Animation {
+pub struct ElementAnimation {
     /// The amount of time for which this animation should run
     pub duration: Duration,
     /// Whether to repeat this animation when it finishes
@@ -22,7 +28,7 @@ pub struct Animation {
     pub curve: Option<crate::animation::Curve>,
 }
 
-impl Animation {
+impl ElementAnimation {
     /// Create a new animation with the given duration.
     /// By default the animation will only run once and will use a linear easing function.
     pub fn new(duration: Duration) -> Self {
@@ -61,13 +67,13 @@ pub trait AnimationExt {
     fn with_animation(
         self,
         id: impl Into<ElementId>,
-        animation: Animation,
+        animation: ElementAnimation,
         animator: impl Fn(Self, f32) -> Self + 'static,
-    ) -> AnimationElement<Self>
+    ) -> ElementAnimationElement<Self>
     where
         Self: Sized,
     {
-        AnimationElement {
+        ElementAnimationElement {
             id: id.into(),
             element: Some(self),
             animator: Box::new(move |this, _, value| animator(this, value)),
@@ -79,13 +85,13 @@ pub trait AnimationExt {
     fn with_animations(
         self,
         id: impl Into<ElementId>,
-        animations: Vec<Animation>,
+        animations: Vec<ElementAnimation>,
         animator: impl Fn(Self, usize, f32) -> Self + 'static,
-    ) -> AnimationElement<Self>
+    ) -> ElementAnimationElement<Self>
     where
         Self: Sized,
     {
-        AnimationElement {
+        ElementAnimationElement {
             id: id.into(),
             element: Some(self),
             animator: Box::new(animator),
@@ -97,24 +103,24 @@ pub trait AnimationExt {
 impl<E: IntoElement + 'static> AnimationExt for E {}
 
 /// A GPUI element that applies an animation to another element
-pub struct AnimationElement<E> {
+pub struct ElementAnimationElement<E> {
     id: ElementId,
     element: Option<E>,
-    animations: SmallVec<[Animation; 1]>,
+    animations: SmallVec<[ElementAnimation; 1]>,
     animator: Box<dyn Fn(E, usize, f32) -> E + 'static>,
 }
 
-impl<E> AnimationElement<E> {
-    /// Returns a new [`AnimationElement<E>`] after applying the given function
+impl<E> ElementAnimationElement<E> {
+    /// Returns a new [`ElementAnimationElement<E>`] after applying the given function
     /// to the element being animated.
-    pub fn map_element(mut self, f: impl FnOnce(E) -> E) -> AnimationElement<E> {
+    pub fn map_element(mut self, f: impl FnOnce(E) -> E) -> ElementAnimationElement<E> {
         self.element = self.element.map(f);
         self
     }
 }
 
-impl<E: IntoElement + 'static> IntoElement for AnimationElement<E> {
-    type Element = AnimationElement<E>;
+impl<E: IntoElement + 'static> IntoElement for ElementAnimationElement<E> {
+    type Element = ElementAnimationElement<E>;
 
     fn into_element(self) -> Self::Element {
         self
@@ -126,7 +132,7 @@ struct AnimationState {
     animation_ix: usize,
 }
 
-impl<E: IntoElement + 'static> Element for AnimationElement<E> {
+impl<E: IntoElement + 'static> Element for ElementAnimationElement<E> {
     type RequestLayoutState = AnyElement;
     type PrepaintState = ();
 

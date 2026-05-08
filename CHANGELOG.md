@@ -8,6 +8,26 @@ intent — every breaking change ships with a migration note even though we
 have not yet published a numbered release. Cross-references point to the
 plan and design docs in `.ai-factory/plans/` and `docs/superpowers/specs/`.
 
+## [Unreleased] — S21 Animation Flutter parity (in progress)
+
+This entry captures the S21 milestone work, which brings `flui-core::animation`
+to parity with Flutter's `dart:ui` / `package:flutter/animation.dart` surface.
+Plan: `.ai-factory/plans/animation-flutter-parity.md`. Phases land
+incrementally; only completed phases appear below.
+
+### Breaking — `flui-core::elements::animation`
+
+- **`pub struct Animation` renamed to `ElementAnimation`** (S21 phase 0a).
+  Frees the bare `Animation` symbol at the crate root for the new
+  Flutter-parity `Animation<T>` trait that lands in
+  `flui_core::animation` in phase 0. The `AnimationExt` trait keeps its
+  name; only the struct it produces is renamed (also: `AnimationElement<E>`
+  -> `ElementAnimationElement<E>`). **Migration:** replace
+  `flui_core::Animation` with `flui_core::ElementAnimation` and
+  `Animation::new(duration)` with `ElementAnimation::new(duration)`. No
+  deprecated re-export shim — the rename is intentionally clean to keep
+  `Animation` reserved for the trait-shaped API.
+
 ## [Unreleased] — S07.5b GestureArena pre-roster cleanup
 
 This entry captures the breaking-friendly cleanup that lands ahead of

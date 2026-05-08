@@ -37,7 +37,7 @@ use flui_core::*;
 use crate::transition::{SlideDirection, Transition};
 
 #[cfg(feature = "transition")]
-use flui_core::{Animation, AnimationExt};
+use flui_core::{AnimationExt, ElementAnimation};
 
 #[cfg(feature = "transition")]
 use std::time::Duration;
@@ -438,7 +438,7 @@ fn render_with_transition(
                         .child(exit)
                         .with_animation(
                             exit_id,
-                            Animation::new(Duration::from_millis(duration)),
+                            ElementAnimation::new(Duration::from_millis(duration)),
                             |this, delta| this.opacity(1.0 - delta.clamp(0.0, 1.0)),
                         ),
                 );
@@ -456,7 +456,7 @@ fn render_with_transition(
                     .opacity(0.0)
                     .with_animation(
                         enter_id,
-                        Animation::new(Duration::from_millis(duration)),
+                        ElementAnimation::new(Duration::from_millis(duration)),
                         |this, delta| this.opacity(delta.clamp(0.0, 1.0)),
                     ),
             );
@@ -495,7 +495,7 @@ fn render_with_transition(
                                 .child(exit)
                                 .with_animation(
                                     exit_id,
-                                    Animation::new(Duration::from_millis(duration)),
+                                    ElementAnimation::new(Duration::from_millis(duration)),
                                     move |this, delta| {
                                         let progress = delta.clamp(0.0, 1.0);
                                         this.left(relative(exit_end * progress))
@@ -515,7 +515,7 @@ fn render_with_transition(
                             .left(relative(enter_start))
                             .with_animation(
                                 enter_id,
-                                Animation::new(Duration::from_millis(duration)),
+                                ElementAnimation::new(Duration::from_millis(duration)),
                                 move |this, delta| {
                                     let progress = delta.clamp(0.0, 1.0);
                                     this.left(relative(enter_start * (1.0 - progress)))
@@ -543,7 +543,7 @@ fn render_with_transition(
                                 .child(exit)
                                 .with_animation(
                                     exit_id,
-                                    Animation::new(Duration::from_millis(duration)),
+                                    ElementAnimation::new(Duration::from_millis(duration)),
                                     move |this, delta| {
                                         let progress = delta.clamp(0.0, 1.0);
                                         this.top(relative(exit_end * progress))
@@ -563,7 +563,7 @@ fn render_with_transition(
                             .top(relative(enter_start))
                             .with_animation(
                                 enter_id,
-                                Animation::new(Duration::from_millis(duration)),
+                                ElementAnimation::new(Duration::from_millis(duration)),
                                 move |this, delta| {
                                     let progress = delta.clamp(0.0, 1.0);
                                     this.top(relative(enter_start * (1.0 - progress)))
