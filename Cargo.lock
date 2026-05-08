@@ -1658,13 +1658,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "flui-animate"
-version = "0.1.0"
-dependencies = [
- "flui-core",
-]
-
-[[package]]
 name = "flui-core"
 version = "0.1.0"
 dependencies = [

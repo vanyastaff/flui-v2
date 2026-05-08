@@ -1,10 +1,15 @@
+// Legacy example — uses deprecated `pulsating_between` curve helper.
+// Kept building for the CI matrix; will be ported to `CustomCurve` when the
+// `examples/legacy/` tier is overhauled (S21 phase 7.6 follow-up).
+#![allow(deprecated)]
+
 use std::{path::Path, sync::Arc, time::Duration};
 
 use flui_core::{
-    Animation, AnimationExt, App, Application, Asset, AssetLogger, AssetSource, Bounds, Context,
-    Hsla, ImageAssetLoader, ImageCacheError, ImgResourceLoader, LOADING_DELAY, Length, RenderImage,
-    Resource, SharedString, Window, WindowBounds, WindowOptions, black, div, img, prelude::*,
-    pulsating_between, px, red, size,
+    AnimationExt, App, Application, Asset, AssetLogger, AssetSource, Bounds, Context,
+    ElementAnimation, Hsla, ImageAssetLoader, ImageCacheError, ImgResourceLoader, LOADING_DELAY,
+    Length, RenderImage, Resource, SharedString, Window, WindowBounds, WindowOptions, black, div,
+    img, prelude::*, pulsating_between, px, red, size,
 };
 
 struct Assets {}
@@ -71,7 +76,7 @@ impl ImageLoadingExample {
         div().size_full().flex_none().p_0p5().rounded_xs().child(
             div().size_full().with_animation(
                 "loading-bg",
-                Animation::new(Duration::from_secs(3))
+                ElementAnimation::new(Duration::from_secs(3))
                     .repeat()
                     .with_easing(pulsating_between(0.04, 0.24)),
                 move |this, delta| this.bg(black().opacity(delta)),

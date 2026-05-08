@@ -9,8 +9,14 @@ pub use easing::*;
 use smallvec::SmallVec;
 
 /// An animation that can be applied to an element.
+///
+/// Renamed from `Animation` in S21 phase 0a to free the `Animation` symbol for the
+/// new Flutter-parity `Animation<T>` trait that lands in `flui_core::animation` (Phase 0).
+/// For higher-level declarative animations driven by listeners and a `Ticker`, see
+/// `flui_core::animation::AnimationController` and the `animated()` wrapper. Widget-level
+/// animation builders will arrive with the `flui-widgets` crate as a future S21 follow-up.
 #[derive(Clone)]
-pub struct Animation {
+pub struct ElementAnimation {
     /// The amount of time for which this animation should run
     pub duration: Duration,
     /// Whether to repeat this animation when it finishes
@@ -19,17 +25,18 @@ pub struct Animation {
     /// between 0 and 1 based on the given easing function.
     pub easing: Rc<dyn Fn(f32) -> f32>,
     /// An optional easing curve. Takes precedence over `easing` if set.
-    pub curve: Option<crate::animation::Curve>,
+    /// Boxed `dyn Curve` (S21 phase 1 — `Curve` is now a trait, not an enum).
+    pub curve: Option<Box<dyn crate::animation::Curve>>,
 }
 
-impl Animation {
+impl ElementAnimation {
     /// Create a new animation with the given duration.
     /// By default the animation will only run once and will use a linear easing function.
     pub fn new(duration: Duration) -> Self {
         Self {
             duration,
             oneshot: true,
-            easing: Rc::new(linear),
+            easing: Rc::new(|t| t),
             curve: None,
         }
     }
@@ -49,8 +56,12 @@ impl Animation {
     }
 
     /// Set the easing curve. Takes precedence over `with_easing()` if both are set.
-    pub fn curve(mut self, curve: crate::animation::Curve) -> Self {
-        self.curve = Some(curve);
+    /// Accepts any type implementing
+    /// [`Curve`](crate::animation::Curve) — typically a constant from
+    /// [`Curves`](crate::animation::Curves) (e.g.
+    /// `Curves::EASE_IN_OUT`).
+    pub fn curve<C: crate::animation::Curve>(mut self, curve: C) -> Self {
+        self.curve = Some(Box::new(curve));
         self
     }
 }
@@ -61,13 +72,13 @@ pub trait AnimationExt {
     fn with_animation(
         self,
         id: impl Into<ElementId>,
-        animation: Animation,
+        animation: ElementAnimation,
         animator: impl Fn(Self, f32) -> Self + 'static,
-    ) -> AnimationElement<Self>
+    ) -> ElementAnimationElement<Self>
     where
         Self: Sized,
     {
-        AnimationElement {
+        ElementAnimationElement {
             id: id.into(),
             element: Some(self),
             animator: Box::new(move |this, _, value| animator(this, value)),
@@ -79,13 +90,13 @@ pub trait AnimationExt {
     fn with_animations(
         self,
         id: impl Into<ElementId>,
-        animations: Vec<Animation>,
+        animations: Vec<ElementAnimation>,
         animator: impl Fn(Self, usize, f32) -> Self + 'static,
-    ) -> AnimationElement<Self>
+    ) -> ElementAnimationElement<Self>
     where
         Self: Sized,
     {
-        AnimationElement {
+        ElementAnimationElement {
             id: id.into(),
             element: Some(self),
             animator: Box::new(animator),
@@ -97,24 +108,24 @@ pub trait AnimationExt {
 impl<E: IntoElement + 'static> AnimationExt for E {}
 
 /// A GPUI element that applies an animation to another element
-pub struct AnimationElement<E> {
+pub struct ElementAnimationElement<E> {
     id: ElementId,
     element: Option<E>,
-    animations: SmallVec<[Animation; 1]>,
+    animations: SmallVec<[ElementAnimation; 1]>,
     animator: Box<dyn Fn(E, usize, f32) -> E + 'static>,
 }
 
-impl<E> AnimationElement<E> {
-    /// Returns a new [`AnimationElement<E>`] after applying the given function
+impl<E> ElementAnimationElement<E> {
+    /// Returns a new [`ElementAnimationElement<E>`] after applying the given function
     /// to the element being animated.
-    pub fn map_element(mut self, f: impl FnOnce(E) -> E) -> AnimationElement<E> {
+    pub fn map_element(mut self, f: impl FnOnce(E) -> E) -> ElementAnimationElement<E> {
         self.element = self.element.map(f);
         self
     }
 }
 
-impl<E: IntoElement + 'static> IntoElement for AnimationElement<E> {
-    type Element = AnimationElement<E>;
+impl<E: IntoElement + 'static> IntoElement for ElementAnimationElement<E> {
+    type Element = ElementAnimationElement<E>;
 
     fn into_element(self) -> Self::Element {
         self
@@ -126,7 +137,7 @@ struct AnimationState {
     animation_ix: usize,
 }
 
-impl<E: IntoElement + 'static> Element for AnimationElement<E> {
+impl<E: IntoElement + 'static> Element for ElementAnimationElement<E> {
     type RequestLayoutState = AnyElement;
     type PrepaintState = ();
 
@@ -145,15 +156,30 @@ impl<E: IntoElement + 'static> Element for AnimationElement<E> {
         window: &mut Window,
         cx: &mut App,
     ) -> (crate::LayoutId, Self::RequestLayoutState) {
+        // S21 phase 0.9: pull the current time from the active scheduler's
+        // `Clock` instead of `Instant::now()` so element-level animations
+        // become deterministic under `TestClock` (matches `AnimationController`'s
+        // Ticker-driven elapsed-time path). Pre-compute once so the
+        // `with_element_state` closure (which mutably borrows the App via
+        // the inner `element.request_layout`) doesn't conflict with the
+        // clock fetch.
+        let now = cx
+            .background_executor()
+            .scheduler_executor()
+            .scheduler()
+            .clock()
+            .now();
+        let elapsed_since = |t: Instant| now.saturating_duration_since(t).as_secs_f32();
+
         window.with_element_state(global_id.unwrap(), |state, window| {
             let mut state = state.unwrap_or_else(|| AnimationState {
-                start: Instant::now(),
+                start: now,
                 animation_ix: 0,
             });
             let animation_ix = state.animation_ix;
 
-            let mut delta = state.start.elapsed().as_secs_f32()
-                / self.animations[animation_ix].duration.as_secs_f32();
+            let mut delta =
+                elapsed_since(state.start) / self.animations[animation_ix].duration.as_secs_f32();
 
             let mut done = false;
             if delta > 1.0 {
@@ -161,7 +187,7 @@ impl<E: IntoElement + 'static> Element for AnimationElement<E> {
                     if animation_ix >= self.animations.len() - 1 {
                         done = true;
                     } else {
-                        state.start = Instant::now();
+                        state.start = now;
                         state.animation_ix += 1;
                     }
                     delta = 1.0;
@@ -217,20 +243,50 @@ impl<E: IntoElement + 'static> Element for AnimationElement<E> {
     }
 }
 
+/// Legacy free-function easings preserved for backward compatibility with
+/// pre-S21 callers (`examples/learn/animation.rs`,
+/// `examples/legacy/image_loading.rs`).
+///
+/// **Deprecated in S21 phase 1.8b** — prefer the trait-shaped curves in
+/// [`crate::animation::Curves`]:
+///
+/// - `easing::linear` → [`Curves::LINEAR`](crate::animation::Curves::LINEAR)
+/// - `easing::quadratic` → [`Curves::EASE_IN`](crate::animation::Curves::EASE_IN)
+/// - `easing::ease_in_out` → [`Curves::EASE_IN_OUT`](crate::animation::Curves::EASE_IN_OUT)
+/// - `easing::ease_out_quint` — no direct Curves equivalent; build a
+///   [`CustomCurve`](crate::animation::CustomCurve) or use a `Cubic` approximation
+/// - `easing::bounce` — Flutter uses
+///   [`Curves::BOUNCE_IN_OUT`](crate::animation::Curves::BOUNCE_IN_OUT) for the
+///   common case; the combinator wrapper has no Curves equivalent
+/// - `easing::pulsating_between` — no Flutter equivalent; build a
+///   [`CustomCurve`](crate::animation::CustomCurve)
+///
+/// The free functions here intentionally do NOT clamp their input (matching
+/// pre-S21 behaviour); the new `Curve` trait clamps `t` to `[0, 1]` inside
+/// `transform`. Keep these only while migrating call sites.
 mod easing {
     use std::f32::consts::PI;
 
-    /// The linear easing function, or delta itself
+    /// The linear easing function, or delta itself.
+    #[deprecated(
+        note = "use `Curves::LINEAR.transform(t)` from `flui_core::animation::Curves` (S21 phase 1.8b)"
+    )]
     pub fn linear(delta: f32) -> f32 {
         delta
     }
 
-    /// The quadratic easing function, delta * delta
+    /// The quadratic easing function, delta * delta.
+    #[deprecated(
+        note = "use `Curves::EASE_IN.transform(t)` from `flui_core::animation::Curves` (S21 phase 1.8b)"
+    )]
     pub fn quadratic(delta: f32) -> f32 {
         delta * delta
     }
 
-    /// The quadratic ease-in-out function, which starts and ends slowly but speeds up in the middle
+    /// The quadratic ease-in-out function, which starts and ends slowly but speeds up in the middle.
+    #[deprecated(
+        note = "use `Curves::EASE_IN_OUT.transform(t)` from `flui_core::animation::Curves` (S21 phase 1.8b)"
+    )]
     pub fn ease_in_out(delta: f32) -> f32 {
         if delta < 0.5 {
             2.0 * delta * delta
@@ -240,12 +296,18 @@ mod easing {
         }
     }
 
-    /// The Quint ease-out function, which starts quickly and decelerates to a stop
+    /// The Quint ease-out function, which starts quickly and decelerates to a stop.
+    #[deprecated(
+        note = "no direct Curves equivalent; build a `CustomCurve` or `Cubic` approximation (S21 phase 1.8b)"
+    )]
     pub fn ease_out_quint() -> impl Fn(f32) -> f32 {
         move |delta| 1.0 - (1.0 - delta).powi(5)
     }
 
-    /// Apply the given easing function, first in the forward direction and then in the reverse direction
+    /// Apply the given easing function, first in the forward direction and then in the reverse direction.
+    #[deprecated(
+        note = "use `Curves::BOUNCE_IN_OUT` for the common bounce case; the combinator wrapper has no Curves equivalent (S21 phase 1.8b)"
+    )]
     pub fn bounce(easing: impl Fn(f32) -> f32) -> impl Fn(f32) -> f32 {
         move |delta| {
             if delta < 0.5 {
@@ -256,7 +318,10 @@ mod easing {
         }
     }
 
-    /// A custom easing function for pulsating alpha that slows down as it approaches 0.1
+    /// A custom easing function for pulsating alpha that slows down as it approaches 0.1.
+    #[deprecated(
+        note = "no Flutter / Curves equivalent; wrap an equivalent closure in `CustomCurve` (S21 phase 1.8b)"
+    )]
     pub fn pulsating_between(min: f32, max: f32) -> impl Fn(f32) -> f32 {
         let range = max - min;
 

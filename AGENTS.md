@@ -26,7 +26,6 @@ flui-v2/
 │   ├── flui-macros/      # Procedural macros (derive Render, IntoElement, etc.)
 │   ├── flui-navigator/   # Type-safe routing: nested routes, transitions, guards, middleware
 │   ├── flui-widgets/     # Widget library (planned)
-│   ├── flui-animate/     # Extended animation system (planned)
 │   ├── flui-a11y/        # Accessibility / semantic tree (planned)
 │   ├── flui-theme/       # Theming (planned)
 │   └── flui-material/    # Material widgets (planned)

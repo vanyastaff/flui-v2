@@ -43,7 +43,6 @@ flui-v2/
 │   │       └── ...
 │   ├── flui-macros/                    # Procedural macros (derive Render, IntoElement, …)
 │   ├── flui-widgets/                   # Layer 3 — widget library (planned)
-│   ├── flui-animate/                   # Layer 3 — extended animations (planned)
 │   ├── flui-a11y/                      # Layer 3 — accessibility / semantic tree (planned)
 │   ├── flui-theme/                     # Layer 3 companion — theming (planned)
 │   ├── flui-material/                  # Layer 3 companion — Material widgets (planned)
@@ -68,7 +67,7 @@ The five layers form a strict downward dependency graph. Each crate may only dep
 |---|---|---|
 | 5 — Application | `examples/*` | Layers 1–4 |
 | 4 — Routing | `flui-navigator` | Layers 1–3 |
-| 3 — Widgets / Animate / A11y | `flui-widgets`, `flui-animate`, `flui-a11y`, `flui-theme`, `flui-material` | Layers 1–2 (and sibling crates in Layer 3 when explicitly authorized) |
+| 3 — Widgets / A11y | `flui-widgets`, `flui-a11y`, `flui-theme`, `flui-material` | Layers 1–2 (and sibling crates in Layer 3 when explicitly authorized) |
 | 2 — Core runtime | `flui-core` | Layer 1, plus `flui-macros` (proc-macro support) |
 | 1 — Platform abstraction | `flui-platform` | external crates only (wgpu, metal, windows, wayland-client, x11rb, ash, …) |
 | — Macros | `flui-macros` | proc-macro toolchain only — no flui crates |

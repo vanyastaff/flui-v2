@@ -26,7 +26,7 @@ You know these paths by heart:
 - `crates/flui-core/src/taffy.rs`, `src/style.rs`, `src/styled.rs` — Flexbox layout via `taffy = 0.9`.
 - `crates/flui-core/src/inspector.rs`, `src/path_builder.rs`, `src/svg_renderer.rs`, `src/asset_cache.rs`, `src/assets.rs`, `src/arena.rs`, `src/bounds_tree.rs` — supporting infra.
 - `crates/flui-macros/` — `AppContext`, `IntoElement`, `Render`, `VisualContext`, `derive_inspector_reflection`, `register_action`, `test` macros.
-- Workspace siblings: `flui-animate`, `flui-navigator`, `flui-a11y`, `flui-theme`, `flui-material`, `flui-widgets` — do **not** review them unless a spec explicitly touches them. They are gated behind the core roadmap completion.
+- Workspace siblings: `flui-navigator`, `flui-a11y`, `flui-theme`, `flui-material`, `flui-widgets` — do **not** review them unless a spec explicitly touches them. They are gated behind the core roadmap completion.
 - `docs/superpowers/specs/2026-04-13-flui-core-roadmap.md` — the master roadmap. Specs S01–S20 live alongside it.
 
 ## Your review methodology

@@ -6,6 +6,11 @@
 //! 2. Easing functions - ease_in_out, bounce, linear
 //! 3. Transformations - rotate, scale, translate
 //! 4. Repeating and duration controls
+//!
+//! Note: this example still uses the deprecated `easing::*` free functions
+//! pending the S21 phase 7.6 demo migration to `Curves::*` / `CurvedAnimation`.
+
+#![allow(deprecated)]
 
 #[path = "../prelude.rs"]
 mod example_prelude;
@@ -15,7 +20,7 @@ use std::time::Duration;
 use anyhow::Result;
 use flui_core::colors::Colors;
 use flui_core::{
-    Animation, AnimationExt as _, App, Application, AssetSource, Bounds, Context, Hsla,
+    AnimationExt as _, App, Application, AssetSource, Bounds, Context, ElementAnimation, Hsla,
     SharedString, Transformation, Window, WindowBounds, WindowOptions, bounce, div, ease_in_out,
     linear, percentage, prelude::*, px, rgb, size as gpui_size, svg,
 };
@@ -122,7 +127,7 @@ fn rotation_example(colors: &Colors) -> impl IntoElement {
                     .text_color(accent)
                     .with_animation(
                         "rotation",
-                        Animation::new(Duration::from_secs(2))
+                        ElementAnimation::new(Duration::from_secs(2))
                             .repeat()
                             .with_easing(ease_in_out),
                         |svg, delta| {
@@ -156,7 +161,7 @@ fn bounce_example(colors: &Colors) -> impl IntoElement {
                     .text_color(success)
                     .with_animation(
                         "bounce_rotation",
-                        Animation::new(Duration::from_secs(2))
+                        ElementAnimation::new(Duration::from_secs(2))
                             .repeat()
                             .with_easing(bounce(ease_in_out)),
                         |svg, delta| {
@@ -190,7 +195,7 @@ fn scale_example(colors: &Colors) -> impl IntoElement {
                     .text_color(warning)
                     .with_animation(
                         "scale",
-                        Animation::new(Duration::from_millis(1500))
+                        ElementAnimation::new(Duration::from_millis(1500))
                             .repeat()
                             .with_easing(bounce(linear)),
                         |svg, delta| {
@@ -225,7 +230,7 @@ fn combined_example(colors: &Colors) -> impl IntoElement {
                     .text_color(error)
                     .with_animation(
                         "combined",
-                        Animation::new(Duration::from_secs(3))
+                        ElementAnimation::new(Duration::from_secs(3))
                             .repeat()
                             .with_easing(ease_in_out),
                         |svg, delta| {
