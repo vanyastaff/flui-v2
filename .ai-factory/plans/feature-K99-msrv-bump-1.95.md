@@ -62,21 +62,21 @@ From `.ai-factory/RESEARCH.md` (Active Summary):
 
 ### Phase 3 — CI gate
 
-- [ ] **Task 6.** Update `.github/workflows/ci.yml` to introduce MSRV gate — add a dedicated `msrv-check` job pinned to the chosen version; keep existing 5 `@stable` jobs for forward-compat detection. Don't expand to full feature-powerset matrix here (R5 covers that separately).
+- [x] **Task 6.** Update `.github/workflows/ci.yml` to introduce MSRV gate. → **Done.** Plan was revised mid-implementation: with `rust-toolchain.toml` now pinning all `dtolnay/rust-toolchain@stable` jobs to MSRV automatically, the existing 5 jobs (check / clippy / test / format / windows-test-support) are now the de-facto MSRV gate. Added a NEW `forward-compat` job that explicitly bypasses the toolchain pin via `rustup default stable` — runs latest stable as a non-blocking early-warning radar for upcoming Rust changes. `continue-on-error: true` keeps it from blocking PRs.
 
 ### Phase 4 — Documentation sweep
 
-- [ ] **Task 7.** Update `AGENTS.md` MSRV references (line 19 tech stack, line 118 agent rule). Add positive guidance for newly allowed idioms.
-- [ ] **Task 8.** Update `.ai-factory/DESCRIPTION.md` MSRV references (line 22 tech stack, line 68 NFR). Reword the "target idioms of Rust 1.95+ when stable" line — once 1.95 is the MSRV that wording is stale.
-- [ ] **Task 9.** Update `.ai-factory/rules/base.md` MSRV-related rules. Add positive idiom-prefer rules (AFIT/RPITIT for trait-object APIs, let-chains, lazy_cell over once_cell).
-- [ ] **Task 10.** Update `README.md` MSRV references if present. Skip if no MSRV mention; do not fabricate.
+- [x] **Task 7.** Update `AGENTS.md` MSRV references (line 19 tech stack, line 118 agent rule). Add positive guidance for newly allowed idioms. → **Done.** Both MSRV references updated to 1.95; added 7 positive idiom-prefer rules (AFIT/RPITIT, edition-2024 lifetime captures, async closures, let-chains, lazy_cell, unsafe extern, `#[diagnostic::on_unimplemented]`); cross-referenced the three-file synchronization invariant.
+- [x] **Task 8.** Update `.ai-factory/DESCRIPTION.md` MSRV references (line 22 tech stack, line 68 NFR). Reword the "target idioms of Rust 1.95+ when stable" line — once 1.95 is the MSRV that wording is stale. → **Done.** Both DESCRIPTION lines updated. Stale "target idioms 1.95+ when stable" wording also fixed in `RESEARCH.md` lines 11, 64 and `ARCHITECTURE.md` lines 14, 262 (these were missed in the original plan but corrected here).
+- [x] **Task 9.** Update `.ai-factory/rules/base.md` MSRV-related rules. → **Done.** MSRV bumped to 1.95; added cross-reference to three-file synchronization invariant; added 7 positive idiom-prefer rules.
+- [x] **Task 10.** Update `README.md` MSRV references if present. → **Done (no-op).** Verified `README.md` has no MSRV / Rust version mentions. Per plan, skipped without fabricating a section.
 
 ### Phase 5 — Validation gates
 
-- [ ] **Task 11.** `cargo build --workspace --all-features` — must compile clean.
-- [ ] **Task 12.** `cargo test --workspace` — full suite green.
-- [ ] **Task 13.** `cargo clippy --workspace --all-targets -- -D warnings` — zero warnings. New lints from newer Rust handled deliberately, no blanket `#[allow]`.
-- [ ] **Task 14.** `cargo fmt --all -- --check` — format gate. If new rustfmt drift, decide: fix here vs split into hygiene PR.
+- [x] **Task 11.** `cargo build --workspace --all-features` — must compile clean. → **Done.** Build green: 31.04s, all 12 workspace members compiled.
+- [x] **Task 12.** `cargo test --workspace` — full suite green. → **Done.** ~525 tests passed (333 in flui-core, 127 in another crate, 48 in flui-navigator + doctests), 0 failed, 27 ignored (pre-existing).
+- [x] **Task 13.** `cargo clippy --workspace --all-targets -- -D warnings` — zero warnings. → **Done.** Clippy clean across all 12 workspace members (26.18s).
+- [x] **Task 14.** `cargo fmt --all -- --check` — format gate. → **Done.** Exit 0, no drift.
 
 ### Phase 6 — Spec + ROADMAP closure
 

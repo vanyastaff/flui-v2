@@ -10,6 +10,18 @@ env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -Dwarnings
 
+# K99 — MSRV gate notes:
+#
+# rust-toolchain.toml at repo root pins the channel to the workspace MSRV
+# (currently 1.95). All jobs below using `dtolnay/rust-toolchain@stable`
+# will respect that pin (the action defers to rust-toolchain.toml when it
+# exists), so the standard check/clippy/test/format jobs ARE the MSRV gate.
+#
+# The `forward-compat` job below explicitly bypasses rust-toolchain.toml
+# via `rustup default stable && rustup update` to detect regressions on
+# Rust versions newer than MSRV. It's allowed to fail (continue-on-error)
+# — it's an early-warning radar, not a blocking gate.
+
 jobs:
   check:
     name: Check (${{ matrix.os }})
@@ -194,3 +206,43 @@ jobs:
           components: rustfmt
       - name: Check formatting
         run: cargo fmt --all -- --check
+
+  forward-compat:
+    name: Forward-compat (latest stable, non-blocking)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwayland-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev \
+            libfontconfig-dev \
+            libegl-dev \
+            libx11-dev \
+            libx11-xcb-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev \
+            libxcb1-dev \
+            libvulkan-dev \
+            libssl-dev \
+            libsqlite3-dev
+
+      # Bypass rust-toolchain.toml (which pins the MSRV) and use the
+      # latest stable Rust as a forward-compat radar. If a deprecation,
+      # new lint, or behaviour change in a newer Rust would land before
+      # the next MSRV bump, this job surfaces it early.
+      - name: Install latest stable (override rust-toolchain.toml pin)
+        run: |
+          rustup update stable
+          rustup default stable
+          rustc --version
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check workspace on latest stable
+        run: cargo check --workspace

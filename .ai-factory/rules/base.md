@@ -47,7 +47,15 @@
 
 - `typos` is enforced via `typos.toml`.
 - Workspace-wide Clippy config in root `Cargo.toml` (`[workspace.lints.clippy]`) sets the baseline; per-crate `[lints] workspace = true` opts in.
-- MSRV: Rust **1.85** (edition **2024**). Do not use features that require a newer toolchain.
+- MSRV: Rust **1.95** (edition **2024**). Do not use features that require a newer toolchain. The MSRV is enforced via three synchronized locations — `Cargo.toml` `[workspace.package].rust-version`, `rust-toolchain.toml` `channel`, and `clippy.toml` `msrv`. Drift between them is a bug; bump all three together when raising MSRV.
+- **Prefer modern Rust idioms unlocked by MSRV 1.95** — use these when they improve clarity:
+  - `async fn` in traits (AFIT) and `-> impl Trait` in traits (RPITIT) — instead of `Box<dyn Future>` / `Box<dyn Trait>` in trait return types.
+  - Edition-2024 lifetime captures (`-> impl Trait + use<'_>`) — for precise async/iterator return-type lifetimes.
+  - Async closures (`async |...| { ... }`) — for callback APIs that need to await.
+  - `let-chains` (`if let Some(x) = ... && cond && let Some(y) = ...`) — collapse nested matches.
+  - `lazy_cell::sync::OnceCell` from `std` — instead of pulling in the `once_cell` crate.
+  - `unsafe extern "C"` blocks — required syntax in edition 2024 for FFI.
+  - `#[diagnostic::on_unimplemented]` — better trait-bound error messages on Framework-tier traits.
 
 ## Review Subagents
 

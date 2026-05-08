@@ -11,7 +11,7 @@ The model deliberately rejects deep DDD-style internal layering of the engine (a
 ## Decision Rationale
 
 - **Project type:** GPU-accelerated UI framework + ecosystem (libraries), hard fork of `gpui-ce`.
-- **Tech stack:** Rust (edition 2024, MSRV 1.85, target idioms of 1.95+ when stable), Cargo workspace, smol async runtime, wgpu/Metal/Direct3D 11, Taffy layout, cosmic-text/swash text.
+- **Tech stack:** Rust (edition 2024, MSRV 1.95 — bumped in K99), Cargo workspace, smol async runtime, wgpu/Metal/Direct3D 11, Taffy layout, cosmic-text/swash text.
 - **Key factor — three tiers:** A UI ecosystem has three distinct concerns: (A) what the GPU and OS do, (B) what the framework does to make widgets ergonomic, (C) what app authors compose. Conflating them creates exactly the problems the project hit before — engine bleed into widgets (Zed-style `div`-based UI) or framework bleed into engine (no place for `Widget`/`Key`/`State` to live).
 - **Key factor — Cargo crates as the boundary:** Each tier is enforced by Cargo's dependency graph. A forbidden dependency would form a cycle and `cargo build` refuses to compile.
 - **Alternative considered (rejected):** Clean Architecture — there is no business logic to invert dependencies around; the framework's "domain" is the rendering pipeline itself.
@@ -259,7 +259,7 @@ Window isolation is automatic. Theme, MediaQuery, DefaultTextStyle, Localization
 8. **No `Rc<RefCell<…>>` on dispatch / tick / paint hot paths.** Owning structures + index-based references; runtime borrow checks belong outside hot loops.
 9. **Async-safe by default.** Use `smol`-based primitives. `clippy.toml` enforces `smol::process::Command::*` over `std::process::Command::*`.
 10. **`unimplemented!()` and `unreachable!()` are tracked, not ornamental.** Inventoried by S01a; classify before touching.
-11. **MSRV 1.85.** Edition 2024. Target idioms of Rust 1.95+ when stable, document the bump explicitly when raising MSRV.
+11. **MSRV 1.95.** Edition 2024. Three-file synchronization invariant: `Cargo.toml` `[workspace.package].rust-version`, `rust-toolchain.toml` `channel`, and `clippy.toml` `msrv` must agree. Document MSRV bumps explicitly (see K99 design spec for the precedent). Modern idioms unlocked by 1.95 (AFIT, RPITIT, edition-2024 lifetime captures, async closures, let-chains, `lazy_cell`, `unsafe extern`, `#[diagnostic::on_unimplemented]`) are encouraged where they improve clarity.
 12. **Determinism on the GPU path.** Offscreen / golden-test outputs must remain reproducible; coordinate with the `wgpu-gpu-reviewer` agent for any change in `crates/flui-core/src/platform/wgpu/**`, `scene.rs`, the Metal renderer, or the DirectX renderer.
 13. **Ecosystem KPI.** Public API of `flui-framework` is `cargo-semver-checks` clean. A third-party widget crate must be implementable against stable Framework API. This is the success metric for "Flutter ecosystem parity".
 
