@@ -1,3 +1,11 @@
+# Workspace MSRV — must mirror Cargo.toml [workspace.package].rust-version
+# and rust-toolchain.toml channel. Drift between these three is a bug; bump
+# all three together when raising MSRV (a K-track concern in flui-v2).
+# Lint-level enforcement: enables Clippy's MSRV-aware lints (manual_let_else,
+# redundant_pattern_matching, unnested_or_patterns, ...) to consider the
+# floor when deciding whether a modern idiom is "available".
+msrv = "1.95"
+
 allow-private-module-inception = true
 avoid-breaking-exported-api = false
 ignore-interior-mutability = [

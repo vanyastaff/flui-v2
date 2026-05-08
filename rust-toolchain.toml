@@ -1,0 +1,24 @@
+# flui-v2 toolchain pin
+#
+# This file pins the Rust toolchain for rustup-based contributors so that the
+# active toolchain matches the workspace MSRV declared in Cargo.toml's
+# [workspace.package].rust-version. The clippy.toml `msrv` field mirrors the
+# same value for lint-level enforcement.
+#
+# Bump cadence: when raising MSRV (a K-track concern in flui-v2's roadmap),
+# update all three locations together:
+#   1. Cargo.toml  → [workspace.package].rust-version
+#   2. clippy.toml → msrv
+#   3. rust-toolchain.toml → channel (this file)
+# Drift between them is a bug.
+#
+# Note: flake.nix uses `fenix.packages.${system}.latest` (auto-bumps to the
+# latest stable Rust). This is intentional: Nix-based contributors get a
+# forward-compat radar that complements the CI MSRV gate. rustup-based
+# contributors stay on the pinned MSRV for reproducibility. See the K99
+# design spec at docs/superpowers/specs/2026-05-08-K99-msrv-bump-1.95-design.md.
+
+[toolchain]
+channel = "1.95"
+components = ["rustfmt", "clippy"]
+profile = "default"
