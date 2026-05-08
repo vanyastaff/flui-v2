@@ -151,8 +151,8 @@ pub use gesture::{
     GestureDisposition, GestureRecognizer, GestureSettings, HitTestBehavior, HitTestEntry,
     HitTestResult, HitTestScope, PanZoomPhase, PointerButtons, PointerEvent,
     PointerEventProvenance, PointerId, PointerKind, PointerPanZoomEvent, PointerPhase,
-    PointerSignalEvent, PositionSample, PressureSample, RecognizerLifecycle, SemanticAction,
-    Velocity, VelocityTracker,
+    PointerSignalData, PointerSignalEvent, PointerSignalSource, PositionSample, PressureSample,
+    RecognizerLifecycle, SemanticAction, Velocity, VelocityTracker,
 };
 // Gesture concrete recognizers (S07).
 pub use gesture::recognizers::{

@@ -28,8 +28,9 @@
 #![cfg(feature = "test-support")]
 
 use flui_core::{
-    self as flui_core, Context, IntoElement, Modifiers, Point, Render, Styled, TestAppContext,
-    Window, div, prelude::*, px,
+    self as flui_core, Context, IntoElement, Modifiers, Point, Render, ScrollDelta,
+    ScrollWheelEvent, Styled, TestAppContext, TouchPhase, VisualTestContext, Window, div,
+    prelude::*, px,
 };
 use std::cell::Cell;
 use std::rc::Rc;
@@ -66,6 +67,27 @@ impl Render for GestureTestView {
     }
 }
 
+fn assert_no_active_gesture_arena(cx: &mut VisualTestContext, message: &str) {
+    let active = cx.update(|window, _| window.gesture_binding().active_pointer_count());
+    assert_eq!(active, 0, "{message}");
+}
+
+fn refresh_gesture_targets(cx: &mut VisualTestContext) {
+    cx.update(|window, _| window.refresh());
+    cx.run_until_parked();
+}
+
+fn advance_long_press_timer(cx: &mut VisualTestContext) {
+    use std::time::Duration;
+
+    // The long-press timer path crosses spawn -> Timer -> update_window,
+    // so pump once past the timeout and once more for the queued window update.
+    cx.executor().advance_clock(Duration::from_millis(50));
+    cx.run_until_parked();
+    cx.executor().advance_clock(Duration::from_millis(5));
+    cx.run_until_parked();
+}
+
 #[flui_core::test]
 fn on_tap_callback_fires_through_dispatch(cx: &mut TestAppContext) {
     let fired = Rc::new(Cell::new(0u32));
@@ -86,6 +108,39 @@ fn on_tap_callback_fires_through_dispatch(cx: &mut TestAppContext) {
         "on_tap must fire exactly once for a single Down/Up sequence \
          (paint → pending_recognizers → register_recognizer → arena.dispatch → callback)"
     );
+}
+
+#[flui_core::test]
+fn scroll_signal_bypasses_arena_and_preserves_legacy_listener(cx: &mut TestAppContext) {
+    let scrolled = Rc::new(Cell::new(0u32));
+    let scrolled_for_view = scrolled.clone();
+    let (_view, cx) = cx.add_window_view(move |_window, _cx| {
+        GestureTestView::new(move |element, _window, _cx| {
+            let scrolled = scrolled_for_view.clone();
+            element
+                .on_scroll_wheel(move |_, _, _| {
+                    scrolled.set(scrolled.get() + 1);
+                })
+                .on_pan_start(|_, _, _| {
+                    panic!("scroll signals must not participate in pan arena dispatch");
+                })
+        })
+    });
+
+    cx.simulate_event(ScrollWheelEvent {
+        position: Point::new(px(20.0), px(20.0)),
+        delta: ScrollDelta::Pixels(Point::new(px(0.0), px(24.0))),
+        modifiers: Modifiers::default(),
+        touch_phase: TouchPhase::Moved,
+    });
+    cx.run_until_parked();
+
+    assert_eq!(
+        scrolled.get(),
+        1,
+        "scroll signal must still reach the legacy on_scroll_wheel listener"
+    );
+    assert_no_active_gesture_arena(cx, "scroll signal must not open a gesture arena");
 }
 
 #[flui_core::test]
@@ -131,6 +186,175 @@ fn on_pan_start_fires_on_slop_crossing(cx: &mut TestAppContext) {
 }
 
 #[flui_core::test]
+fn on_pan_update_and_end_fire_after_slop_acceptance(cx: &mut TestAppContext) {
+    let updates = Rc::new(Cell::new(0u32));
+    let ends = Rc::new(Cell::new(0u32));
+    let last_delta = Rc::new(Cell::new((0.0_f32, 0.0_f32)));
+    let updates_for_view = updates.clone();
+    let ends_for_view = ends.clone();
+    let delta_for_view = last_delta.clone();
+    let (_view, cx) = cx.add_window_view(move |_window, _cx| {
+        GestureTestView::new(move |element, _window, _cx| {
+            let updates = updates_for_view.clone();
+            let ends = ends_for_view.clone();
+            let delta = delta_for_view.clone();
+            element
+                .on_pan_update(move |d, _, _| {
+                    updates.set(updates.get() + 1);
+                    delta.set((d.delta.x.as_f32(), d.delta.y.as_f32()));
+                })
+                .on_pan_end(move |_, _, _| {
+                    ends.set(ends.get() + 1);
+                })
+        })
+    });
+
+    log::debug!(target: "flui::gesture::test", phase = "down"; "pan update/end sequence");
+    cx.simulate_mouse_down(
+        Point::new(px(20.0), px(20.0)),
+        flui_core::MouseButton::Left,
+        Modifiers::default(),
+    );
+    log::debug!(target: "flui::gesture::test", phase = "below_slop"; "pan update/end sequence");
+    cx.simulate_mouse_move(
+        Point::new(px(25.0), px(22.0)),
+        flui_core::MouseButton::Left,
+        Modifiers::default(),
+    );
+    assert_eq!(updates.get(), 0, "below-slop move must not update");
+
+    log::debug!(target: "flui::gesture::test", phase = "accepting_move"; "pan update/end sequence");
+    cx.simulate_mouse_move(
+        Point::new(px(80.0), px(20.0)),
+        flui_core::MouseButton::Left,
+        Modifiers::default(),
+    );
+    assert_eq!(
+        updates.get(),
+        0,
+        "slop-crossing move accepts and starts, but does not emit update yet",
+    );
+
+    log::debug!(target: "flui::gesture::test", phase = "post_accept_move"; "pan update/end sequence");
+    cx.simulate_mouse_move(
+        Point::new(px(110.0), px(35.0)),
+        flui_core::MouseButton::Left,
+        Modifiers::default(),
+    );
+    assert_eq!(updates.get(), 1, "post-accept move must emit update");
+    assert_eq!(last_delta.get(), (30.0, 15.0));
+
+    log::debug!(target: "flui::gesture::test", phase = "up"; "pan update/end sequence");
+    cx.simulate_mouse_up(
+        Point::new(px(110.0), px(35.0)),
+        flui_core::MouseButton::Left,
+        Modifiers::default(),
+    );
+    assert_eq!(ends.get(), 1, "terminal Up must emit pan end");
+    assert_no_active_gesture_arena(cx, "completed pan must close its arena");
+}
+
+#[flui_core::test]
+fn axis_locked_drag_updates_and_repeated_drags_do_not_stack(cx: &mut TestAppContext) {
+    let h_updates = Rc::new(Cell::new(0u32));
+    let h_dx = Rc::new(Cell::new(0.0_f32));
+    let v_updates = Rc::new(Cell::new(0u32));
+    let v_dy = Rc::new(Cell::new(0.0_f32));
+    let h_updates_for_view = h_updates.clone();
+    let h_dx_for_view = h_dx.clone();
+    let v_updates_for_view = v_updates.clone();
+    let v_dy_for_view = v_dy.clone();
+    let (_view, cx) = cx.add_window_view(move |_window, _cx| {
+        GestureTestView::new(move |element, _window, _cx| {
+            let h_updates = h_updates_for_view.clone();
+            let h_dx = h_dx_for_view.clone();
+            let v_updates = v_updates_for_view.clone();
+            let v_dy = v_dy_for_view.clone();
+            element
+                .on_horizontal_drag_update(move |d, _, _| {
+                    h_updates.set(h_updates.get() + 1);
+                    h_dx.set(h_dx.get() + d.delta.x.as_f32());
+                })
+                .on_vertical_drag_update(move |d, _, _| {
+                    v_updates.set(v_updates.get() + 1);
+                    v_dy.set(v_dy.get() + d.delta.y.as_f32());
+                })
+        })
+    });
+
+    for sequence in 0..2 {
+        log::debug!(
+            target: "flui::gesture::test",
+            axis = "horizontal",
+            sequence = sequence;
+            "running aligned horizontal drag sequence"
+        );
+        cx.simulate_mouse_down(
+            Point::new(px(20.0), px(20.0)),
+            flui_core::MouseButton::Left,
+            Modifiers::default(),
+        );
+        cx.simulate_mouse_move(
+            Point::new(px(80.0), px(20.0)),
+            flui_core::MouseButton::Left,
+            Modifiers::default(),
+        );
+        cx.simulate_mouse_move(
+            Point::new(px(120.0), px(20.0)),
+            flui_core::MouseButton::Left,
+            Modifiers::default(),
+        );
+        cx.simulate_mouse_up(
+            Point::new(px(120.0), px(20.0)),
+            flui_core::MouseButton::Left,
+            Modifiers::default(),
+        );
+        assert_no_active_gesture_arena(cx, "completed h-drag arena closed");
+        refresh_gesture_targets(cx);
+    }
+
+    assert_eq!(
+        h_updates.get(),
+        2,
+        "two horizontal drags should produce one update each, without callback stacking",
+    );
+    assert_eq!(h_dx.get(), 80.0);
+    assert_eq!(
+        v_updates.get(),
+        0,
+        "horizontal motion must not update vertical drag"
+    );
+
+    log::debug!(
+        target: "flui::gesture::test",
+        axis = "vertical";
+        "running aligned vertical drag sequence"
+    );
+    cx.simulate_mouse_down(
+        Point::new(px(20.0), px(20.0)),
+        flui_core::MouseButton::Left,
+        Modifiers::default(),
+    );
+    cx.simulate_mouse_move(
+        Point::new(px(20.0), px(80.0)),
+        flui_core::MouseButton::Left,
+        Modifiers::default(),
+    );
+    cx.simulate_mouse_move(
+        Point::new(px(20.0), px(130.0)),
+        flui_core::MouseButton::Left,
+        Modifiers::default(),
+    );
+    cx.simulate_mouse_up(
+        Point::new(px(20.0), px(130.0)),
+        flui_core::MouseButton::Left,
+        Modifiers::default(),
+    );
+    assert_eq!(v_updates.get(), 1, "vertical drag must emit update");
+    assert_eq!(v_dy.get(), 50.0);
+}
+
+#[flui_core::test]
 fn on_long_press_start_fires_through_back_channel(cx: &mut TestAppContext) {
     use std::time::Duration;
 
@@ -162,16 +386,81 @@ fn on_long_press_start_fires_through_back_channel(cx: &mut TestAppContext) {
     // through the `update_window` path. Pump the executor twice
     // because the spawn → smol::Timer → update_window → callback
     // chain crosses two `await` points before the user closure runs.
-    cx.executor().advance_clock(Duration::from_millis(50));
-    cx.run_until_parked();
-    cx.executor().advance_clock(Duration::from_millis(5));
-    cx.run_until_parked();
+    advance_long_press_timer(cx);
     assert_eq!(
         started.get(),
         1,
         "on_long_press_start must fire exactly once after the timer \
          expires (S07.5 T5 — arena_back_channel wiring)"
     );
+}
+
+#[flui_core::test]
+fn on_long_press_move_and_end_fire_after_back_channel_accept(cx: &mut TestAppContext) {
+    use std::time::Duration;
+
+    let starts = Rc::new(Cell::new(0u32));
+    let moves = Rc::new(Cell::new(0u32));
+    let ends = Rc::new(Cell::new(0u32));
+    let starts_for_view = starts.clone();
+    let moves_for_view = moves.clone();
+    let ends_for_view = ends.clone();
+    let (_view, cx) = cx.add_window_view(move |window, _cx| {
+        window.gesture_settings_mut().long_press_timeout = Duration::from_millis(20);
+        GestureTestView::new(move |element, _window, _cx| {
+            let starts = starts_for_view.clone();
+            let moves = moves_for_view.clone();
+            let ends = ends_for_view.clone();
+            element
+                .on_long_press_start(move |_, _, _| {
+                    starts.set(starts.get() + 1);
+                })
+                .on_long_press_move(move |_, _, _| {
+                    moves.set(moves.get() + 1);
+                })
+                .on_long_press_end(move |_, _, _| {
+                    ends.set(ends.get() + 1);
+                })
+        })
+    });
+
+    for sequence in 0..2 {
+        log::debug!(
+            target: "flui::gesture::test",
+            sequence = sequence,
+            phase = "long_press_down";
+            "running long-press move/end sequence"
+        );
+        cx.simulate_mouse_down(
+            Point::new(px(20.0), px(20.0)),
+            flui_core::MouseButton::Left,
+            Modifiers::default(),
+        );
+        advance_long_press_timer(cx);
+
+        log::debug!(
+            target: "flui::gesture::test",
+            sequence = sequence,
+            phase = "long_press_post_accept_move";
+            "running long-press move/end sequence"
+        );
+        cx.simulate_mouse_move(
+            Point::new(px(22.0), px(22.0)),
+            flui_core::MouseButton::Left,
+            Modifiers::default(),
+        );
+        cx.simulate_mouse_up(
+            Point::new(px(22.0), px(22.0)),
+            flui_core::MouseButton::Left,
+            Modifiers::default(),
+        );
+        assert_no_active_gesture_arena(cx, "completed long-press arena closed");
+        refresh_gesture_targets(cx);
+    }
+
+    assert_eq!(starts.get(), 2, "each long-press starts exactly once");
+    assert_eq!(moves.get(), 2, "each accepted long-press receives one move");
+    assert_eq!(ends.get(), 2, "each accepted long-press receives one end");
 }
 
 #[flui_core::test]
@@ -269,11 +558,8 @@ fn double_tap_timeout_releases_held_arena_without_firing(cx: &mut TestAppContext
     // wouldn't fire — wrong reason). Locking the *post-timeout
     // arena state* ensures the release timer actually ran and
     // resolved the arena.
-    let active_after_timeout =
-        cx.update(|window, _| window.gesture_binding().active_pointer_count());
-    assert_eq!(
-        active_after_timeout, 0,
-        "release timer must have fired and resolved the held arena \
-         (active_pointer_count drops back to 0)"
+    assert_no_active_gesture_arena(
+        cx,
+        "release timer must have fired and resolved the held arena",
     );
 }

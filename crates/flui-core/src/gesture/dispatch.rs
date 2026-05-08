@@ -20,7 +20,7 @@ use crate::PinchEvent;
 
 use super::{
     HitTestResult, PointerButtons, PointerEvent, PointerEventProvenance, PointerId, PointerKind,
-    PointerPhase, PointerSignalEvent, PressureSample,
+    PointerPhase, PointerSignalData, PointerSignalEvent, PointerSignalSource, PressureSample,
 };
 use smallvec::SmallVec;
 
@@ -216,15 +216,15 @@ impl PointerSanitizer {
     }
 
     /// Translate one `PlatformInput` into a [`PointerSignalEvent`] if
-    /// it is a non-competitive signal (scroll, magnify); returns
+    /// it is a non-competitive signal (scroll or scale today); returns
     /// `None` otherwise.
     ///
-    /// Currently uncalled from the live dispatch path because the
-    /// legacy `on_scroll_wheel` / `on_pinch` listener chain still
-    /// owns scroll/magnify routing; T15 will introduce a typed
-    /// listener API on `InteractiveElement` and call this method
-    /// from `Window::dispatch_event` (Copilot review C).
-    #[allow(dead_code, reason = "T15 typed scroll/magnify listener target")]
+    /// The live dispatch path feeds the result into
+    /// [`super::pointer_signal::PointerSignalResolver`]. Today that
+    /// resolver explicitly bridges to the legacy `on_scroll_wheel` /
+    /// `on_pinch` listener chain; future typed signal listeners can
+    /// switch the resolver to first-registered-listener dispatch
+    /// without touching arena routing.
     pub(crate) fn convert_signal(
         &mut self,
         input: &PlatformInput,
@@ -547,7 +547,7 @@ fn translate_mouse_exited(e: &MouseExitEvent, state: &mut WindowPointerState) ->
 fn translate_scroll(e: &ScrollWheelEvent, state: &mut WindowPointerState) -> PointerSignalEvent {
     state.last_mouse_position = e.position;
     state.modifiers = e.modifiers;
-    let delta = match e.delta {
+    let scroll_delta = match e.delta {
         ScrollDelta::Pixels(p) => p,
         // Convert line-based deltas to a 1.0px-per-line approximation;
         // recognizers that need real pixel-per-line conversion can
@@ -557,12 +557,8 @@ fn translate_scroll(e: &ScrollWheelEvent, state: &mut WindowPointerState) -> Poi
         ScrollDelta::Lines(p) => Point::new(Pixels(p.x), Pixels(p.y)),
     };
     PointerSignalEvent::Scroll {
-        pointer_id: DESKTOP_MOUSE_POINTER,
-        kind: PointerKind::Mouse,
-        position: e.position,
-        delta,
-        modifiers: e.modifiers,
-        timestamp: Instant::now(),
+        data: pointer_signal_data(e.position, e.modifiers),
+        scroll_delta,
     }
 }
 
@@ -571,17 +567,21 @@ fn translate_pinch(e: &PinchEvent, state: &mut WindowPointerState) -> PointerSig
     state.last_mouse_position = e.position;
     state.modifiers = e.modifiers;
     // PinchEvent.delta is additive (e.g. 0.1 == +10%); convert to a
-    // multiplicative scale by `1.0 + delta`. Rotation is always 0.0
-    // on current desktop platforms — see the design doc § "Explicit
-    // gaps".
-    PointerSignalEvent::Magnify {
+    // multiplicative scale by `1.0 + delta`.
+    PointerSignalEvent::Scale {
+        data: pointer_signal_data(e.position, e.modifiers),
+        scale: 1.0 + e.delta,
+    }
+}
+
+fn pointer_signal_data(position: Point<Pixels>, modifiers: Modifiers) -> PointerSignalData {
+    PointerSignalData {
         pointer_id: DESKTOP_MOUSE_POINTER,
         kind: PointerKind::Mouse,
-        position: e.position,
-        scale_delta: 1.0 + e.delta,
-        rotation_rad: 0.0,
-        modifiers: e.modifiers,
+        position,
+        modifiers,
         timestamp: Instant::now(),
+        source: PointerSignalSource::default(),
     }
 }
 

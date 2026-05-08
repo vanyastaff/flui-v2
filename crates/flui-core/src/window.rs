@@ -4348,18 +4348,38 @@ impl Window {
             };
             self.gesture_binding.pointer_state_mut().content_bounds = bounds;
 
-            // PointerSignalEvent (Scroll / Magnify) explicitly bypasses
+            // PointerSignalEvent (Scroll / Scale / ScrollInertiaCancel) explicitly bypasses
             // the gesture arena per the design — those events have no
-            // competition semantics. Today the legacy `on_scroll_wheel`
-            // / `on_pinch` listener chain in `dispatch_mouse_event`
-            // below still handles them; T15 will surface a typed
-            // listener API on `InteractiveElement` and dispatch from
-            // this site. Until then we deliberately do not call
-            // `sanitizer.convert_signal(...)` — Copilot review
-            // C flagged the old `let _signal = ...` as unused work.
-            // The translator method itself stays `pub(crate)` and
-            // covered by `dispatch.rs::tests` so T15 can flip the
-            // wiring in one site without re-discovering its shape.
+            // competition semantics. We still normalize and resolve
+            // them through `PointerSignalResolver` here so the future
+            // typed signal-listener path has a single, testable seam.
+            // For compatibility the resolver currently records only
+            // the route. The original platform event still reaches the
+            // legacy `on_scroll_wheel` / `on_pinch` listener chain via
+            // `dispatch_mouse_event` below.
+            let mut pointer_signal = {
+                let (sanitizer, pointer_state) = self.gesture_binding.dispatch_split_mut();
+                sanitizer.convert_signal(&event, pointer_state)
+            };
+            if let Some(signal) = pointer_signal.as_mut() {
+                signal.set_window_id(self.handle.window_id());
+                let route = self
+                    .gesture_binding
+                    .resolve_pointer_signal_to_mouse_listeners(signal);
+                let source = signal.source();
+                log::trace!(
+                    target: "flui::gesture::window",
+                    phase = "pointer_signal",
+                    pointer_id = signal.pointer_id().raw(),
+                    signal_kind = format!("{:?}", signal.signal_kind()),
+                    window_id = format!("{:?}", source.window_id.map(|id| id.as_u64())),
+                    device_id = format!("{:?}", source.device_id),
+                    platform_event_id = format!("{:?}", source.platform_event_id),
+                    route = format!("{:?}", route);
+                    "resolved pointer signal outside gesture arena"
+                );
+            }
+
             let pointer_events = {
                 let (sanitizer, pointer_state) = self.gesture_binding.dispatch_split_mut();
                 sanitizer.convert(&event, pointer_state)
@@ -4540,24 +4560,25 @@ impl Window {
                         // (the previous behaviour) dropped the timer
                         // after the first tap and left the arena held
                         // forever, defeating the whole point of T6.
-                        let resolved = !arena.arenas.iter().any(|(pid, a)| {
-                            *pid == pe.pointer_id && a.winner.is_none() && a.is_open
-                        });
-                        if resolved {
+                        let resolution = arena.terminal_resolution(pe.pointer_id);
+                        log::trace!(
+                            target: "flui::gesture::window",
+                            phase = "terminal_resolution",
+                            pointer_id = format!("{:?}", pe.pointer_id),
+                            winner_declared = resolution.winner_declared,
+                            arena_open = resolution.is_open,
+                            hold_count = resolution.hold_count,
+                            entry_count = resolution.entry_count,
+                            active_arena_count = arena.arena_count(),
+                            resolved = resolution.resolved;
+                            "evaluated terminal gesture arena resolution"
+                        );
+                        if resolution.resolved {
                             self.gesture_binding.cancel_arena_hold(pe.pointer_id);
-                            // Force-close arenas that resolved via a
-                            // timer-driven `declare_winner` (LongPress)
-                            // while a `needs_arena_hold` recognizer
-                            // (DoubleTap) was still keeping
-                            // `hold_count > 0`. Without this call the
-                            // arena lingers in `manager.arenas` past
-                            // the gesture's end with `is_open = true`,
-                            // and the next `Down` on the same
-                            // `pointer_id` *appends* fresh recognizer
-                            // entries to it — stacking callbacks for
-                            // every subsequent gesture (e.g. two
-                            // `on_long_press_start` firings for a
-                            // single perceived hold).
+                            // If a resolved arena is still present
+                            // (for example because a losing recognizer
+                            // held it), evict it before the next Down
+                            // can append a fresh recognizer batch.
                             arena.close_resolved(pe.pointer_id);
                         }
                     }
