@@ -101,16 +101,21 @@ pub use animation::{
     AlwaysStoppedAnimation, Animatable, AnimatableExt, Animation, AnimationBehavior,
     AnimationController, AnimationStatus, AnimationStyle, BounceIn, BounceInOut, BounceOut,
     BoundedFrictionSimulation, ChainedAnimatable, ColorTween, CompoundAnimation, ConstantTween,
-    Cubic, Curve, CurveTween, CurvedAnimation, Curves, CustomCurve, Decelerate, EagerListenable,
-    EaseIn, EaseInCubic, EaseInOut, EaseInOutCubic, EaseOut, EaseOutCubic, ElasticIn, ElasticInOut,
+    Cubic, Curve, CurveTween, CurvedAnimation, Curves, CustomCurve, Decelerate, EaseIn,
+    EaseInCubic, EaseInOut, EaseInOutCubic, EaseOut, EaseOutCubic, ElasticIn, ElasticInOut,
     ElasticOut, FlippedCurve, FlippedTweenSequence, FrictionSimulation, GravitySimulation,
-    IntTween, Interval, LazyListenable, Lerp, Linear, ListenerCallback, ListenerId, LocalListeners,
-    LocalStatusListeners, ProxyAnimation, RectTween, ReverseAnimation, ReverseTween, Reversed,
-    SawTooth, Simulation, SizeTween, Split, Spring, SpringDescription, SpringSimulation,
-    StatusListenerCallback, StepTween, Threshold, Ticker, TickerCanceled, TickerFuture,
-    TickerFutureState, TickerProvider, Tolerance, TrainHoppingAnimation, Tween, TweenSequence,
-    TweenSequenceItem, animated, animation_max, animation_mean, animation_min,
+    IntTween, Interval, Lerp, Linear, ListenerCallback, ListenerId, ProxyAnimation, RectTween,
+    ReverseAnimation, ReverseTween, Reversed, SawTooth, Simulation, SizeTween, Split, Spring,
+    SpringDescription, SpringSimulation, StatusListenerCallback, StepTween, Threshold, Ticker,
+    TickerCanceled, TickerFuture, TickerFutureState, Tolerance, TrainHoppingAnimation, Tween,
+    TweenSequence, TweenSequenceItem, animated, animation_max, animation_mean, animation_min,
 };
+// S21 review-fix Tier 3: removed from public surface
+// (now `pub(crate)` in animation/mod.rs):
+//   `LocalListeners`, `LocalStatusListeners` — listener storage primitives
+//     that should not be third-party-reachable
+//   `LazyListenable`, `EagerListenable` — sealed via `crate::seal::Sealed`
+//   `TickerProvider` — pub(crate) until first concrete impl lands
 pub use anyhow::Result;
 pub use app::*;
 pub(crate) use arena::*;

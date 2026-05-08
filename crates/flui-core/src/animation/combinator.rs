@@ -186,7 +186,7 @@ impl ReverseAnimation {
         let value_id = subscribe_to_parent_value(parent.as_ref(), &listeners);
         // Status listener: flip the status before fanning out.
         let status_listeners_clone = Rc::clone(&status_listeners);
-        let status_id = parent.add_status_listener(Rc::new(move |s| {
+        let status_id = parent.add_status_listener(StatusListenerCallback::new(move |s| {
             status_listeners_clone.notify(reverse_status(s));
         }));
         Self {
@@ -296,7 +296,7 @@ where
         let first_clone = Rc::clone(&first);
         let second_clone_for_first = Rc::clone(&second);
         let status_listeners_for_first = Rc::clone(&status_listeners);
-        let first_status_id = first.add_status_listener(Rc::new(move |_| {
+        let first_status_id = first.add_status_listener(StatusListenerCallback::new(move |_| {
             let combined = combined_status(first_clone.status(), second_clone_for_first.status());
             status_listeners_for_first.notify(combined);
         }));
@@ -304,7 +304,7 @@ where
         let first_clone_for_second = Rc::clone(&first);
         let second_clone = Rc::clone(&second);
         let status_listeners_for_second = Rc::clone(&status_listeners);
-        let second_status_id = second.add_status_listener(Rc::new(move |_| {
+        let second_status_id = second.add_status_listener(StatusListenerCallback::new(move |_| {
             let combined = combined_status(first_clone_for_second.status(), second_clone.status());
             status_listeners_for_second.notify(combined);
         }));
@@ -465,7 +465,7 @@ impl TrainHoppingAnimation {
 
         // First parent: listen for value changes that may trigger a hop.
         let this_for_first = Rc::downgrade(&this);
-        let first_value_id = first.add_listener(Rc::new(move || {
+        let first_value_id = first.add_listener(ListenerCallback::new(move || {
             if let Some(s) = this_for_first.upgrade() {
                 s.maybe_hop_and_notify_value();
             }
@@ -473,7 +473,7 @@ impl TrainHoppingAnimation {
         this.first_value_id.set(Some(first_value_id));
 
         let listeners_clone = Rc::clone(&this.listeners);
-        let first_status_id = first.add_status_listener(Rc::new(move |_| {
+        let first_status_id = first.add_status_listener(StatusListenerCallback::new(move |_| {
             // Status from first only matters until we hop. Forward via value
             // listeners (status fan-out happens through second after hop).
             let _ = &listeners_clone; // referenced to keep alive
@@ -482,13 +482,13 @@ impl TrainHoppingAnimation {
 
         // Second parent: always forwards (it's the eventual owner).
         let listeners_for_second = Rc::clone(&this.listeners);
-        let second_value_id = second.add_listener(Rc::new(move || {
+        let second_value_id = second.add_listener(ListenerCallback::new(move || {
             listeners_for_second.notify();
         }));
         this.second_value_id.set(Some(second_value_id));
 
         let status_listeners_for_second = Rc::clone(&this.status_listeners);
-        let second_status_id = second.add_status_listener(Rc::new(move |s| {
+        let second_status_id = second.add_status_listener(StatusListenerCallback::new(move |s| {
             status_listeners_for_second.notify(s);
         }));
         this.second_status_id.set(Some(second_status_id));
@@ -596,7 +596,7 @@ fn subscribe_to_parent_value<T: 'static>(
     listeners: &Rc<LocalListeners>,
 ) -> ListenerId {
     let listeners = Rc::clone(listeners);
-    parent.add_listener(Rc::new(move || {
+    parent.add_listener(ListenerCallback::new(move || {
         listeners.notify();
     }))
 }
@@ -606,7 +606,7 @@ fn subscribe_to_parent_status<T: 'static>(
     status_listeners: &Rc<LocalStatusListeners>,
 ) -> ListenerId {
     let status_listeners = Rc::clone(status_listeners);
-    parent.add_status_listener(Rc::new(move |status| {
+    parent.add_status_listener(StatusListenerCallback::new(move |status| {
         status_listeners.notify(status);
     }))
 }
@@ -692,7 +692,7 @@ mod tests {
         let a = AlwaysStoppedAnimation::new(0.0_f64);
         let counter = Rc::new(Cell::new(0u32));
         let counter_in = Rc::clone(&counter);
-        let id = a.add_listener(Rc::new(move || {
+        let id = a.add_listener(ListenerCallback::new(move || {
             counter_in.set(counter_in.get() + 1);
         }));
         // No mechanism causes notification; the counter never increments.
@@ -721,7 +721,7 @@ mod tests {
         let proxy = ProxyAnimation::new(parent.clone() as Rc<dyn Animation<f64>>);
         let counter = Rc::new(Cell::new(0u32));
         let counter_in = Rc::clone(&counter);
-        proxy.add_listener(Rc::new(move || {
+        proxy.add_listener(ListenerCallback::new(move || {
             counter_in.set(counter_in.get() + 1);
         }));
         parent.set_value(0.3);
@@ -736,7 +736,7 @@ mod tests {
         let proxy = ProxyAnimation::new(p1.clone() as Rc<dyn Animation<f64>>);
         let counter = Rc::new(Cell::new(0u32));
         let counter_in = Rc::clone(&counter);
-        proxy.add_listener(Rc::new(move || {
+        proxy.add_listener(ListenerCallback::new(move || {
             counter_in.set(counter_in.get() + 1);
         }));
 
@@ -821,7 +821,9 @@ mod tests {
         let rev = ReverseAnimation::new(parent.clone() as Rc<dyn Animation<f64>>);
         let captured: Rc<Cell<Option<AnimationStatus>>> = Rc::new(Cell::new(None));
         let captured_in = Rc::clone(&captured);
-        rev.add_status_listener(Rc::new(move |s| captured_in.set(Some(s))));
+        rev.add_status_listener(StatusListenerCallback::new(move |s| {
+            captured_in.set(Some(s))
+        }));
 
         parent.set_status(AnimationStatus::Forward);
         assert_eq!(captured.get(), Some(AnimationStatus::Reverse));
@@ -899,7 +901,7 @@ mod tests {
         );
         let counter = Rc::new(Cell::new(0u32));
         let counter_in = Rc::clone(&counter);
-        combined.add_listener(Rc::new(move || {
+        combined.add_listener(ListenerCallback::new(move || {
             counter_in.set(counter_in.get() + 1);
         }));
 

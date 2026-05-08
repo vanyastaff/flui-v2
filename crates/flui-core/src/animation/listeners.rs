@@ -9,7 +9,6 @@
 #![allow(missing_docs)] // animation subsystem is pre-1.0; rustdoc filled in under S21 phase 7
 
 use std::cell::RefCell;
-use std::rc::Rc;
 
 use smallvec::SmallVec;
 
@@ -83,29 +82,32 @@ impl LocalListeners {
     /// Notify every registered listener. See module-level docs for re-entrancy
     /// guarantees.
     pub fn notify(&self) {
-        // Cheap snapshot: clone Rc handles only.
+        // Cheap snapshot: clone the listener handles. `ListenerCallback` is
+        // a newtype around `Rc<dyn Fn>` — `Clone` delegates to `Rc::clone`.
         let snapshot: SmallVec<[(ListenerId, ListenerCallback); 4]> = self
             .inner
             .borrow()
             .iter()
-            .map(|(id, cb)| (*id, Rc::clone(cb)))
+            .map(|(id, cb)| (*id, cb.clone()))
             .collect();
         for (id, cb) in &snapshot {
             // Guard against listeners removed by a previous callback in this
             // very dispatch — match Flutter's `_listeners.contains(...)` check.
             let still_present = self.inner.borrow().iter().any(|(stored, _)| stored == id);
             if still_present {
-                cb();
+                (cb.0)();
             }
         }
     }
 
     /// Whether any listener is registered.
+    #[allow(dead_code)] // used by tests + future LazyListenable consumers
     pub fn is_empty(&self) -> bool {
         self.inner.borrow().is_empty()
     }
 
     /// Number of registered listeners.
+    #[allow(dead_code)] // used by tests + future LazyListenable consumers
     pub fn len(&self) -> usize {
         self.inner.borrow().len()
     }
@@ -167,22 +169,24 @@ impl LocalStatusListeners {
             .inner
             .borrow()
             .iter()
-            .map(|(id, cb)| (*id, Rc::clone(cb)))
+            .map(|(id, cb)| (*id, cb.clone()))
             .collect();
         for (id, cb) in &snapshot {
             let still_present = self.inner.borrow().iter().any(|(stored, _)| stored == id);
             if still_present {
-                cb(status);
+                (cb.0)(status);
             }
         }
     }
 
     /// Whether any status listener is registered.
+    #[allow(dead_code)] // used by tests + future LazyListenable consumers
     pub fn is_empty(&self) -> bool {
         self.inner.borrow().is_empty()
     }
 
     /// Number of registered status listeners.
+    #[allow(dead_code)] // used by tests + future LazyListenable consumers
     pub fn len(&self) -> usize {
         self.inner.borrow().len()
     }
@@ -202,7 +206,14 @@ impl LocalStatusListeners {
 /// Phase 0 ships the trait. Phase 0 task 0.6 wires the production
 /// [`Ticker`](crate::animation::Ticker) to the hooks; phase 0 task 0.7 wires
 /// `AnimationController` itself.
-pub trait LazyListenable {
+///
+/// **Sealed:** external crates cannot implement this trait — the seal
+/// supertrait is `crate::seal::Sealed`. The hooks only make sense for animation
+/// types that own a `LocalListeners` instance and a `Ticker`, both of which
+/// are crate-internal. If a future external use case appears, the trait can
+/// be unsealed via a follow-up commit.
+#[allow(dead_code)] // future-proofing for S21-followup widget-layer integration
+pub trait LazyListenable: crate::seal::Sealed {
     /// Called when the first listener attaches to a previously-empty notifier.
     /// Implementors typically use this to start their ticker.
     fn did_register_listener(&self);
@@ -227,7 +238,10 @@ pub trait LazyListenable {
 /// is a no-op on the second call. This is a stronger contract than Flutter's
 /// (which assumes single-call) but it is cheap to honour and prevents
 /// double-free panics from accidentally-shared dispose paths.
-pub trait EagerListenable {
+///
+/// **Sealed:** see the note on [`LazyListenable`].
+#[allow(dead_code)] // future-proofing for S21-followup widget-layer integration
+pub trait EagerListenable: crate::seal::Sealed {
     /// Release any non-RAII resources. Must be idempotent.
     fn dispose(&mut self);
 }
@@ -239,6 +253,7 @@ pub trait EagerListenable {
 #[cfg(test)]
 mod tests {
     use std::cell::Cell;
+    use std::rc::Rc;
 
     use super::*;
 
@@ -255,7 +270,7 @@ mod tests {
         let counter = Rc::new(Cell::new(0));
         let counter_in = Rc::clone(&counter);
 
-        let id = listeners.add(Rc::new(move || {
+        let id = listeners.add(ListenerCallback::new(move || {
             counter_in.set(counter_in.get() + 1);
         }));
         assert_eq!(listeners.len(), 1);
@@ -273,7 +288,7 @@ mod tests {
     #[test]
     fn remove_unknown_id_is_no_op() {
         let listeners = LocalListeners::new();
-        let id = listeners.add(Rc::new(|| {}));
+        let id = listeners.add(ListenerCallback::new(|| {}));
         listeners.remove(id);
         // Removing a stale ID a second time must not panic / double-remove.
         listeners.remove(id);
@@ -289,11 +304,11 @@ mod tests {
         let listeners_in = Rc::clone(&listeners);
         let inner_count_for_outer = Rc::clone(&inner_count);
         let outer_count_in = Rc::clone(&outer_count);
-        listeners.add(Rc::new(move || {
+        listeners.add(ListenerCallback::new(move || {
             outer_count_in.set(outer_count_in.get() + 1);
             // Re-entrant add — must NOT fire in the current dispatch.
             let inner_count_inner = Rc::clone(&inner_count_for_outer);
-            listeners_in.add(Rc::new(move || {
+            listeners_in.add(ListenerCallback::new(move || {
                 inner_count_inner.set(inner_count_inner.get() + 1);
             }));
         }));
@@ -319,7 +334,7 @@ mod tests {
         let listeners_in = Rc::clone(&listeners);
         let a_count_in = Rc::clone(&a_count);
         let id_b_for_a = Rc::clone(&id_b);
-        listeners.add(Rc::new(move || {
+        listeners.add(ListenerCallback::new(move || {
             a_count_in.set(a_count_in.get() + 1);
             if let Some(id) = id_b_for_a.get() {
                 listeners_in.remove(id);
@@ -327,7 +342,7 @@ mod tests {
         }));
 
         let b_count_in = Rc::clone(&b_count);
-        let id = listeners.add(Rc::new(move || {
+        let id = listeners.add(ListenerCallback::new(move || {
             b_count_in.set(b_count_in.get() + 1);
         }));
         id_b.set(Some(id));
@@ -342,7 +357,7 @@ mod tests {
         let listeners = LocalStatusListeners::new();
         let captured: Rc<Cell<Option<AnimationStatus>>> = Rc::new(Cell::new(None));
         let captured_in = Rc::clone(&captured);
-        let id = listeners.add(Rc::new(move |status| {
+        let id = listeners.add(StatusListenerCallback::new(move |status| {
             captured_in.set(Some(status));
         }));
 

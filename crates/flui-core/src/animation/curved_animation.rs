@@ -92,13 +92,13 @@ impl CurvedAnimation {
         let status_listeners = Rc::new(LocalStatusListeners::new());
         let value_id = {
             let listeners = Rc::clone(&listeners);
-            parent.add_listener(Rc::new(move || {
+            parent.add_listener(ListenerCallback::new(move || {
                 listeners.notify();
             }))
         };
         let status_id = {
             let status_listeners = Rc::clone(&status_listeners);
-            parent.add_status_listener(Rc::new(move |status| {
+            parent.add_status_listener(StatusListenerCallback::new(move |status| {
                 status_listeners.notify(status);
             }))
         };
@@ -276,7 +276,7 @@ mod tests {
 
         let counter = Rc::new(Cell::new(0u32));
         let counter_in = Rc::clone(&counter);
-        curved.add_listener(Rc::new(move || {
+        curved.add_listener(ListenerCallback::new(move || {
             counter_in.set(counter_in.get() + 1);
         }));
 
@@ -294,7 +294,7 @@ mod tests {
 
         let captured: Rc<Cell<Option<AnimationStatus>>> = Rc::new(Cell::new(None));
         let captured_in = Rc::clone(&captured);
-        curved.add_status_listener(Rc::new(move |status| {
+        curved.add_status_listener(StatusListenerCallback::new(move |status| {
             captured_in.set(Some(status));
         }));
 

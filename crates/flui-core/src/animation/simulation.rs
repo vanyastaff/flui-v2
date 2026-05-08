@@ -19,7 +19,14 @@ impl Default for Tolerance {
 }
 
 /// A physics simulation that produces position and velocity over time.
-pub trait Simulation: Send + Sync {
+///
+/// `'static` supertrait added in S21 review-fix Tier 3 — `AnimationController`
+/// stores `Option<Box<dyn Simulation>>` (defaulting to
+/// `Box<dyn Simulation + 'static>` per Rust's lifetime-elision rule), and
+/// `animate_with` accepts `impl Simulation + 'static`. Making the supertrait
+/// explicit prevents external impls from accidentally introducing borrowed
+/// lifetimes that the controller cannot store.
+pub trait Simulation: Send + Sync + 'static {
     /// Position at time `t` (seconds).
     fn x(&self, t: f32) -> f32;
     /// Velocity at time `t` (seconds).

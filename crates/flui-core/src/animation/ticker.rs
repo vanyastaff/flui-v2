@@ -202,7 +202,13 @@ impl std::error::Error for TickerCanceled {}
 /// phase (or `flui-widgets`) may implement this on `Context<V>` /
 /// `Window` / view-state types as Flutter's `SingleTickerProviderStateMixin`
 /// equivalent.
-pub trait TickerProvider {
+///
+/// **`pub(crate)`** until the first concrete impl ships. Demoted in the S21
+/// review-fix Tier 3 pass — exposing a contract before any consumer proves
+/// the right shape risks locking in the wrong API. Promote to `pub` in the
+/// commit that wires the first implementation.
+#[allow(dead_code)] // future-proofing — first impl lands with widget-layer integration
+pub(crate) trait TickerProvider {
     /// Hand out a fresh idle ticker.
     fn create_ticker(&self) -> Ticker;
 }

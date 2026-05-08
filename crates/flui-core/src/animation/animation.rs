@@ -37,13 +37,34 @@ impl ListenerId {
 
 /// A value-change listener callback.
 ///
-/// Stored as `Rc<dyn Fn>` (not `Box`) so [`LocalListeners::notify`] can clone
+/// Internally stores `Rc<dyn Fn>` so [`LocalListeners::notify`] can clone
 /// references into a snapshot before dispatching — the snapshot is what makes
 /// re-entrant `add_listener` / `remove_listener` from within a callback safe.
-pub type ListenerCallback = Rc<dyn Fn() + 'static>;
+/// The inner `Rc` is `pub(crate)` to keep the storage strategy out of the
+/// public contract — future versions can switch to a different handle type
+/// (e.g. `Arc` or a custom slab-allocated handle) without breaking callers.
+/// External code constructs callbacks via [`ListenerCallback::new`].
+#[derive(Clone)]
+pub struct ListenerCallback(pub(crate) Rc<dyn Fn() + 'static>);
 
-/// A status-change listener callback.
-pub type StatusListenerCallback = Rc<dyn Fn(AnimationStatus) + 'static>;
+impl ListenerCallback {
+    /// Wrap a closure as a listener callback.
+    pub fn new<F: Fn() + 'static>(f: F) -> Self {
+        Self(Rc::new(f))
+    }
+}
+
+/// A status-change listener callback. Same shape as [`ListenerCallback`] but
+/// receives the new [`AnimationStatus`] when invoked.
+#[derive(Clone)]
+pub struct StatusListenerCallback(pub(crate) Rc<dyn Fn(AnimationStatus) + 'static>);
+
+impl StatusListenerCallback {
+    /// Wrap a closure as a status-change listener callback.
+    pub fn new<F: Fn(AnimationStatus) + 'static>(f: F) -> Self {
+        Self(Rc::new(f))
+    }
+}
 
 /// A value of type `T` that may change over time, paired with an observable
 /// [`AnimationStatus`].

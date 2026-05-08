@@ -34,13 +34,28 @@ pub use curve::{
 };
 pub use curved_animation::CurvedAnimation;
 pub use lerp::Lerp;
-pub use listeners::{EagerListenable, LazyListenable, LocalListeners, LocalStatusListeners};
+// S21 review-fix Tier 3: listener storage primitives are crate-internal.
+// `LocalListeners` / `LocalStatusListeners` carry the `add()` / `remove()` /
+// `notify()` surface that should NOT be reachable to third parties — they
+// would let external code manipulate another animation's listener storage,
+// bypassing the `Animation<T>` trait contract. The `LazyListenable` /
+// `EagerListenable` hook traits are sealed via `crate::seal::Sealed` (see
+// listeners.rs) so any external impl is rejected at compile time; they
+// remain `pub(crate)` here for ergonomic use within `flui-core` itself.
+#[allow(unused_imports)]
+// re-exports for crate-internal ergonomic use; some impls land in later phases
+pub(crate) use listeners::{EagerListenable, LazyListenable, LocalListeners, LocalStatusListeners};
 pub use simulation::{
     BoundedFrictionSimulation, FrictionSimulation, GravitySimulation, Simulation,
     SpringDescription, SpringSimulation, Tolerance,
 };
 pub use status::AnimationStatus;
-pub use ticker::{Ticker, TickerCanceled, TickerFuture, TickerFutureState, TickerProvider};
+// `TickerProvider` is `pub(crate)` until the first concrete impl ships
+// (S21 review-fix Tier 3). The other ticker types remain `pub` — `Ticker`
+// is consumed externally via `AnimationController::attach()`.
+#[allow(unused_imports)] // first impl lands with widget-layer integration
+pub(crate) use ticker::TickerProvider;
+pub use ticker::{Ticker, TickerCanceled, TickerFuture, TickerFutureState};
 pub use tween::{
     Animatable, AnimatableExt, ChainedAnimatable, ColorTween, ConstantTween, CurveTween,
     FlippedTweenSequence, IntTween, RectTween, ReverseTween, SizeTween, StepTween, Tween,
