@@ -25,7 +25,8 @@ pub struct ElementAnimation {
     /// between 0 and 1 based on the given easing function.
     pub easing: Rc<dyn Fn(f32) -> f32>,
     /// An optional easing curve. Takes precedence over `easing` if set.
-    pub curve: Option<crate::animation::Curve>,
+    /// Boxed `dyn Curve` (S21 phase 1 — `Curve` is now a trait, not an enum).
+    pub curve: Option<Box<dyn crate::animation::Curve>>,
 }
 
 impl ElementAnimation {
@@ -55,8 +56,12 @@ impl ElementAnimation {
     }
 
     /// Set the easing curve. Takes precedence over `with_easing()` if both are set.
-    pub fn curve(mut self, curve: crate::animation::Curve) -> Self {
-        self.curve = Some(curve);
+    /// Accepts any type implementing
+    /// [`Curve`](crate::animation::Curve) — typically a constant from
+    /// [`Curves`](crate::animation::curve::Curves) (e.g.
+    /// `Curves::EASE_IN_OUT`).
+    pub fn curve<C: crate::animation::Curve>(mut self, curve: C) -> Self {
+        self.curve = Some(Box::new(curve));
         self
     }
 }

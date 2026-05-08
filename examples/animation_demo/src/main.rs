@@ -6,7 +6,7 @@ extern crate flui_core;
 
 use std::time::Duration;
 
-use flui_core::animation::{AnimationController, Curve, Tween, animated};
+use flui_core::animation::{AnimationController, BounceInOut, Curves, Tween, animated};
 use flui_core::{
     App, Application, Bounds, Context, Entity, IntoElement, ParentElement, Render, Styled,
     TitlebarOptions, Window, WindowBounds, WindowOptions, div, hsla, prelude::*, px, size,
@@ -43,16 +43,16 @@ impl AnimationDemo {
     fn new(cx: &mut Context<Self>) -> Self {
         Self {
             fade: AnimationController::new(Duration::from_millis(600))
-                .curve(Curve::EaseInOut)
+                .curve(Curves::EASE_IN_OUT)
                 .attach(cx),
             slide: AnimationController::new(Duration::from_millis(800))
-                .curve(Curve::EaseOutCubic)
+                .curve(Curves::EASE_OUT_CUBIC)
                 .attach(cx),
             color: AnimationController::new(Duration::from_millis(1000))
-                .curve(Curve::EaseInOut)
+                .curve(Curves::EASE_IN_OUT)
                 .attach(cx),
             bounce: AnimationController::new(Duration::from_millis(1200))
-                .curve(Curve::Bounce)
+                .curve(BounceInOut)
                 .attach(cx),
         }
     }

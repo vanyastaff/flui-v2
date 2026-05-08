@@ -19,7 +19,11 @@ mod tween;
 pub use animated::animated;
 pub use animation::{Animation, ListenerCallback, ListenerId, StatusListenerCallback};
 pub use controller::AnimationController;
-pub use curve::Curve;
+pub use curve::{
+    BounceIn, BounceInOut, BounceOut, Cubic, Curve, Curves, CustomCurve, Decelerate, EaseIn,
+    EaseInCubic, EaseInOut, EaseInOutCubic, EaseOut, EaseOutCubic, ElasticIn, ElasticInOut,
+    ElasticOut, FlippedCurve, Interval, Linear, Reversed, SawTooth, Split, Threshold,
+};
 pub use lerp::Lerp;
 pub use listeners::{EagerListenable, LazyListenable, LocalListeners, LocalStatusListeners};
 pub use simulation::{

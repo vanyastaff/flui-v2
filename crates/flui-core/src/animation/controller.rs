@@ -13,6 +13,7 @@ use std::time::Duration;
 use crate::animation::animation::{
     Animation, ListenerCallback, ListenerId, StatusListenerCallback,
 };
+use crate::animation::curve::Linear;
 use crate::animation::listeners::{LocalListeners, LocalStatusListeners};
 use crate::animation::status::AnimationStatus;
 use crate::animation::ticker::Ticker;
@@ -70,7 +71,7 @@ pub struct AnimationController {
     reverse_duration: Option<Duration>,
     lower_bound: f32,
     upper_bound: f32,
-    curve: Curve,
+    curve: Box<dyn Curve>,
     start_time: Option<Instant>,
     start_value: f32,
     repeating: bool,
@@ -97,7 +98,7 @@ impl AnimationController {
             reverse_duration: None,
             lower_bound: 0.0,
             upper_bound: 1.0,
-            curve: Curve::Linear,
+            curve: Box::new(Linear),
             start_time: None,
             start_value: 0.0,
             repeating: false,
@@ -109,9 +110,12 @@ impl AnimationController {
         }
     }
 
-    /// Set the easing curve.
-    pub fn curve(mut self, curve: Curve) -> Self {
-        self.curve = curve;
+    /// Set the easing curve. Accepts any concrete type implementing
+    /// [`Curve`] — typically a constant from
+    /// [`Curves`](crate::animation::curve::Curves) (e.g.
+    /// `Curves::EASE_IN_OUT`) or a custom struct.
+    pub fn curve<C: Curve>(mut self, curve: C) -> Self {
+        self.curve = Box::new(curve);
         self
     }
 

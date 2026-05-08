@@ -98,9 +98,12 @@ pub use action::*;
 // public surface explicitly. The animation module's own `mod.rs` is the
 // canonical curator; this list mirrors it.
 pub use animation::{
-    Animation, AnimationController, AnimationStatus, Curve, EagerListenable, FrictionSimulation,
-    GravitySimulation, LazyListenable, Lerp, ListenerCallback, ListenerId, LocalListeners,
-    LocalStatusListeners, Simulation, SpringDescription, SpringSimulation, StatusListenerCallback,
+    Animation, AnimationController, AnimationStatus, BounceIn, BounceInOut, BounceOut, Cubic,
+    Curve, Curves, CustomCurve, Decelerate, EaseIn, EaseInCubic, EaseInOut, EaseInOutCubic,
+    EaseOut, EaseOutCubic, EagerListenable, ElasticIn, ElasticInOut, ElasticOut, FlippedCurve,
+    FrictionSimulation, GravitySimulation, Interval, LazyListenable, Lerp, Linear,
+    ListenerCallback, ListenerId, LocalListeners, LocalStatusListeners, Reversed, SawTooth,
+    Simulation, Split, SpringDescription, SpringSimulation, StatusListenerCallback, Threshold,
     Ticker, TickerCanceled, TickerFuture, TickerFutureState, TickerProvider, Tolerance, Tween,
     animated,
 };
