@@ -418,6 +418,15 @@ _None — `.ai-factory/RESEARCH.md` does not exist. The Flutter API page at http
 
 **Outcome:** `Animation<T>` is composable; user code can build animation graphs without owning a controller.
 
+**Progress (S21 phase 3):** ✅ complete 2026-05-08. All combinators in `crates/flui-core/src/animation/combinator.rs`.
+
+- [x] 3.1 — `AlwaysStoppedAnimation<T>` — constant value, status `Forward`, listeners are no-ops (return fresh `ListenerId` for API parity).
+- [x] 3.2 — `ProxyAnimation<T>` — runtime parent swap via `set_parent`; unsubscribes from old, subscribes to new, fires listeners + status listeners on swap; `Drop` releases subscriptions.
+- [x] 3.3 — `ReverseAnimation` (`Animation<f64>`-only — Flutter parity) — value `1.0 - parent.value()`; status flipped via `reverse_status` helper (`Forward↔Reverse`, `Dismissed↔Completed`); future `AnimationStatus` variants pass through.
+- [x] 3.4 — `CompoundAnimation<F>` generic over `F: Fn(f64, f64) -> f64`. Status priority `Forward > Reverse > Completed > Dismissed` via `combined_status` helper (Flutter's `_lastStatus` cache approximated; covers Min/Max/Mean cases). Free constructors: `animation_min`, `animation_max`, `animation_mean`.
+- [x] 3.5 — `TrainHoppingAnimation` — listens to two parents; on first sign-flip of `(first.value - second.value)` disposes the first parent's listeners and switches to second-only operation (one-shot hop, never reverses). Used by route-transition swaps. Returns `Rc<Self>` because the value listener uses `Weak<Self>` to avoid a self-referential strong cycle.
+- [x] 3.6 — 18 unit tests cover constant value/status, listener no-ops, proxy parent swap (sub/unsub/refire), drop releases parent listeners, reverse value+status flip + status listener forwarding, Min/Max/Mean values, status priority for forward-wins/all-dismissed, compound listener fan-out from either parent, TrainHopping hop semantics + listener release after hop.
+
 ### Tasks
 
 All combinators land in a single flat file: `crates/flui-core/src/animation/combinator.rs`.

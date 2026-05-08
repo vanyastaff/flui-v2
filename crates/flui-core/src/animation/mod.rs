@@ -7,6 +7,7 @@
 
 mod animated;
 mod animation;
+mod combinator;
 mod controller;
 mod curve;
 mod curved_animation;
@@ -19,6 +20,10 @@ mod tween;
 
 pub use animated::animated;
 pub use animation::{Animation, ListenerCallback, ListenerId, StatusListenerCallback};
+pub use combinator::{
+    AlwaysStoppedAnimation, CompoundAnimation, ProxyAnimation, ReverseAnimation,
+    TrainHoppingAnimation, animation_max, animation_mean, animation_min,
+};
 pub use controller::AnimationController;
 pub use curve::{
     BounceIn, BounceInOut, BounceOut, Cubic, Curve, Curves, CustomCurve, Decelerate, EaseIn,

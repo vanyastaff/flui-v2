@@ -132,6 +132,32 @@ incrementally; only completed phases appear below.
 - **`Lerp for Bounds<Pixels>`** — composes the existing `Lerp` impls for
   `Point<Pixels>` and `Size<Pixels>`. Required by `RectTween`.
 
+### Added — `flui-core::animation` (Phase 3 combinators)
+
+- **`AlwaysStoppedAnimation<T>`** — constant value, status hard-coded
+  to `Forward`, listener add/remove are no-ops (S21 phase 3).
+- **`ProxyAnimation<T>`** — runtime parent-swap via `set_parent`.
+  Unsubscribes from the old parent's listeners and re-subscribes to
+  the new one; fires our own listeners + status listeners on swap so
+  consumers re-render against the new value.
+- **`ReverseAnimation`** (`Animation<f64>`-only — matches Flutter's
+  `ReverseAnimation` shape) — `value()` returns `1.0 - parent.value()`;
+  status flipped (`Forward↔Reverse`, `Dismissed↔Completed`); future
+  `AnimationStatus` variants pass through unchanged.
+- **`CompoundAnimation<F>`** + free constructors **`animation_min`**,
+  **`animation_max`**, **`animation_mean`**. Combines two
+  `Animation<f64>` parents via a closure `Fn(f64, f64) -> f64`. Status
+  priority: `Forward > Reverse > Completed > Dismissed` (a simpler
+  approximation of Flutter's `_lastStatus` cache that covers the
+  common Min/Max/Mean cases).
+- **`TrainHoppingAnimation`** — listens to two `Animation<f64>` parents;
+  once their values cross (sign of `first - second` flips), disposes
+  the first parent's subscription and behaves identically to the
+  second from then on. One-shot hop semantics; constructor returns
+  `Rc<Self>` because the value listener captures `Weak<Self>` to avoid
+  a self-referential strong cycle. Used by route-transition swaps where
+  the destination animation takes over from the source mid-flight.
+
 ### Deprecated — `flui-core::elements::animation::easing`
 
 - Legacy free functions `easing::linear`, `easing::quadratic`,
