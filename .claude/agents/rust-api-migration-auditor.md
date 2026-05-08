@@ -13,7 +13,7 @@ flui-v2 is a workspace with these crates (`Cargo.toml` workspace members):
 
 - `flui-core` — runtime and core traits. Today contains the `platform/` subdir that will be extracted to `flui-platform`.
 - `flui-macros` — proc macros.
-- `flui-widgets`, `flui-animate`, `flui-navigator`, `flui-a11y`, `flui-theme`, `flui-material` — out of scope until core roadmap completes.
+- `flui-widgets`, `flui-navigator`, `flui-a11y`, `flui-theme`, `flui-material` — out of scope until core roadmap completes.
 - Future: `flui-platform` (this is what's being built).
 
 `flui-core` features: `default = ["font-kit", "wayland", "x11", "windows-manifest"]`, `test-support`, `inspector`, `leak-detection`, `runtime_shaders`, `wayland`, `x11`, `windows-manifest`. Most features gate target-specific deps. The `test-support` feature is the canonical "enables PlatformHeadlessRenderer, TestDispatcher, proptest re-export" gate.

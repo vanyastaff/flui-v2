@@ -4,7 +4,6 @@ members = [
     "crates/flui-platform",
     "crates/flui-macros",
     "crates/flui-widgets",
-    "crates/flui-animate",
     "crates/flui-navigator",
     "crates/flui-a11y",
     "crates/flui-theme",

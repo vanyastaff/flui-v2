@@ -503,7 +503,11 @@ All combinators land in a single flat file: `crates/flui-core/src/animation/comb
 
 ---
 
-## Phase 5 — Delete `flui-animate` skeleton; defer widget layer to future `flui-widgets`
+## Phase 5 — Delete `flui-animate` skeleton; defer widget layer to future `flui-widgets` ✅ DONE 2026-05-08
+
+**Completed.** `crates/flui-animate/` removed; `Cargo.toml` workspace, README.md, AGENTS.md, ARCHITECTURE.md, DESCRIPTION.md, rules/base.md, .claude/agents/{flui-arch-reviewer,rust-api-migration-auditor}.md updated. Historical `docs/superpowers/specs/*` and `.worktree/` snapshots intentionally left untouched per the plan. Workspace `cargo check --all-features` clean; 93/93 animation tests pass; combinator's `reverse_status` cleaned of unreachable wildcard arm so future `AnimationStatus` variants force a compile-time decision.
+
+
 
 **Outcome:** The empty `flui-animate` workspace member is gone. The widget-layer surface (`AnimatedBuilder`, `AnimatedWidget`, `ImplicitlyAnimatedWidget`, choreography helpers) is explicitly registered as future `flui-widgets` work, not part of S21. Element-level `AnimationExt` (already in `flui-core::elements::animation`) remains the only widget-style integration this milestone ships.
 

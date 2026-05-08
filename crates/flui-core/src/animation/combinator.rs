@@ -237,13 +237,16 @@ impl Animation<f64> for ReverseAnimation {
 }
 
 fn reverse_status(s: AnimationStatus) -> AnimationStatus {
+    // `AnimationStatus` is `#[non_exhaustive]`, but within flui-core the
+    // compiler sees all variants and treats the match as exhaustive. If a
+    // future variant is added, this `match` will fail to compile — forcing
+    // a deliberate decision on its reverse semantics rather than silently
+    // passing it through.
     match s {
         AnimationStatus::Forward => AnimationStatus::Reverse,
         AnimationStatus::Reverse => AnimationStatus::Forward,
         AnimationStatus::Dismissed => AnimationStatus::Completed,
         AnimationStatus::Completed => AnimationStatus::Dismissed,
-        // Future variants pass through (AnimationStatus is #[non_exhaustive]).
-        other => other,
     }
 }
 

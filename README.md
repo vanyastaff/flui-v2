@@ -16,8 +16,8 @@ flui-v2 takes GPUI's proven GPU rendering foundation and evolves it toward a Flu
 |  Layer 4: flui-navigator                               |
 |  Type-safe routing, transitions, guards, middleware     |
 +-------------------------------------------------------+
-|  Layer 3: flui-widgets / flui-animate / flui-a11y      |
-|  Widget library, animation system, accessibility        |
+|  Layer 3: flui-widgets / flui-a11y                     |
+|  Widget library, accessibility                          |
 +-------------------------------------------------------+
 |  Layer 2: flui-core                                    |
 |  Entity system, views, elements, layout (Taffy),       |
@@ -38,7 +38,6 @@ flui-v2/
     flui-macros/     # Procedural macros (derive Render, IntoElement, etc.)
     flui-navigator/  # Routing: nested routes, transitions, guards, middleware
     flui-widgets/    # Widget library (planned: Button, Input, Modal, Theme)
-    flui-animate/    # Extended animation system (planned)
     flui-a11y/       # Accessibility / semantic tree (planned)
   examples/
     nav_demo/        # Navigation routing demo
