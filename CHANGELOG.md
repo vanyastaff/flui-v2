@@ -8,12 +8,26 @@ intent — every breaking change ships with a migration note even though we
 have not yet published a numbered release. Cross-references point to the
 plan and design docs in `.ai-factory/plans/` and `docs/superpowers/specs/`.
 
-## [Unreleased] — S21 Animation Flutter parity (in progress)
+## [Unreleased] — S21 Animation Flutter parity
 
 This entry captures the S21 milestone work, which brings `flui-core::animation`
 to parity with Flutter's `dart:ui` / `package:flutter/animation.dart` surface.
-Plan: `.ai-factory/plans/animation-flutter-parity.md`. Phases land
-incrementally; only completed phases appear below.
+Plan: `.ai-factory/plans/animation-flutter-parity.md`. Migration guide:
+`docs/superpowers/migrations/animation-flutter-parity.md`. ROADMAP entry:
+`S21 Animation Flutter parity` under Phase II (subsumes S11 Physics).
+
+**Phases landed:** 0a (Animation rename), 0 (foundation), 1 (curves), 2
+(animatables), 3 (combinators), 4 (controller polish), 5 (workspace
+cleanup), 7 (docs + roadmap registration). **Deferred follow-ups:**
+1.5 (`Curve2D` / Catmull-Rom), 4.4 (`repeat()` overload extension),
+4.8b (`ClampedSimulation`), 6 (criterion benches + animation-frame
+goldens + proptest sweep), 7.2 (mdbook chapter — to land with R9), 7.6
+8-pattern demo expansion + `examples/learn/animation.rs` migration off
+deprecated `easing::*` imports.
+
+**Total surface:** ~98 unit tests, ~3000 LoC across nine new/rewritten
+files. `cargo check --workspace --all-features` clean; zero new
+compile warnings.
 
 ### Added — `flui-core::animation`
 

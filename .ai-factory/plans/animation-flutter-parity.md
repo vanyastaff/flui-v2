@@ -605,7 +605,16 @@ The `flui-animate` skeleton was created on 2026-04-13 but has never held real co
 
 ---
 
-## Phase 7 — Documentation, roadmap registration, migration guide
+## Phase 7 — Documentation, roadmap registration, migration guide ✅ MOSTLY DONE 2026-05-08
+
+**Progress (S21 phase 7):** ✅ landing-essential docs done; mdbook chapter + `examples/animation_demo` 8-pattern expansion deferred (existing 4 cards still work; demo expansion can land alongside R9 mdbook).
+
+- [x] 7.1 Rustdoc on every new public type — incremental during phases 0–4. Each `pub` item carries a Flutter-parity link plus rationale.
+- [ ] 7.2 mdbook chapter — **deferred to R9**. Migration guide at `docs/superpowers/migrations/` covers the same surface for now.
+- [x] 7.3 Migration guide — `docs/superpowers/migrations/animation-flutter-parity.md`. Quick-reference table + per-phase narrative for `Animation` struct rename, `Curve` enum→trait, `easing::*` deprecation, plus non-breaking additions (Animation<T> trait, Animatable, combinators, controller polish).
+- [x] 7.4 ROADMAP.md updates — `S11 Physics simulations` marked subsumed by S21; `[x] S21 Animation Flutter parity` registered under Phase II with rationale + cross-track links to S08 (semantics-driven muting) and S14 (`AnimationBehavior::Preserve` integration). Completed table updated.
+- [x] 7.5 CHANGELOG.md — appended Added/Breaking/Deprecated blocks per phase incrementally; final Phase 7 commit adds the closing summary.
+- [ ] 7.6 — **Partial.** `examples/animation_demo` updated to use the new `Curves` catalogue in S21 phase 1. The 8-pattern expansion (fling card, ping-pong-repeat card, AnimationMean/staggered card) deferred — needs a real-time runtime context that's awkward to demo without a full-day session. Existing 4 cards (fade, slide, color, bounce) keep working. `crates/flui-core/examples/learn/animation.rs` deferred — currently warns on deprecated `linear`/`bounce`/`ease_in_out` imports; migration to `Curves::*` is mechanical and can land in a follow-up.
 
 **Outcome:** The animation surface is documented end-to-end; ROADMAP records S21 milestone with cross-track wiring; a migration guide explains old API → new API.
 
