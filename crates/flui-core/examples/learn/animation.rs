@@ -6,6 +6,11 @@
 //! 2. Easing functions - ease_in_out, bounce, linear
 //! 3. Transformations - rotate, scale, translate
 //! 4. Repeating and duration controls
+//!
+//! Note: this example still uses the deprecated `easing::*` free functions
+//! pending the S21 phase 7.6 demo migration to `Curves::*` / `CurvedAnimation`.
+
+#![allow(deprecated)]
 
 #[path = "../prelude.rs"]
 mod example_prelude;

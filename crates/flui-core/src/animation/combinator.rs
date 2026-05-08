@@ -707,7 +707,7 @@ mod tests {
     #[test]
     fn proxy_passes_through_initial_parent() {
         let parent = TestSource::new(0.5, AnimationStatus::Forward);
-        let proxy = ProxyAnimation::new(parent.clone() as Rc<dyn Animation<f64>>);
+        let proxy = ProxyAnimation::new(parent as Rc<dyn Animation<f64>>);
         assert_eq!(<ProxyAnimation<f64> as Animation<f64>>::value(&proxy), 0.5);
         assert_eq!(
             <ProxyAnimation<f64> as Animation<f64>>::status(&proxy),
@@ -783,7 +783,7 @@ mod tests {
     #[test]
     fn reverse_inverts_value() {
         let parent = TestSource::new(0.3, AnimationStatus::Forward);
-        let rev = ReverseAnimation::new(parent.clone() as Rc<dyn Animation<f64>>);
+        let rev = ReverseAnimation::new(parent as Rc<dyn Animation<f64>>);
         assert!((<ReverseAnimation as Animation<f64>>::value(&rev) - 0.7).abs() < 1e-9);
     }
 
@@ -841,8 +841,8 @@ mod tests {
         let a = TestSource::new(0.3, AnimationStatus::Forward);
         let b = TestSource::new(0.7, AnimationStatus::Forward);
         let combined = animation_min(
-            a.clone() as Rc<dyn Animation<f64>>,
-            b.clone() as Rc<dyn Animation<f64>>,
+            a as Rc<dyn Animation<f64>>,
+            b as Rc<dyn Animation<f64>>,
         );
         assert!((combined.value() - 0.3).abs() < 1e-9);
     }
@@ -852,8 +852,8 @@ mod tests {
         let a = TestSource::new(0.3, AnimationStatus::Forward);
         let b = TestSource::new(0.7, AnimationStatus::Forward);
         let combined = animation_max(
-            a.clone() as Rc<dyn Animation<f64>>,
-            b.clone() as Rc<dyn Animation<f64>>,
+            a as Rc<dyn Animation<f64>>,
+            b as Rc<dyn Animation<f64>>,
         );
         assert!((combined.value() - 0.7).abs() < 1e-9);
     }
@@ -863,8 +863,8 @@ mod tests {
         let a = TestSource::new(0.2, AnimationStatus::Forward);
         let b = TestSource::new(0.8, AnimationStatus::Forward);
         let combined = animation_mean(
-            a.clone() as Rc<dyn Animation<f64>>,
-            b.clone() as Rc<dyn Animation<f64>>,
+            a as Rc<dyn Animation<f64>>,
+            b as Rc<dyn Animation<f64>>,
         );
         assert!((combined.value() - 0.5).abs() < 1e-9);
     }
@@ -874,8 +874,8 @@ mod tests {
         let a = TestSource::new(0.0, AnimationStatus::Reverse);
         let b = TestSource::new(0.0, AnimationStatus::Forward);
         let combined = animation_min(
-            a.clone() as Rc<dyn Animation<f64>>,
-            b.clone() as Rc<dyn Animation<f64>>,
+            a as Rc<dyn Animation<f64>>,
+            b as Rc<dyn Animation<f64>>,
         );
         assert_eq!(combined.status(), AnimationStatus::Forward);
     }
@@ -885,8 +885,8 @@ mod tests {
         let a = TestSource::new(0.0, AnimationStatus::Dismissed);
         let b = TestSource::new(0.0, AnimationStatus::Dismissed);
         let combined = animation_min(
-            a.clone() as Rc<dyn Animation<f64>>,
-            b.clone() as Rc<dyn Animation<f64>>,
+            a as Rc<dyn Animation<f64>>,
+            b as Rc<dyn Animation<f64>>,
         );
         assert_eq!(combined.status(), AnimationStatus::Dismissed);
     }
@@ -919,8 +919,8 @@ mod tests {
         let first = TestSource::new(0.2, AnimationStatus::Forward);
         let second = TestSource::new(0.8, AnimationStatus::Forward);
         let train = TrainHoppingAnimation::new(
-            first.clone() as Rc<dyn Animation<f64>>,
-            second.clone() as Rc<dyn Animation<f64>>,
+            first as Rc<dyn Animation<f64>>,
+            second as Rc<dyn Animation<f64>>,
         );
         assert!((train.value() - 0.2).abs() < 1e-9);
     }

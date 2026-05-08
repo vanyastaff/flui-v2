@@ -1,3 +1,8 @@
+// Legacy example — uses deprecated `pulsating_between` curve helper.
+// Kept building for the CI matrix; will be ported to `CustomCurve` when the
+// `examples/legacy/` tier is overhauled (S21 phase 7.6 follow-up).
+#![allow(deprecated)]
+
 use std::{path::Path, sync::Arc, time::Duration};
 
 use flui_core::{
