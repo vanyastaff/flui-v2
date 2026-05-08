@@ -7,6 +7,7 @@
 
 mod animated;
 mod animation;
+mod behavior;
 mod combinator;
 mod controller;
 mod curve;
@@ -20,6 +21,7 @@ mod tween;
 
 pub use animated::animated;
 pub use animation::{Animation, ListenerCallback, ListenerId, StatusListenerCallback};
+pub use behavior::{AnimationBehavior, AnimationStyle};
 pub use combinator::{
     AlwaysStoppedAnimation, CompoundAnimation, ProxyAnimation, ReverseAnimation,
     TrainHoppingAnimation, animation_max, animation_mean, animation_min,
@@ -34,8 +36,8 @@ pub use curved_animation::CurvedAnimation;
 pub use lerp::Lerp;
 pub use listeners::{EagerListenable, LazyListenable, LocalListeners, LocalStatusListeners};
 pub use simulation::{
-    FrictionSimulation, GravitySimulation, Simulation, SpringDescription, SpringSimulation,
-    Tolerance,
+    BoundedFrictionSimulation, FrictionSimulation, GravitySimulation, Simulation,
+    SpringDescription, SpringSimulation, Tolerance,
 };
 pub use status::AnimationStatus;
 pub use ticker::{Ticker, TickerCanceled, TickerFuture, TickerFutureState, TickerProvider};

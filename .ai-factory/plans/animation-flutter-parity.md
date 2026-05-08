@@ -462,7 +462,21 @@ All combinators land in a single flat file: `crates/flui-core/src/animation/comb
 
 ---
 
-## Phase 4 — `AnimationController` polish: `animateTo`, `fling`, `repeat` overloads, behaviour/style
+## Phase 4 — `AnimationController` polish: `animateTo`, `fling`, `repeat` overloads, behaviour/style ✅ MOSTLY DONE 2026-05-08
+
+**Progress (S21 phase 4):** ✅ controller polish landed; only `repeat()` overload extension (`min`/`max`/`period`/`reverse`/`count`) and `ClampedSimulation` deferred — they are not consumed by examples and are non-blocking for downstream phases.
+
+- [x] 4.1 `animate_to(target, AnimationStyle, cx)` — direction inferred (`Forward` if `target >= current`, `Reverse` otherwise); per-call duration / curve overrides via `AnimationStyle`.
+- [x] 4.2 `animate_back(target, AnimationStyle, cx)` — explicit `Reverse` regardless of direction; consumes `style.reverse_*` fallbacks.
+- [x] 4.3 `fling(velocity, AnimationBehavior, cx)` — drives a default-drag `FrictionSimulation` (drag = 8.0); behaviour parameter currently unused (S14 hookup).
+- [ ] 4.4 — **Deferred.** `repeat()` extension with `min`/`max`/`period`/`reverse`/`count`. Existing `repeat(cx)` covers the infinite-repeat case.
+- [x] 4.5 `AnimationBehavior` (`Normal` / `Preserve`, `#[non_exhaustive]`) in `behavior.rs`. `AnimationController::with_behavior(behavior)` builder.
+- [x] 4.6 `AnimationStyle { duration, reverse_duration, curve, reverse_curve }` (all `Option`) in `behavior.rs` with builder helpers (`with_duration`, `with_curve`, ...). `AnimationController::with_style(style)` merges into the controller's defaults.
+- [x] 4.7 `velocity()` three-branch — (1) active simulation `dx`, (2) analytical `Curve::derivative_at` ⋅ span / duration, (3) numerical central differences with `EPS = 1e-3` and `log::trace!` on the fallback path.
+- [x] 4.8 `BoundedFrictionSimulation` — `FrictionSimulation` clamped to `[min, max]`; `is_done` true once a bound is hit; tests cover both clamp-at-max and within-bounds settling.
+- [ ] 4.8b — **Deferred.** `ClampedSimulation` (Flutter wrapper that clamps an arbitrary inner simulation). Same shape as `BoundedFrictionSimulation`; can be added in a follow-up if a real consumer surfaces.
+- [x] 4.9 Ticker substrate verified — controller's `now()` continues to read through the injected `Clock` for all new methods (`animate_to` / `animate_back` / `fling` / `velocity`).
+- [x] 4.10 Unit tests partial: `AnimationStyle` builder chain + default-is-all-none, `AnimationBehavior` default, `BoundedFrictionSimulation` clamp-at-max + within-bounds. Controller-method tests (animate_to / fling / velocity) require a `TestApp` / `Headless` Context — deferred to phase 6 alongside the deterministic-Ticker integration goldens.
 
 **Outcome:** Controller surface matches Flutter; physics simulations are first-class controller drivers.
 

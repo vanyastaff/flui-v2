@@ -13,8 +13,10 @@ use std::time::Duration;
 use crate::animation::animation::{
     Animation, ListenerCallback, ListenerId, StatusListenerCallback,
 };
+use crate::animation::behavior::{AnimationBehavior, AnimationStyle};
 use crate::animation::curve::Linear;
 use crate::animation::listeners::{LocalListeners, LocalStatusListeners};
+use crate::animation::simulation::FrictionSimulation;
 use crate::animation::status::AnimationStatus;
 use crate::animation::ticker::Ticker;
 use crate::animation::{Curve, Simulation};
@@ -74,6 +76,11 @@ pub struct AnimationController {
     curve: Box<dyn Curve>,
     start_time: Option<Instant>,
     start_value: f32,
+    /// Per-segment target value. `None` means "use upper_bound for Forward,
+    /// lower_bound for Reverse" (existing forward/reverse semantics). `Some`
+    /// is set by `animate_to` / `animate_back` for an explicit target.
+    /// Cleared on `stop` / `reset` / `repeat` / `animate_with`.
+    target_value: Option<f32>,
     repeating: bool,
     simulation: Option<Box<dyn Simulation>>,
     sim_start_time: Option<Instant>,
@@ -84,6 +91,15 @@ pub struct AnimationController {
     // S21 phase 0: listener storage for the new Animation<T> trait.
     listeners: LocalListeners,
     status_listeners: LocalStatusListeners,
+
+    // S21 phase 4: behaviour + style overrides.
+    behavior: AnimationBehavior,
+    /// Per-segment duration override. `None` means "use the controller's
+    /// default `duration` / `reverse_duration`". Cleared on `stop` / `reset`.
+    style_duration: Option<Duration>,
+    /// Per-segment curve override. `None` means "use the controller's default
+    /// `curve`". Cleared on `stop` / `reset`.
+    style_curve: Option<Box<dyn Curve>>,
 }
 
 impl AnimationController {
@@ -101,13 +117,46 @@ impl AnimationController {
             curve: Box::new(Linear),
             start_time: None,
             start_value: 0.0,
+            target_value: None,
             repeating: false,
             simulation: None,
             sim_start_time: None,
             ticker: None,
             listeners: LocalListeners::new(),
             status_listeners: LocalStatusListeners::new(),
+            behavior: AnimationBehavior::default(),
+            style_duration: None,
+            style_curve: None,
         }
+    }
+
+    /// Override the [`AnimationBehavior`] used for this controller. Phase 4
+    /// ships the field; `MediaQueryData.disableAnimations` integration lands
+    /// alongside S14.
+    pub fn with_behavior(mut self, behavior: AnimationBehavior) -> Self {
+        self.behavior = behavior;
+        self
+    }
+
+    /// Replace the controller-level defaults from an [`AnimationStyle`].
+    /// Each `Some(...)` field overrides the corresponding default; `None`
+    /// fields are left as-is. Useful when constructing a controller from a
+    /// theme.
+    pub fn with_style(mut self, style: AnimationStyle) -> Self {
+        if let Some(d) = style.duration {
+            self.duration = d;
+        }
+        if let Some(d) = style.reverse_duration {
+            self.reverse_duration = Some(d);
+        }
+        if let Some(c) = style.curve {
+            self.curve = c;
+        }
+        // reverse_curve is currently unused (controller has no separate
+        // reverse curve field today; CurvedAnimation handles per-direction
+        // curves). Stored for parity but does not affect controller value.
+        let _ = style.reverse_curve;
+        self
     }
 
     /// Set the easing curve. Accepts any concrete type implementing
@@ -189,31 +238,33 @@ impl AnimationController {
         }
 
         if let Some(start) = self.start_time {
-            let duration = match self.status {
+            // Resolve duration: per-segment override > reverse_duration (when
+            // status is Reverse) > controller default.
+            let duration = self.style_duration.unwrap_or_else(|| match self.status {
                 AnimationStatus::Reverse => self.reverse_duration.unwrap_or(self.duration),
                 _ => self.duration,
-            };
+            });
+
+            // Resolve target: per-segment animate_to/animate_back override >
+            // bound based on direction.
+            let target = self.target_value.unwrap_or_else(|| match self.status {
+                AnimationStatus::Forward | AnimationStatus::Completed => self.upper_bound,
+                AnimationStatus::Reverse | AnimationStatus::Dismissed => self.lower_bound,
+            });
 
             if duration.is_zero() {
-                return match self.status {
-                    AnimationStatus::Forward | AnimationStatus::Completed => self.upper_bound,
-                    _ => self.lower_bound,
-                };
+                return target;
             }
 
             let elapsed = self.now().saturating_duration_since(start).as_secs_f32();
             let raw_t = (elapsed / duration.as_secs_f32()).clamp(0.0, 1.0);
-            let curved_t = self.curve.transform(raw_t);
+            // Resolve curve: per-segment override > controller default.
+            let curved_t = match &self.style_curve {
+                Some(c) => c.transform(raw_t),
+                None => self.curve.transform(raw_t),
+            };
 
-            match self.status {
-                AnimationStatus::Forward => {
-                    self.start_value + curved_t * (self.upper_bound - self.start_value)
-                }
-                AnimationStatus::Reverse => {
-                    self.start_value - curved_t * (self.start_value - self.lower_bound)
-                }
-                _ => self.value,
-            }
+            self.start_value + curved_t * (target - self.start_value)
         } else {
             self.value
         }
@@ -273,6 +324,16 @@ impl AnimationController {
     // Control methods (each calls cx.notify() so existing observe chains stay alive)
     // ========================================================================
 
+    /// Internal: clear ad-hoc per-segment overrides (target value + style
+    /// override). Called from every method that starts a new segment so the
+    /// previous segment's `animate_to` / `with_style` ad-hoc state does not
+    /// leak.
+    fn clear_segment_overrides(&mut self) {
+        self.target_value = None;
+        self.style_duration = None;
+        self.style_curve = None;
+    }
+
     /// Animate toward upper bound.
     pub fn forward(&mut self, cx: &mut Context<Self>) {
         log::debug!(
@@ -283,6 +344,7 @@ impl AnimationController {
         );
         self.simulation = None;
         self.sim_start_time = None;
+        self.clear_segment_overrides();
         self.start_value = self.value();
         self.start_time = Some(self.now());
         self.set_status(AnimationStatus::Forward);
@@ -301,12 +363,183 @@ impl AnimationController {
         );
         self.simulation = None;
         self.sim_start_time = None;
+        self.clear_segment_overrides();
         self.start_value = self.value();
         self.start_time = Some(self.now());
         self.set_status(AnimationStatus::Reverse);
         self.repeating = false;
         self.notify_value();
         cx.notify();
+    }
+
+    /// Animate from the current value to `target`. Direction is inferred:
+    /// `Forward` when `target >= current`, `Reverse` when `target < current`.
+    /// The `style` parameter overrides the controller's default duration and
+    /// curve for this segment only — pass [`AnimationStyle::default`] for
+    /// the controller defaults.
+    ///
+    /// **Flutter parity:** corresponds to `AnimationController.animateTo`.
+    pub fn animate_to(
+        &mut self,
+        target: f32,
+        style: AnimationStyle,
+        cx: &mut Context<Self>,
+    ) {
+        let target = target.clamp(self.lower_bound, self.upper_bound);
+        let current = self.value();
+        let next_status = if target >= current {
+            AnimationStatus::Forward
+        } else {
+            AnimationStatus::Reverse
+        };
+        log::debug!(
+            target: "flui_core::animation::controller",
+            "AnimationController::animate_to(target={}) — was value={} status={:?}",
+            target,
+            current,
+            self.status
+        );
+        self.simulation = None;
+        self.sim_start_time = None;
+        self.target_value = Some(target);
+        self.style_duration = style.duration;
+        self.style_curve = style.curve;
+        // reverse_curve / reverse_duration from style are not consumed here —
+        // a single animate_to segment uses ONE direction's parameters.
+        let _ = (style.reverse_duration, style.reverse_curve);
+        self.start_value = current;
+        self.start_time = Some(self.now());
+        self.set_status(next_status);
+        self.repeating = false;
+        self.notify_value();
+        cx.notify();
+    }
+
+    /// Animate from the current value to `target` with explicit `Reverse`
+    /// status (regardless of whether `target` is below `current`). Useful
+    /// for status-driven UI transitions where the consumer wants the
+    /// animation to be observably "reversing" even if the target is above
+    /// the current value.
+    ///
+    /// **Flutter parity:** corresponds to `AnimationController.animateBack`.
+    pub fn animate_back(
+        &mut self,
+        target: f32,
+        style: AnimationStyle,
+        cx: &mut Context<Self>,
+    ) {
+        let target = target.clamp(self.lower_bound, self.upper_bound);
+        let current = self.value();
+        log::debug!(
+            target: "flui_core::animation::controller",
+            "AnimationController::animate_back(target={}) — was value={} status={:?}",
+            target,
+            current,
+            self.status
+        );
+        self.simulation = None;
+        self.sim_start_time = None;
+        self.target_value = Some(target);
+        self.style_duration = style.duration.or(style.reverse_duration);
+        self.style_curve = style.curve.or(style.reverse_curve);
+        self.start_value = current;
+        self.start_time = Some(self.now());
+        self.set_status(AnimationStatus::Reverse);
+        self.repeating = false;
+        self.notify_value();
+        cx.notify();
+    }
+
+    /// Drive the controller with a velocity-based fling. Phase 4 ships a
+    /// simple friction-based fling — passing a custom [`Simulation`] via
+    /// [`AnimationController::animate_with`] gives the consumer full
+    /// control. The `behavior` parameter is stored but not yet consumed
+    /// by the simulation choice (S14 wires it to `MediaQueryData.disableAnimations`).
+    ///
+    /// **Flutter parity:** corresponds to `AnimationController.fling`.
+    pub fn fling(
+        &mut self,
+        velocity: f32,
+        behavior: AnimationBehavior,
+        cx: &mut Context<Self>,
+    ) {
+        // Override behavior for this fling — does not change the controller's
+        // default behaviour.
+        let _ = behavior; // future: switch friction/spring constants per behaviour.
+        log::debug!(
+            target: "flui_core::animation::controller",
+            "AnimationController::fling(velocity={}) — was value={}",
+            velocity,
+            self.value()
+        );
+        let drag = 8.0_f32; // empirically chosen for "feels natural" flings.
+        let sim = FrictionSimulation::new(drag, self.value(), velocity);
+        self.animate_with(sim, cx);
+    }
+
+    /// Current animation velocity. Three-branch implementation:
+    ///
+    /// 1. If a [`Simulation`] is driving the controller, returns
+    ///    `simulation.dx(elapsed)`.
+    /// 2. Else, if the active curve has an analytical derivative
+    ///    (`Curve::derivative_at` returns `Some`), returns
+    ///    `derivative * (target - start) / duration_secs`.
+    /// 3. Else, falls back to a numerical central finite-differences
+    ///    estimate (epsilon = 1e-3) and emits a `log::trace!`.
+    pub fn velocity(&self) -> f32 {
+        // Branch 1: active simulation.
+        if let (Some(sim), Some(start)) = (&self.simulation, self.sim_start_time) {
+            let elapsed = self.now().saturating_duration_since(start).as_secs_f32();
+            return sim.dx(elapsed);
+        }
+
+        let Some(start) = self.start_time else {
+            return 0.0;
+        };
+
+        // Compute current `t` and the active duration / target / curve.
+        let duration = self.style_duration.unwrap_or_else(|| match self.status {
+            AnimationStatus::Reverse => self.reverse_duration.unwrap_or(self.duration),
+            _ => self.duration,
+        });
+        if duration.is_zero() {
+            return 0.0;
+        }
+        let elapsed = self.now().saturating_duration_since(start).as_secs_f32();
+        let raw_t = (elapsed / duration.as_secs_f32()).clamp(0.0, 1.0);
+
+        let target = self.target_value.unwrap_or_else(|| match self.status {
+            AnimationStatus::Forward | AnimationStatus::Completed => self.upper_bound,
+            AnimationStatus::Reverse | AnimationStatus::Dismissed => self.lower_bound,
+        });
+        let span = target - self.start_value;
+        let dur_secs = duration.as_secs_f32();
+        let active_curve: &dyn Curve = match &self.style_curve {
+            Some(c) => c.as_ref(),
+            None => self.curve.as_ref(),
+        };
+
+        // Branch 2: analytical derivative.
+        if let Some(d) = active_curve.derivative_at(raw_t) {
+            return d * span / dur_secs;
+        }
+
+        // Branch 3: numerical central differences with epsilon = 1e-3.
+        log::trace!(
+            target: "flui_core::animation::controller",
+            "AnimationController::velocity falling back to numerical derivative for non-analytical curve"
+        );
+        const EPS: f32 = 1e-3;
+        let t_lo = (raw_t - EPS).clamp(0.0, 1.0);
+        let t_hi = (raw_t + EPS).clamp(0.0, 1.0);
+        let v_lo = active_curve.transform(t_lo);
+        let v_hi = active_curve.transform(t_hi);
+        let dt = t_hi - t_lo;
+        if dt > 0.0 {
+            ((v_hi - v_lo) / dt) * span / dur_secs
+        } else {
+            0.0
+        }
     }
 
     /// Toggle direction: if forward/completed → reverse, otherwise → forward.
@@ -326,6 +559,7 @@ impl AnimationController {
         );
         self.simulation = None;
         self.sim_start_time = None;
+        self.clear_segment_overrides();
         self.start_value = self.lower_bound;
         self.start_time = Some(self.now());
         self.set_status(AnimationStatus::Forward);
@@ -347,6 +581,7 @@ impl AnimationController {
         self.start_time = None;
         self.simulation = None;
         self.sim_start_time = None;
+        self.clear_segment_overrides();
         self.repeating = false;
         let next_status = if (self.value - self.upper_bound).abs() < 0.001 {
             AnimationStatus::Completed
@@ -371,6 +606,7 @@ impl AnimationController {
         self.start_time = None;
         self.simulation = None;
         self.sim_start_time = None;
+        self.clear_segment_overrides();
         self.repeating = false;
         self.set_status(AnimationStatus::Dismissed);
         self.notify_value();
@@ -385,6 +621,7 @@ impl AnimationController {
             self.status
         );
         self.start_time = None;
+        self.clear_segment_overrides();
         self.sim_start_time = Some(self.now());
         self.simulation = Some(Box::new(simulation));
         self.set_status(AnimationStatus::Forward);

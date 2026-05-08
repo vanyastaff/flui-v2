@@ -190,6 +190,56 @@ impl Simulation for FrictionSimulation {
 }
 
 // ============================================================================
+// BoundedFrictionSimulation
+// ============================================================================
+
+/// `FrictionSimulation` clamped to a `[min, max]` range. Once the inner
+/// friction simulation would carry the position past either bound, this
+/// wrapper pins to the bound and reports `is_done`.
+///
+/// **Flutter parity:** corresponds to
+/// `BoundedFrictionSimulation` from `package:flutter/physics`.
+pub struct BoundedFrictionSimulation {
+    inner: FrictionSimulation,
+    min: f32,
+    max: f32,
+}
+
+impl BoundedFrictionSimulation {
+    pub fn new(drag: f32, position: f32, velocity: f32, min: f32, max: f32) -> Self {
+        debug_assert!(min <= max, "BoundedFrictionSimulation: min must be <= max");
+        Self {
+            inner: FrictionSimulation::new(drag, position, velocity),
+            min,
+            max,
+        }
+    }
+}
+
+impl Simulation for BoundedFrictionSimulation {
+    fn x(&self, t: f32) -> f32 {
+        self.inner.x(t).clamp(self.min, self.max)
+    }
+
+    fn dx(&self, t: f32) -> f32 {
+        let raw = self.inner.x(t);
+        if raw < self.min || raw > self.max {
+            // We've hit a bound — velocity is effectively zero (clamped).
+            0.0
+        } else {
+            self.inner.dx(t)
+        }
+    }
+
+    fn is_done(&self, t: f32) -> bool {
+        let raw = self.inner.x(t);
+        // Done when either the inner friction has settled or we've pinned at
+        // a bound.
+        self.inner.is_done(t) || raw <= self.min || raw >= self.max
+    }
+}
+
+// ============================================================================
 // GravitySimulation
 // ============================================================================
 
@@ -279,6 +329,29 @@ mod tests {
         let sim = FrictionSimulation::new(2.0, 0.0, 100.0);
         // final_x should match x at large t
         assert!((sim.final_x() - sim.x(100.0)).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_bounded_friction_clamps_at_max() {
+        // Drag is small, velocity is large → friction would carry past max.
+        // The bound clamps the position.
+        let sim = BoundedFrictionSimulation::new(0.5, 0.0, 100.0, 0.0, 10.0);
+        // At t = 5, raw friction position is well past 10 — clamp to 10.
+        assert!((sim.x(5.0) - 10.0).abs() < 1e-3);
+        assert!(sim.is_done(5.0), "bounded sim done at the upper bound");
+        // dx at the bound is reported as zero (clamped).
+        assert_eq!(sim.dx(5.0), 0.0);
+    }
+
+    #[test]
+    fn test_bounded_friction_within_bounds() {
+        // Velocity small enough that friction settles within bounds.
+        let sim = BoundedFrictionSimulation::new(5.0, 0.0, 10.0, 0.0, 100.0);
+        // Mid-flight — within bounds.
+        assert!(sim.x(0.5) > 0.0);
+        assert!(sim.x(0.5) < 100.0);
+        // Velocity is the inner friction's velocity (not clamped).
+        assert!(sim.dx(0.5) > 0.0);
     }
 
     #[test]

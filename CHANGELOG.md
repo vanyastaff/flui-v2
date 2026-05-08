@@ -158,6 +158,45 @@ incrementally; only completed phases appear below.
   a self-referential strong cycle. Used by route-transition swaps where
   the destination animation takes over from the source mid-flight.
 
+### Added — `flui-core::animation` (Phase 4 controller polish)
+
+- **`AnimationBehavior`** enum (`Normal` / `Preserve`,
+  `#[non_exhaustive]`) — future hook for `MediaQueryData.disableAnimations`
+  (S14). `AnimationController::with_behavior(behavior)` builder.
+- **`AnimationStyle`** struct (all-`Option` override bag for `duration`,
+  `reverse_duration`, `curve`, `reverse_curve`) with chained builders:
+  `AnimationStyle::new().with_duration(...).with_curve(...)`.
+  `AnimationController::with_style(style)` merges into defaults.
+- **`AnimationController::animate_to(target, style, cx)`** — animates
+  the controller from its current value to `target`, direction inferred
+  (`Forward` if `target >= current`, else `Reverse`); per-call
+  duration / curve overrides via `AnimationStyle`.
+- **`AnimationController::animate_back(target, style, cx)`** — same
+  shape with explicit `Reverse` status (matches Flutter's `animateBack`).
+- **`AnimationController::fling(velocity, behavior, cx)`** — drives a
+  default-drag `FrictionSimulation`. The behaviour parameter is stored
+  for future S14 integration but does not currently affect the
+  simulation choice.
+- **`AnimationController::velocity()`** — three-branch implementation:
+  (1) active simulation `dx`, (2) analytical
+  `Curve::derivative_at(t) * span / duration_secs`, (3) numerical
+  central-differences fallback with `EPS = 1e-3` (emits a `log::trace!`
+  on fallback so profiling can see how often non-analytical curves
+  trigger it).
+- **`BoundedFrictionSimulation`** — `FrictionSimulation` clamped to a
+  `[min, max]` range; `is_done` becomes true once a bound is hit
+  (Flutter's `BoundedFrictionSimulation` parity).
+- New internal `clear_segment_overrides` helper resets per-segment
+  `target_value` / `style_duration` / `style_curve` so prior
+  `animate_to` / `with_style` ad-hoc state does not leak into a
+  subsequent `forward` / `reverse` / `repeat` / `stop` / `reset` /
+  `animate_with` segment.
+
+Deferred to follow-ups: `repeat()` overload with `min` / `max` /
+`period` / `reverse` / `count` (existing infinite-repeat case
+unchanged); `ClampedSimulation` (generic wrapper following the same
+shape as `BoundedFrictionSimulation`).
+
 ### Deprecated — `flui-core::elements::animation::easing`
 
 - Legacy free functions `easing::linear`, `easing::quadratic`,
