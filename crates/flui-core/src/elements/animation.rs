@@ -36,7 +36,7 @@ impl ElementAnimation {
         Self {
             duration,
             oneshot: true,
-            easing: Rc::new(linear),
+            easing: Rc::new(|t| t),
             curve: None,
         }
     }
@@ -243,20 +243,50 @@ impl<E: IntoElement + 'static> Element for ElementAnimationElement<E> {
     }
 }
 
+/// Legacy free-function easings preserved for backward compatibility with
+/// pre-S21 callers (`examples/learn/animation.rs`,
+/// `examples/legacy/image_loading.rs`).
+///
+/// **Deprecated in S21 phase 1.8b** — prefer the trait-shaped curves in
+/// [`crate::animation::Curves`]:
+///
+/// - `easing::linear` → [`Curves::LINEAR`](crate::animation::Curves::LINEAR)
+/// - `easing::quadratic` → [`Curves::EASE_IN`](crate::animation::Curves::EASE_IN)
+/// - `easing::ease_in_out` → [`Curves::EASE_IN_OUT`](crate::animation::Curves::EASE_IN_OUT)
+/// - `easing::ease_out_quint` — no direct Curves equivalent; build a
+///   [`CustomCurve`](crate::animation::CustomCurve) or use a `Cubic` approximation
+/// - `easing::bounce` — Flutter uses
+///   [`Curves::BOUNCE_IN_OUT`](crate::animation::Curves::BOUNCE_IN_OUT) for the
+///   common case; the combinator wrapper has no Curves equivalent
+/// - `easing::pulsating_between` — no Flutter equivalent; build a
+///   [`CustomCurve`](crate::animation::CustomCurve)
+///
+/// The free functions here intentionally do NOT clamp their input (matching
+/// pre-S21 behaviour); the new `Curve` trait clamps `t` to `[0, 1]` inside
+/// `transform`. Keep these only while migrating call sites.
 mod easing {
     use std::f32::consts::PI;
 
-    /// The linear easing function, or delta itself
+    /// The linear easing function, or delta itself.
+    #[deprecated(
+        note = "use `Curves::LINEAR.transform(t)` from `flui_core::animation::Curves` (S21 phase 1.8b)"
+    )]
     pub fn linear(delta: f32) -> f32 {
         delta
     }
 
-    /// The quadratic easing function, delta * delta
+    /// The quadratic easing function, delta * delta.
+    #[deprecated(
+        note = "use `Curves::EASE_IN.transform(t)` from `flui_core::animation::Curves` (S21 phase 1.8b)"
+    )]
     pub fn quadratic(delta: f32) -> f32 {
         delta * delta
     }
 
-    /// The quadratic ease-in-out function, which starts and ends slowly but speeds up in the middle
+    /// The quadratic ease-in-out function, which starts and ends slowly but speeds up in the middle.
+    #[deprecated(
+        note = "use `Curves::EASE_IN_OUT.transform(t)` from `flui_core::animation::Curves` (S21 phase 1.8b)"
+    )]
     pub fn ease_in_out(delta: f32) -> f32 {
         if delta < 0.5 {
             2.0 * delta * delta
@@ -266,12 +296,18 @@ mod easing {
         }
     }
 
-    /// The Quint ease-out function, which starts quickly and decelerates to a stop
+    /// The Quint ease-out function, which starts quickly and decelerates to a stop.
+    #[deprecated(
+        note = "no direct Curves equivalent; build a `CustomCurve` or `Cubic` approximation (S21 phase 1.8b)"
+    )]
     pub fn ease_out_quint() -> impl Fn(f32) -> f32 {
         move |delta| 1.0 - (1.0 - delta).powi(5)
     }
 
-    /// Apply the given easing function, first in the forward direction and then in the reverse direction
+    /// Apply the given easing function, first in the forward direction and then in the reverse direction.
+    #[deprecated(
+        note = "use `Curves::BOUNCE_IN_OUT` for the common bounce case; the combinator wrapper has no Curves equivalent (S21 phase 1.8b)"
+    )]
     pub fn bounce(easing: impl Fn(f32) -> f32) -> impl Fn(f32) -> f32 {
         move |delta| {
             if delta < 0.5 {
@@ -282,7 +318,10 @@ mod easing {
         }
     }
 
-    /// A custom easing function for pulsating alpha that slows down as it approaches 0.1
+    /// A custom easing function for pulsating alpha that slows down as it approaches 0.1.
+    #[deprecated(
+        note = "no Flutter / Curves equivalent; wrap an equivalent closure in `CustomCurve` (S21 phase 1.8b)"
+    )]
     pub fn pulsating_between(min: f32, max: f32) -> impl Fn(f32) -> f32 {
         let range = max - min;
 

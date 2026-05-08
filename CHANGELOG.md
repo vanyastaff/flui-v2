@@ -65,6 +65,59 @@ incrementally; only completed phases appear below.
   the ~30 globs tracked under roadmap item A2; the animation module's own
   `mod.rs` is the single curator.
 
+### Breaking — `flui-core::animation::Curve`
+
+- **`Curve` is now a TRAIT, not an enum** (S21 phase 1). Concrete types
+  per former variant: `Linear`, `EaseIn`, `EaseOut`, `EaseInOut`,
+  `EaseInCubic`, `EaseOutCubic`, `EaseInOutCubic`, `Decelerate`,
+  `BounceIn`, `BounceOut`, `BounceInOut`, `Cubic{x1,y1,x2,y2}`,
+  `ElasticIn{period}`, `ElasticOut{period}`, `ElasticInOut{period}`
+  (the parameter-less `Curve::Elastic` is gone — Flutter-parity period is
+  now explicit; default 0.4), `Interval{begin,end,curve}`,
+  `Threshold(f32)`, `SawTooth(u32)`, `FlippedCurve<C>`, `Reversed<C>`,
+  `Split<A,B>`, `CustomCurve(Arc<Fn>)`. The `Curve::Bounce` variant maps
+  to `BounceInOut` for closest semantic match. **Migration:**
+  `Curve::EaseInOut` → `Curves::EASE_IN_OUT` (catalogue) or `EaseInOut`
+  (bare struct). `Curve::Custom(arc)` → `CustomCurve(arc)` or
+  `CustomCurve::new(closure)`. No deprecation shim — the rename is
+  intentionally clean per the S21 plan.
+
+### Added — `flui-core::animation` (Phase 1)
+
+- **`Curves` catalogue** — empty struct with associated `pub const`s
+  mirroring Flutter's `Curves.linear`/`Curves.bounceOut`/etc. surface.
+  Covers `LINEAR`, `EASE_IN`, `EASE_OUT`, `EASE_IN_OUT`, `EASE_IN_CUBIC`,
+  `EASE_OUT_CUBIC`, `EASE_IN_OUT_CUBIC`, `DECELERATE`, `BOUNCE_IN`,
+  `BOUNCE_OUT`, `BOUNCE_IN_OUT`, `ELASTIC_IN`, `ELASTIC_OUT`,
+  `ELASTIC_IN_OUT`, `FAST_OUT_SLOW_IN`, `SLOW_MIDDLE`, `EASE` —
+  18 entries (will grow as Phase 7 audits the Flutter surface).
+  Naming is SCREAMING_SNAKE_CASE per Rust idiom (Flutter
+  `Curves.fastOutSlowIn` → `Curves::FAST_OUT_SLOW_IN`).
+- **`Curve` trait** — `Send + Sync + 'static`; required
+  `transform_internal(t)`; default `transform(t)` clamps `t` to `[0, 1]`;
+  optional `derivative_at(t) -> Option<f32>` (analytical for Linear,
+  EaseIn, EaseOut, EaseInCubic, EaseOutCubic — used by
+  `AnimationController::velocity()` in S21 phase 4 with
+  numerical-differentiation fallback); `clone_box(&self)` plus
+  `impl Clone for Box<dyn Curve>` make trait objects `Clone`.
+- **`CurvedAnimation`** decorator (S21 phase 1.6) — applies a `Curve` to
+  a parent `Animation<f64>`, exposes the result as another `Animation<f64>`.
+  Forward / reverse curves selected by parent status; subscribes to
+  parent's value+status listeners on construction; releases them in `Drop`
+  (no dangling notifications). Establishes the listener-forwarding pattern
+  Phase 3 combinators reuse.
+
+### Deprecated — `flui-core::elements::animation::easing`
+
+- Legacy free functions `easing::linear`, `easing::quadratic`,
+  `easing::ease_in_out`, `easing::ease_out_quint`, `easing::bounce`,
+  `easing::pulsating_between` (S21 phase 1.8b). Migrate to
+  `Curves::*.transform(t)` where a direct catalogue equivalent exists;
+  for `bounce` the closest match is `Curves::BOUNCE_IN_OUT`; for
+  `ease_out_quint` and `pulsating_between` build a `CustomCurve`.
+  `ElementAnimation::new`'s default `easing` field now uses an inline
+  `|t| t` closure to avoid deprecation warnings on the default itself.
+
 ### Breaking — `flui-core::elements::animation`
 
 - **`pub struct Animation` renamed to `ElementAnimation`** (S21 phase 0a).

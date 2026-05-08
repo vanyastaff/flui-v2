@@ -9,6 +9,7 @@ mod animated;
 mod animation;
 mod controller;
 mod curve;
+mod curved_animation;
 mod lerp;
 mod listeners;
 mod simulation;
@@ -24,6 +25,7 @@ pub use curve::{
     EaseInCubic, EaseInOut, EaseInOutCubic, EaseOut, EaseOutCubic, ElasticIn, ElasticInOut,
     ElasticOut, FlippedCurve, Interval, Linear, Reversed, SawTooth, Split, Threshold,
 };
+pub use curved_animation::CurvedAnimation;
 pub use lerp::Lerp;
 pub use listeners::{EagerListenable, LazyListenable, LocalListeners, LocalStatusListeners};
 pub use simulation::{

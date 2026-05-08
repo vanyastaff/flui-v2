@@ -260,6 +260,18 @@ _None — `.ai-factory/RESEARCH.md` does not exist. The Flutter API page at http
 
 **Outcome:** Full curve surface from Flutter; the existing `Curve` enum migrates to a trait + struct family without breaking call sites.
 
+**Progress (S21 phase 1):** ✅ substantially complete 2026-05-08; only 1.5 (`Curve2D` / Catmull-Rom) deferred — it does not block any downstream phase.
+
+- [x] 1.1 — `Curve` enum → trait + concrete structs (Linear, EaseIn/Out/InOut, EaseIn/Out/InOutCubic, Decelerate, Bounce(In|Out|InOut), Cubic, ElasticIn/Out/InOut with parametric period, Interval, Threshold, SawTooth, FlippedCurve, Reversed, Split, CustomCurve). Trait carries `transform_internal`, `derivative_at` (analytical for Linear/EaseIn/EaseOut/EaseIn/OutCubic), `clone_box` for `Box<dyn Curve>: Clone`.
+- [x] 1.2 — `Curves` catalogue with 18 named consts (LINEAR, EASE_IN, …, BOUNCE_IN_OUT, ELASTIC_IN_OUT, FAST_OUT_SLOW_IN, SLOW_MIDDLE, EASE). SCREAMING_SNAKE_CASE per Rust idiom; `pub const` zero-sized struct literals (no monomorphization bloat).
+- [x] 1.3 — Composition primitives: `Interval{begin,end,curve}`, `Threshold(f32)`, `SawTooth(u32)`, `FlippedCurve<C>`, `Reversed<C>`, `Split<A,B>`. Generic over inner curve type for stack-allocated stacks.
+- [x] 1.4 — Elastic family with parametric `period` (default 0.4 — Flutter parity).
+- [ ] 1.5 — **Deferred.** `ParametricCurve<T>` + `Curve2D` + `Curve2DSample` + `CatmullRomCurve` + `CatmullRomSpline` + `ThreePointCubic` (would land as `crates/flui-core/src/animation/curve_2d.rs`). Substantial 2D-spline math; not consumed by any downstream phase. Will land as a follow-up commit on this branch or as a future spec.
+- [x] 1.6 — `CurvedAnimation` decorator: `crates/flui-core/src/animation/curved_animation.rs`. Wraps `Rc<dyn Animation<f64>>` with a forward curve and optional reverse curve; subscribes to parent's value + status listeners on construction; releases them in `Drop`. Establishes the listener-forwarding pattern Phase 3 combinators (`Proxy`/`Reverse`/`Compound`/`TrainHopping`) reuse.
+- [x] 1.7 — **No deprecation shim.** Plan explicitly mandates "no quick-wins"; the breaking `Curve` enum→trait conversion lands clean. CHANGELOG documents the migration narrative.
+- [x] 1.8 — Tests partial: 25+ unit tests for the curve trait + concrete types + composition + Elastic period + Curves catalogue + Box<dyn Curve> Clone; 7 unit tests for `CurvedAnimation` (forward/reverse curve dispatch, value/status listener forwarding, drop-releases-parent-listeners, status pass-through). proptest invariants + Criterion benches land in Phase 6.
+- [x] 1.8b — Legacy `easing` module functions in `crates/flui-core/src/elements/animation.rs` marked `#[deprecated(note = "use Curves::* …")]`: `linear` → `Curves::LINEAR`, `quadratic` → `Curves::EASE_IN`, `ease_in_out` → `Curves::EASE_IN_OUT`; `ease_out_quint` / `bounce` / `pulsating_between` deprecated without direct shim (build a `CustomCurve` instead). `ElementAnimation::new` default easing replaced with inline `|t| t` closure to avoid deprecation warnings on its own default.
+
 ### Tasks
 
 - **1.1 `Curve` enum → `Curve` trait + concrete structs.** New trait:
