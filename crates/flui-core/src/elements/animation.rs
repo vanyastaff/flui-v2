@@ -151,14 +151,29 @@ impl<E: IntoElement + 'static> Element for ElementAnimationElement<E> {
         window: &mut Window,
         cx: &mut App,
     ) -> (crate::LayoutId, Self::RequestLayoutState) {
+        // S21 phase 0.9: pull the current time from the active scheduler's
+        // `Clock` instead of `Instant::now()` so element-level animations
+        // become deterministic under `TestClock` (matches `AnimationController`'s
+        // Ticker-driven elapsed-time path). Pre-compute once so the
+        // `with_element_state` closure (which mutably borrows the App via
+        // the inner `element.request_layout`) doesn't conflict with the
+        // clock fetch.
+        let now = cx
+            .background_executor()
+            .scheduler_executor()
+            .scheduler()
+            .clock()
+            .now();
+        let elapsed_since = |t: Instant| now.saturating_duration_since(t).as_secs_f32();
+
         window.with_element_state(global_id.unwrap(), |state, window| {
             let mut state = state.unwrap_or_else(|| AnimationState {
-                start: Instant::now(),
+                start: now,
                 animation_ix: 0,
             });
             let animation_ix = state.animation_ix;
 
-            let mut delta = state.start.elapsed().as_secs_f32()
+            let mut delta = elapsed_since(state.start)
                 / self.animations[animation_ix].duration.as_secs_f32();
 
             let mut done = false;
@@ -167,7 +182,7 @@ impl<E: IntoElement + 'static> Element for ElementAnimationElement<E> {
                     if animation_ix >= self.animations.len() - 1 {
                         done = true;
                     } else {
-                        state.start = Instant::now();
+                        state.start = now;
                         state.animation_ix += 1;
                     }
                     delta = 1.0;

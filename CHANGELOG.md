@@ -15,6 +15,56 @@ to parity with Flutter's `dart:ui` / `package:flutter/animation.dart` surface.
 Plan: `.ai-factory/plans/animation-flutter-parity.md`. Phases land
 incrementally; only completed phases appear below.
 
+### Added — `flui-core::animation`
+
+- **S21 phase 0 foundation lands.** `crates/flui-core/src/animation/` gains
+  the trait-shaped Flutter-parity surface — purely additive on top of the
+  existing `AnimationController` / `Curve` / `Tween` / `Lerp` / simulation
+  types, which keep working unchanged.
+  * **`Animation<T>` trait** (`animation.rs`): `value`, `status`,
+    `add_listener` / `remove_listener` / `add_status_listener` /
+    `remove_status_listener`, plus default helpers
+    `is_dismissed` / `is_completed` / `is_forward_or_completed`. Object-safe
+    by construction (compile-time `_object_safe` pin); marker bound `'static`
+    matches the single-threaded UI assumption.
+  * **`AnimationStatus`** moved out of `controller.rs` into `status.rs` and
+    marked `#[non_exhaustive]` (A8 progress; future phases may add muting /
+    behaviour-driven states without a major bump).
+  * **Listener mixins** (`listeners.rs`): `LocalListeners`,
+    `LocalStatusListeners` (storage with snapshot-during-dispatch,
+    Flutter-parity `contains` skip when a callback removes another mid-fire),
+    plus `LazyListenable` + `EagerListenable` hook traits.
+    `ListenerCallback` / `StatusListenerCallback` are `Rc<dyn Fn>` (cheap to
+    clone into a dispatch snapshot); `ListenerId` is an opaque
+    `NonZeroU64` (deviation from Flutter's callback-equality model —
+    Rust closures have no equality).
+  * **`Ticker` family** (`ticker.rs`): `Ticker`, `TickerFuture`,
+    `TickerFutureState`, `TickerCanceled`, `TickerProvider`. Wraps an
+    `Arc<dyn Clock>` from the active scheduler so both production
+    (`RealClock`) and tests (`TestClock`) share the same elapsed-time
+    contract — substrate for deterministic animation goldens (T6).
+    `TickerFuture` ships as a synchronous status holder; the proper
+    `Future` impl is deferred to a phase that has a concrete `await`
+    consumer (route transitions).
+  * **`AnimationController` wired**: takes its clock from
+    `cx.background_executor().scheduler_executor().scheduler().clock()` at
+    `attach(cx)` time, stores a `Ticker` for clock injection, implements
+    `Animation<f64>` (value widens lossless `f32 -> f64` at the trait
+    boundary; inherent `value() -> f32` preserved for backward compat by
+    inherent-over-trait resolution). Every state transition fans out to
+    raw listeners AND `cx.notify()` so existing `cx.observe` chains keep
+    working alongside the new listener model.
+  * **`ElementAnimationElement` (S21 phase 0.9)** also migrates off bare
+    `Instant::now()` to the same scheduler-clock — element-level
+    `with_animation` is now deterministic under `TestClock`.
+
+### Changed — `flui-core` public surface
+
+- **Replaced `pub use animation::*;` glob in `crates/flui-core/src/lib.rs`**
+  with a curated explicit re-export list (S21 phase 0.3). Closes one of
+  the ~30 globs tracked under roadmap item A2; the animation module's own
+  `mod.rs` is the single curator.
+
 ### Breaking — `flui-core::elements::animation`
 
 - **`pub struct Animation` renamed to `ElementAnimation`** (S21 phase 0a).

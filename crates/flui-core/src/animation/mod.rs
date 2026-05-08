@@ -13,6 +13,7 @@ mod lerp;
 mod listeners;
 mod simulation;
 mod status;
+mod ticker;
 mod tween;
 
 pub use animated::animated;
@@ -26,4 +27,5 @@ pub use simulation::{
     Tolerance,
 };
 pub use status::AnimationStatus;
+pub use ticker::{Ticker, TickerCanceled, TickerFuture, TickerFutureState, TickerProvider};
 pub use tween::Tween;

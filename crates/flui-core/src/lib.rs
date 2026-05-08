@@ -93,7 +93,17 @@ mod seal {
 }
 
 pub use action::*;
-pub use animation::*;
+// S21 phase 0.3: explicit re-export list for the animation module.
+// Closes one of the ~30 globs tracked under roadmap item A2 by curating the
+// public surface explicitly. The animation module's own `mod.rs` is the
+// canonical curator; this list mirrors it.
+pub use animation::{
+    Animation, AnimationController, AnimationStatus, Curve, EagerListenable, FrictionSimulation,
+    GravitySimulation, LazyListenable, Lerp, ListenerCallback, ListenerId, LocalListeners,
+    LocalStatusListeners, Simulation, SpringDescription, SpringSimulation, StatusListenerCallback,
+    Ticker, TickerCanceled, TickerFuture, TickerFutureState, TickerProvider, Tolerance, Tween,
+    animated,
+};
 pub use anyhow::Result;
 pub use app::*;
 pub(crate) use arena::*;

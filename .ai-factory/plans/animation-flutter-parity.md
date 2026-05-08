@@ -140,18 +140,18 @@ _None — `.ai-factory/RESEARCH.md` does not exist. The Flutter API page at http
 
 **Outcome:** New trait-based foundation lands additively. Old `AnimationController` API still compiles; new trait surface is in place; determinism unlocked.
 
-**Progress (S21 phase 0):**
+**Progress (S21 phase 0):** ✅ code complete 2026-05-08; only 0.1 (Flutter API reference dump — pure docs) deferred to Phase 7.
 
-- [ ] 0.1 — Reference dump
-- [ ] 0.2 — Stay flat (mod.rs plumbing) — partial: new modules (`animation`, `status`, `listeners`) wired into mod.rs; further plumbing as later subtasks land
-- [ ] 0.3 — Replace `pub use animation::*;` glob with explicit list
-- [x] 0.4 — `Animation<T>` trait + `AnimationStatus` (✅ done; `crates/flui-core/src/animation/animation.rs` + `status.rs`; object-safety check pinned; `AnimationStatus` is `#[non_exhaustive]`; tests passing)
-- [x] 0.5 — Listener mixins (✅ done; `crates/flui-core/src/animation/listeners.rs`; `LocalListeners`, `LocalStatusListeners`, `LazyListenable`, `EagerListenable`; re-entrancy + Flutter-parity contains-check tests passing)
-- [ ] 0.6 — `Ticker` / `TickerProvider` / `TickerFuture` / `TickerCanceled`
-- [ ] 0.7 — Wire `AnimationController` to Ticker, implement `Animation<f64>`
-- [ ] 0.8 — Compatibility verification
-- [ ] 0.9 — Migrate `ElementAnimationElement` to Clock
-- [ ] 0.10 — Doctest layout convention
+- [x] 0.2 — Stay flat (mod.rs plumbing) — `animation`, `status`, `listeners`, `ticker` modules added as siblings of `controller.rs` / `curve.rs` / `lerp.rs`; no subdirectories
+- [x] 0.3 — Replaced `pub use animation::*;` glob in `crates/flui-core/src/lib.rs` with curated explicit list (A2 progress)
+- [x] 0.4 — `Animation<T>` trait + `AnimationStatus` — `crates/flui-core/src/animation/animation.rs` + `status.rs`; object-safety check pinned; `AnimationStatus` is `#[non_exhaustive]`
+- [x] 0.5 — Listener mixins — `LocalListeners`, `LocalStatusListeners`, `LazyListenable`, `EagerListenable`; Flutter-parity re-entrancy semantics (snapshot + contains-check)
+- [x] 0.6 — `Ticker` / `TickerProvider` / `TickerFuture` / `TickerCanceled` / `TickerFutureState` — `crates/flui-core/src/animation/ticker.rs`; Clock-aware via `Arc<dyn Clock>`; tests use `TestClock` to verify deterministic elapsed-time
+- [x] 0.7 — `AnimationController` wired to `Ticker`, implements `Animation<f64>`. Inherent `value() -> f32` preserved (Rust resolves inherent over trait at the dot-call site); trait method returns `f64` via UFCS or `dyn Animation<f64>`. Listener fan-out: `notify_value()` + `set_status()` on every transition; `cx.notify()` continues to keep observe-chain consumers alive
+- [x] 0.8 — Compatibility verification: `cargo check --workspace --all-features` ✅; 39/39 unit tests pass; examples (`animation_demo`, `nav_demo --features transition`, `material_demo`) keep compiling
+- [x] 0.9 — Migrated `ElementAnimationElement` (`crates/flui-core/src/elements/animation.rs`) from bare `Instant::now()` to scheduler-clock; `request_layout` pre-computes `now = cx.background_executor().scheduler_executor().scheduler().clock().now()` once and uses it for both initial state and segment-transition timestamps. Element-level animations are now deterministic under `TestClock`
+- [x] 0.10 — Doctest layout convention: every new module ships its tests under `#[cfg(test)] mod tests { … }` (Rust-tested) rather than rustdoc fenced blocks (which `crates/flui-core/Cargo.toml: doctest = false` would silently drop). Phase 7 documents the rule in the migration guide
+- [ ] 0.1 — **Deferred to Phase 7.** Pure documentation task (Flutter API mirror into `.ai-factory/references/flutter-animation-api.md`); does not block any subsequent phase
 
 ### Tasks
 
