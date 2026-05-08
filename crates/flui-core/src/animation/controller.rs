@@ -2,31 +2,11 @@
 
 #![allow(missing_docs)] // animation subsystem is pre-1.0; full rustdoc coverage tracked separately
 
+use crate::animation::status::AnimationStatus;
 use crate::animation::{Curve, Simulation};
 use crate::scheduler::Instant;
 use crate::{AppContext, Context, Entity};
 use std::time::Duration;
-
-/// Status of an animation.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum AnimationStatus {
-    /// At lower bound, idle.
-    #[default]
-    Dismissed,
-    /// Animating toward upper bound.
-    Forward,
-    /// Animating toward lower bound.
-    Reverse,
-    /// At upper bound, idle.
-    Completed,
-}
-
-impl AnimationStatus {
-    /// Whether the animation is currently running.
-    pub fn is_animating(self) -> bool {
-        matches!(self, Self::Forward | Self::Reverse)
-    }
-}
 
 /// A persistent animation state container.
 ///

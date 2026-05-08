@@ -140,6 +140,19 @@ _None — `.ai-factory/RESEARCH.md` does not exist. The Flutter API page at http
 
 **Outcome:** New trait-based foundation lands additively. Old `AnimationController` API still compiles; new trait surface is in place; determinism unlocked.
 
+**Progress (S21 phase 0):**
+
+- [ ] 0.1 — Reference dump
+- [ ] 0.2 — Stay flat (mod.rs plumbing) — partial: new modules (`animation`, `status`, `listeners`) wired into mod.rs; further plumbing as later subtasks land
+- [ ] 0.3 — Replace `pub use animation::*;` glob with explicit list
+- [x] 0.4 — `Animation<T>` trait + `AnimationStatus` (✅ done; `crates/flui-core/src/animation/animation.rs` + `status.rs`; object-safety check pinned; `AnimationStatus` is `#[non_exhaustive]`; tests passing)
+- [x] 0.5 — Listener mixins (✅ done; `crates/flui-core/src/animation/listeners.rs`; `LocalListeners`, `LocalStatusListeners`, `LazyListenable`, `EagerListenable`; re-entrancy + Flutter-parity contains-check tests passing)
+- [ ] 0.6 — `Ticker` / `TickerProvider` / `TickerFuture` / `TickerCanceled`
+- [ ] 0.7 — Wire `AnimationController` to Ticker, implement `Animation<f64>`
+- [ ] 0.8 — Compatibility verification
+- [ ] 0.9 — Migrate `ElementAnimationElement` to Clock
+- [ ] 0.10 — Doctest layout convention
+
 ### Tasks
 
 - **0.1 Reference dump.** Mirror https://api.flutter.dev/flutter/animation/ class index into `.ai-factory/references/flutter-animation-api.md` (per `/aif-reference` semantics). One section per class with: signature, semantics summary, Rust-mapping note. Used as the spec for every later phase.
