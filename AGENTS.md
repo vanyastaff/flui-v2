@@ -82,11 +82,13 @@ flui-v2/
 
 | Document | Path | Description |
 |---|---|---|
-| README | `README.md` | Project overview, architecture diagram, quick start, build instructions |
+| README | `README.md` | Project overview, three-tier architecture, quick start, build instructions, project status |
 | LICENSE | `LICENSE.md` | Apache-2.0 license |
 | flui-core roadmap | `docs/superpowers/specs/2026-04-13-flui-core-roadmap.md` | Master roadmap for Phase I (platform extraction + Flutter-parity gaps) |
+| K99 — MSRV bump to Rust 1.95 | `docs/superpowers/specs/2026-05-08-K99-msrv-bump-1.95-design.md` | First Phase 0-K spec; workspace MSRV pinned to 1.95 + clippy.toml + CI gate |
+| K15 — Re-entrancy contract | `docs/superpowers/specs/2026-05-09-K15-reentrancy-contract-design.md` | Second Phase 0-K spec; `flui_core::reentrancy` module with `ReentryError` + `ReentryMode`; `cx.defer` / `Window::defer` named as escape hatches |
 | Design specs | `docs/superpowers/specs/` | Per-task design documents (date-stamped) |
-| Implementation plans | `docs/superpowers/plans/` | Per-task implementation plans paired with specs |
+| Implementation plans | `.ai-factory/plans/` | Per-task implementation plans paired with specs (resolved via `paths.plans`) |
 | Lock coverage gaps | `docs/lock-coverage-gaps.md` | Tracking of lock-behavior regression coverage |
 
 ## AI Context Files

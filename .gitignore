@@ -41,5 +41,6 @@ xcuserdata/
 .ai-factory/skill-context/
 
 # Per-spec implementer-local baseline captures (e.g., K15)
-.k15-baseline-*.txt
+.k15-*.txt
+.k15-*.log
 
