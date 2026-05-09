@@ -247,7 +247,7 @@ K15 is done when (verified at HEAD):
 
 After K15 lands:
 
-```
+```bash
 /aif-plan full K07-appcell-removal-token-borrow
 ```
 

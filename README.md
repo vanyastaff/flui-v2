@@ -8,7 +8,7 @@ flui-v2 takes GPUI's proven GPU rendering foundation and evolves it toward a Flu
 
 ## Architecture (three-tier)
 
-```
+```text
 +-------------------------------------------------------+
 |  C. ECOSYSTEM (community-writable)                    |
 |  flui-widgets, flui-material, flui-cupertino,         |
@@ -31,7 +31,7 @@ Hard fork of [gpui-ce](https://github.com/gpui-ce/gpui-ce) — see [ARCHITECTURE
 
 ## Workspace structure
 
-```
+```text
 flui-v2/
   crates/
     flui-core/       # GPU rendering, entity system, layout (Taffy),

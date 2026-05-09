@@ -2479,6 +2479,21 @@ impl AppContext for App {
             // chains (A calls B, B's lease may itself call C, etc.) restore
             // correctly on return. Top-level enters with `None`, restores to
             // `None`. K15 contract.
+            //
+            // PANIC-SAFETY (Known Limitation #6, design spec): if `update(...)`
+            // panics, the restore line below never runs and the slot stays
+            // `Some(id)` until the next non-panicking `update_entity`
+            // overwrites it. This matches the pre-existing panic-leak
+            // behavior of `cx.entities.lease(handle)` itself (a panicking
+            // closure leaks the entity slot too). RAII guards were considered
+            // and rejected during planning because they conflict with Rust
+            // borrow rules — a guard borrowing `&mut App` cannot coexist
+            // with `App` flowing through this closure body. Fixing both
+            // panic-leak classes is K07's job (it redesigns the borrow
+            // primitive). For users with `catch_unwind`-based recovery, call
+            // `app.set_reentry_mode(ReentryMode::Loose)` and accept the
+            // potential false-positive `NestedEntityUpdate` on the next
+            // `update_entity(id)` after a caught panic.
             let prev_updating = cx.currently_updating_entity.replace(id);
             let mut entity = cx.entities.lease(handle);
             let result = update(
