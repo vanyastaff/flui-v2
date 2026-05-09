@@ -242,18 +242,24 @@ Pre-emptive enumeration; each is a deliberate scope decision:
 
 ### Phase 1 — Design spec authoring
 
-- [ ] **Task 3.** Spike each candidate (A / B / C) on a throwaway branch (do NOT commit on `feature/K07-…`). Goals:
+- [x] **Task 3.** ✅ **(rev 4 — completed via parallel general-purpose agent dispatch.)** Three candidates spiked against actual file:line code: Agent 3 (local spike, 11 tool-uses, 104s) read `app.rs:70-250, 580-700, 2370-2520`, full `async_context.rs`, `test_context.rs:1-80,410-440`, `reentrancy.rs`, plus `app/context.rs:65-180`. Concrete findings: Candidate A = ~1500-2500 LoC intellectual migration (multi-week); Candidate B = ~200 LoC primitive + 0 callsite-LoC (signature-compatible); Candidate C = >5000 LoC, HRTB pollution, `AsyncApp` cannot exist with branded `'id`. **Verdict: Candidate B LOCKED.** See spec §"Recommended candidate (LOCKED — revision 4 post-spike)".
+
+  Original Task 3 instructions retained for reference:
   - Time-box: 30 min per candidate.
   - For each: sketch `AppCell` type + `borrow_mut` impl + ONE example callback migration (`Application::run` and one `AsyncApp::update`).
   - Capture: lines-of-diff estimate, lifetime/HRTB blockers, `unsafe` count, Miri behavior.
   - Output: short note (`/tmp/k07-spike-A.md` etc.) used as input to Task 4.
 
-- [ ] **Task 4.** Dispatch **`rust-api-migration-auditor`** subagent on the three candidates. Prompt:
+- [x] **Task 4.** ✅ **(rev 4 — covered by parallel research agents.)** Agent 2 (Rust borrow-primitive comparison, 6 tool-uses, 83s) compared `qcell` (4 flavors), `ghost-cell` (HRTB branded), `atomic_refcell`, hand-rolled `UnsafeCell + flag`, `thread_local!` patterns, owning + `&mut` threading, message passing, branded-lifetime alternatives. Verdict: hand-rolled `UnsafeCell + bool flag → ReentryError` recommended over `qcell::TLCell` for "single-threaded UI App with ~100 callbacks at arbitrary depth, with re-entrancy detection already structurally enforced". Agent 1 (UI framework comparison, 31 tool-uses, 108s) confirmed: Druid/Iced/Xilem/Vizia structural `&mut` (incompatible), Bevy ECS (incompatible), Slint/Dioxus/Floem/Servo SHARD cells (K06 territory). All findings absorbed into spec §"Design choice — three candidates" and §"Decision log".
+
+  Original Task 4 instructions retained for reference:
   > "Review three candidate replacements for `crates/flui-core/src/app.rs:75-108` (`AppCell = RefCell<App>`). Candidate A: pass-through `&mut App` (no cell). Candidate B: single-borrow custom guard with `UnsafeCell<App>` + active flag. Candidate C: GhostCell-style branded `AppToken<'id>`. For each, evaluate: (1) public-API blast radius, (2) feature-flag matrix, (3) trait object safety, (4) auto-trait regressions (`Send`/`Sync`/`UnwindSafe`), (5) workspace dependency direction. Score against ROADMAP K07 acceptance criteria. Output a recommendation table."
   - **Run in parallel** with Task 3 spikes.
   - Artifact: agent report cited in Task 5 spec.
 
-- [ ] **Task 5.** Author design spec at `docs/superpowers/specs/2026-05-09-K07-appcell-removal-design.md` following project convention (reference `2026-05-09-K15-reentrancy-contract-design.md` for header/section style). Required sections:
+- [x] **Task 5.** ✅ **(rev 4 — design spec rev 1 authored.)** File: `docs/superpowers/specs/2026-05-09-K07-appcell-removal-design.md` (~750 lines). All required sections present: Context, Goals, Non-goals, Current state, Design choice (three candidates with rejected-alternatives reasoning), Type surface (canonical sketch of `AppCell` + `AppRef` + `AppRefMut` with SAFETY comments, auto-trait tests, full `unsafe` audit), Migration plan, K15 contract preservation table, **Decisions on Q1-Q12 (all resolved)**, `unsafe` audit (3 blocks total), Compile-time auto-trait tests, Testing strategy, Known Limitations (5), **Open questions: EMPTY**, Done criteria, Cross-references, Unblocks, Risks (4-tier), Future considerations (R9/R10/R12), Decision log (revision 1 LOCKED rationale). Awaits Task 6 adversarial review for revision 2.
+
+  Original Task 5 instructions retained for reference:
   - Context, Goals, Non-goals (mirror "What K07 explicitly does NOT do").
   - Current state (audit table from this plan).
   - Design choice — three candidates (verbatim from this plan), recommended candidate with documented rationale incorporating Tasks 3 + 4 outputs.
