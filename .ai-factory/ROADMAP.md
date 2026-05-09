@@ -53,7 +53,7 @@ Numbering convention:
 
 #### K-track: critical chain (sequential)
 
-- [ ] **K99 MSRV bump to Rust 1.95+** — workspace Cargo.toml, rust-toolchain.toml, CI matrix update. Unlocks: AFIT + RPITIT + edition-2024 lifetime captures (allow `Widget::build(&self) -> impl Widget` without `Box<dyn>`), async closures stable, `let-chains` stable, `lazy_cell` stable. Single-PR mechanical change. **Prerequisite for all subsequent K-specs.**
+- [x] **K99 MSRV bump to Rust 1.95+** — workspace Cargo.toml, rust-toolchain.toml, CI matrix update. Unlocks: AFIT + RPITIT + edition-2024 lifetime captures (allow `Widget::build(&self) -> impl Widget` without `Box<dyn>`), async closures stable, `let-chains` stable, `std::sync::{OnceLock, LazyLock}` stable. Single-PR mechanical change. Spec: `docs/superpowers/specs/2026-05-08-K99-msrv-bump-1.95-design.md`. **Prerequisite for all subsequent K-specs.**
 - [ ] **K15 Re-entrancy contract** — document and enforce semantics for `update_window` inside `update_window`, `update_entity` inside callback, `setState` inside `did_update_widget`. Either queue (preferred) or panic with structured error (acceptable). No undefined `RefCell::borrow_mut` panics. Adds property-tests covering re-entry scenarios. **HIGH-RISK** — touches every callback in the system.
 - [ ] **K07 AppCell removal — token-based borrow model** — replaces `AppCell = RefCell<App>` (marked "remove after stabilization") with token-based mutual-exclusion. Closes E3 from `docs/promt.md`. **HIGH-RISK** — every callback signature changes.
 - [ ] **K05 Element trait → context object** — `&mut PaintCx<'_>` / `&mut LayoutCx<'_>` / `&mut PrepaintCx<'_>` replace 6-7-arg method signatures. Closes E5, E6 from `docs/promt.md`. **API-BREAKING** for every custom Element. Unblocks K01-K04 by giving them clean borrow surfaces.
@@ -205,6 +205,7 @@ Numbering convention:
 | S07.5 GestureArena T15 follow-up (RecognizerLifecycle, back-channel, hold/release, per-window settings, end-to-end test, contributor doc) | 2026-05-07 |
 | S07.5b GestureArena pre-roster cleanup (PointerEvent surface upgrade, Affine2 + HitTestScope RAII, DeliveredEvent, unified back-channel hook + per-pointer LongPress storage, hold_count counter, AllowedButtonsFilter, CHANGELOG.md) | 2026-05-07 |
 | S21 Animation Flutter parity (Animation<T> trait + listeners + Ticker, Curve trait family + Curves catalogue, Animatable + Tween family + TweenSequence, combinators, CurvedAnimation, controller polish, flui-animate skeleton removed) | 2026-05-08 |
+| K99 MSRV bump to Rust 1.95 (workspace Cargo.toml + rust-toolchain.toml + clippy.toml msrv field; per-member rust-version inheritance for all 12 workspace members; CI converted to MSRV-enforced via rust-toolchain.toml + new non-blocking forward-compat job; AGENTS/DESCRIPTION/ARCHITECTURE/RESEARCH/rules docs aligned; FREEZE Cargo.lock policy; flake.nix divergence documented). First Phase 0-K spec. Unblocks K15 → K07 → K05 → K01 → K02 → K03 → K04 critical chain. | 2026-05-08 |
 
 ## Cross-track dependencies
 

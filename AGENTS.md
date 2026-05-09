@@ -16,7 +16,7 @@ The architecture is organized into **three tiers**:
 
 ## Tech Stack
 
-- **Programming language:** Rust (edition 2024, MSRV 1.85, workspace resolver = "3")
+- **Programming language:** Rust (edition 2024, MSRV 1.95, workspace resolver = "3")
 - **Async runtime:** smol
 - **GPU / graphics:** wgpu, naga, metal (macOS), Direct3D 11 (Windows), Wayland + X11 (Linux)
 - **Layout:** Taffy
@@ -115,7 +115,15 @@ These read-only review agents are installed in `.claude/agents/` and should be i
 - **Decompose chained shell commands.** Run each step separately so the user can audit and approve each one.
   - Incorrect (combined): `git checkout main && git pull`
   - Correct (decomposed): first `git checkout main`, then `git pull origin main`
-- **Respect MSRV.** Do not use Rust language features that require a toolchain newer than 1.85.
+- **Respect MSRV.** Do not use Rust language features that require a toolchain newer than 1.95. The MSRV is enforced via three places that must stay in sync: `Cargo.toml` `[workspace.package].rust-version`, `rust-toolchain.toml` `channel`, and `clippy.toml` `msrv`. Drift between them is a bug.
+- **Prefer modern Rust idioms unlocked by MSRV 1.95** (these ARE allowed and recommended):
+  - `async fn` in traits (AFIT) and `-> impl Trait` in traits (RPITIT) — use these instead of `Box<dyn Future>` / `Box<dyn Trait>` in trait return types when possible.
+  - Edition-2024 lifetime captures (`-> impl Trait + use<'_>`) — express precise lifetime relationships in async/iterator return types without manual elision.
+  - Async closures (`async |...| { ... }`) — for callback-heavy APIs that need to await.
+  - `let-chains` (`if let Some(x) = ... && cond && let Some(y) = ...`) — collapse nested matches in reconciliation / lookup code.
+  - `std::sync::OnceLock` (1.70+) and `std::sync::LazyLock` (1.80+) — use instead of pulling in the `once_cell` crate. For single-threaded contexts: `std::cell::OnceCell` (1.70+) and `std::cell::LazyCell` (1.80+).
+  - `unsafe extern "C"` blocks (1.82+) — required syntax in edition 2024 for FFI.
+  - `#[diagnostic::on_unimplemented]` — author better trait-bound error messages on Framework-tier traits.
 - **Do not silently delete `unimplemented!()` / `unreachable!()` sites in platform code.** They are tracked by the S01a roadmap inventory and must be classified before being touched.
 - **Do not grow `crates/flui-core/src/platform/**`.** New platform code goes into `crates/flui-platform/` per the active migration roadmap.
 - **Use `smol::process::Command`, not `std::process::Command`.** Enforced by `clippy.toml`.

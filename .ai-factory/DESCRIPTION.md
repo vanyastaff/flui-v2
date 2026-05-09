@@ -19,7 +19,7 @@ The project is currently in Phase I of a multi-phase roadmap focused on (1) extr
 
 ## Tech Stack
 
-- **Programming language:** Rust (edition 2024, MSRV 1.85)
+- **Programming language:** Rust (edition 2024, MSRV 1.95 — bumped in K99)
 - **Workspace resolver:** Cargo resolver = "3"
 - **Async runtime:** smol
 - **GPU / graphics:** wgpu, naga, metal (macOS), Direct3D 11 via `windows` crate, ash (Vulkan loader), Wayland (`wayland-client`) and X11 (`x11rb`) on Linux
@@ -65,5 +65,5 @@ Authoritative architectural and migration context lives in `docs/superpowers/spe
 - **Async safety:** Clippy enforces `smol::process::Command::*` over `std::process::Command::*` to avoid blocking the executor thread.
 - **Determinism:** GPU work targets deterministic offscreen rendering for golden tests; `lock-checks` tooling and `lock-coverage-gaps.md` track regressions.
 - **Platform parity:** macOS (Metal), Windows (Direct3D 11), Linux (wgpu + Wayland + X11) are all first-class targets; iOS/Android/WASM are roadmap items.
-- **MSRV:** Rust 1.85 (edition 2024).
+- **MSRV:** Rust 1.95 (edition 2024). Enforced via three synchronized locations: `Cargo.toml` `[workspace.package].rust-version`, `rust-toolchain.toml` `channel`, `clippy.toml` `msrv`. CI gate: standard jobs (check / clippy / test / format) honor the pin via `rust-toolchain.toml`; a non-blocking `forward-compat` job runs latest stable as an early-warning radar for upcoming Rust changes. flake.nix uses `fenix.latest` (intentionally divergent — Nix users get forward-compat radar; rustup users stay pinned to MSRV).
 - **Spelling discipline:** `typos.toml` is enforced.
