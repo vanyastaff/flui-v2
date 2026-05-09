@@ -53,7 +53,7 @@
   - Edition-2024 lifetime captures (`-> impl Trait + use<'_>`) — for precise async/iterator return-type lifetimes.
   - Async closures (`async |...| { ... }`) — for callback APIs that need to await.
   - `let-chains` (`if let Some(x) = ... && cond && let Some(y) = ...`) — collapse nested matches.
-  - `lazy_cell::sync::OnceCell` from `std` — instead of pulling in the `once_cell` crate.
+  - `std::sync::OnceLock` (1.70+) / `std::sync::LazyLock` (1.80+) — instead of pulling in the `once_cell` crate. For single-threaded use: `std::cell::OnceCell` / `std::cell::LazyCell`.
   - `unsafe extern "C"` blocks — required syntax in edition 2024 for FFI.
   - `#[diagnostic::on_unimplemented]` — better trait-bound error messages on Framework-tier traits.
 

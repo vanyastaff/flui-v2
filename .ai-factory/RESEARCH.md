@@ -8,7 +8,7 @@ Status: active
 
 **Topic:** Strategic alignment of flui-v2 toward "Flutter ecosystem on Rust" — reconciling vision with current architecture and prior abandoned attempts.
 
-**Goal:** Build a full UI engine in Rust with a Flutter-equivalent ecosystem and developer experience, leveraging Rust 1.95 idioms (AFIT/RPITIT, edition-2024 lifetime captures, async closures, let-chains, lazy_cell, unsafe extern, `#[diagnostic::on_unimplemented]`), GPUI as the engine substrate, and community libraries (wgpu, taffy, cosmic-text). Performance and safety advantages over Flutter come from Rust ownership and zero-cost abstractions.
+**Goal:** Build a full UI engine in Rust with a Flutter-equivalent ecosystem and developer experience, leveraging Rust 1.95 idioms (AFIT/RPITIT, edition-2024 lifetime captures, async closures, let-chains, `std::sync::{OnceLock, LazyLock}`, unsafe extern, `#[diagnostic::on_unimplemented]`), GPUI as the engine substrate, and community libraries (wgpu, taffy, cosmic-text). Performance and safety advantages over Flutter come from Rust ownership and zero-cost abstractions.
 
 **Goal is "feature surface", not "internal layering":** the project intentionally does NOT replicate Flutter's 4-tree internal model (Widget/Element/RenderObject/Layer). The earlier `flui` v1 attempt (`C:\Users\vanya\RustroverProjects\flui`) tried that and was abandoned due to multi-tree complexity. Decision is final — we build on top of GPUI's single-tree engine.
 
@@ -277,7 +277,7 @@ Phase II-F (Framework — SF01-SF08) gated on K-track critical chain completion.
 - AFIT + RPITIT + edition-2024 lifetime captures — enables `Widget::build(&self) -> impl Widget` without `Box<dyn>`. Critical for "no allocation on rebuild hot path" invariant.
 - async closures stable (1.85+) — callback API without `Box<dyn FnMut>`.
 - `let-chains` stable (1.88, 2024 edition) — cleaner reconciliation code.
-- `lazy_cell` stable (1.80) — drop `once_cell` dependency.
+- `std::sync::OnceLock` (1.70+) and `std::sync::LazyLock` (1.80+) — drop `once_cell` crate dependency. Single-threaded variants `std::cell::OnceCell` / `std::cell::LazyCell` also stable.
 - `unsafe extern` (1.82) — cleaner platform code.
 - `#[diagnostic::on_unimplemented]` (1.78) — better Widget API errors.
 - Cost: single-PR mechanical bump in `Cargo.toml` + `rust-toolchain.toml`. No downstream consumer constraints (hard fork, no upstream-sync commitment).

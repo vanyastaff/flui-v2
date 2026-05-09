@@ -121,7 +121,7 @@ These read-only review agents are installed in `.claude/agents/` and should be i
   - Edition-2024 lifetime captures (`-> impl Trait + use<'_>`) — express precise lifetime relationships in async/iterator return types without manual elision.
   - Async closures (`async |...| { ... }`) — for callback-heavy APIs that need to await.
   - `let-chains` (`if let Some(x) = ... && cond && let Some(y) = ...`) — collapse nested matches in reconciliation / lookup code.
-  - `lazy_cell::sync::OnceCell` from `std` (1.80+) — use instead of pulling in the `once_cell` crate.
+  - `std::sync::OnceLock` (1.70+) and `std::sync::LazyLock` (1.80+) — use instead of pulling in the `once_cell` crate. For single-threaded contexts: `std::cell::OnceCell` (1.70+) and `std::cell::LazyCell` (1.80+).
   - `unsafe extern "C"` blocks (1.82+) — required syntax in edition 2024 for FFI.
   - `#[diagnostic::on_unimplemented]` — author better trait-bound error messages on Framework-tier traits.
 - **Do not silently delete `unimplemented!()` / `unreachable!()` sites in platform code.** They are tracked by the S01a roadmap inventory and must be classified before being touched.

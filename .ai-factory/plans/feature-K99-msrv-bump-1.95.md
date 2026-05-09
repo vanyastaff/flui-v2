@@ -27,7 +27,7 @@ From `.ai-factory/RESEARCH.md` (Active Summary):
 - **Hard fork posture** — flui-v2 is a hard fork of `gpui-ce`; no upstream-sync commitment, no semver compatibility with `gpui`. MSRV bump is unilateral.
 - **Phase 0-K rationale** — 24+ structural issues in `flui-core` block a healthy Framework tier. Critical chain `K99 → K15 → K07 → K05 → K01 → K02 → K03 → K04` repays the debt sequentially.
 - **K99 specifics** — single-PR mechanical bump in `Cargo.toml` + `rust-toolchain.toml`. No downstream consumers. CI matrix to gain explicit MSRV gate.
-- **Unlocked idioms** — AFIT + RPITIT + edition-2024 lifetime captures (1.79–2024 ed, edition-2024 lifetime captures specifically), async closures (1.85), let-chains (1.88, 2024 ed), lazy_cell (1.80), unsafe extern (1.82), `#[diagnostic::on_unimplemented]` (1.78).
+- **Unlocked idioms** — AFIT + RPITIT + edition-2024 lifetime captures (1.79–2024 ed, edition-2024 lifetime captures specifically), async closures (1.85), let-chains (1.88, 2024 ed), `std::sync::OnceLock` (1.70) / `std::sync::LazyLock` (1.80), unsafe extern (1.82), `#[diagnostic::on_unimplemented]` (1.78).
 - **Open question** — pin exact version (reproducible) vs `stable` (auto-upgrades). Plan recommends pin exact.
 
 ## Current state (pre-K99)

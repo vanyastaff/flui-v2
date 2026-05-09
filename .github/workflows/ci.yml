@@ -236,13 +236,24 @@ jobs:
       # latest stable Rust as a forward-compat radar. If a deprecation,
       # new lint, or behaviour change in a newer Rust would land before
       # the next MSRV bump, this job surfaces it early.
-      - name: Install latest stable (override rust-toolchain.toml pin)
+      #
+      # Note: `rustup default stable` alone is NOT enough — the repo-local
+      # rust-toolchain.toml takes precedence over the rustup global default
+      # whenever cargo is invoked from inside the repo. To actually run
+      # latest stable we set RUSTUP_TOOLCHAIN=stable for the cargo step,
+      # which overrides rust-toolchain.toml.
+      - name: Install latest stable
         run: |
           rustup update stable
-          rustup default stable
-          rustc --version
+          rustup run stable rustc --version
 
       - uses: Swatinem/rust-cache@v2
 
       - name: Check workspace on latest stable
-        run: cargo check --workspace
+        env:
+          RUSTUP_TOOLCHAIN: stable
+        run: |
+          # Confirm the override actually applied — should print latest stable,
+          # not the version pinned in rust-toolchain.toml.
+          rustc --version
+          cargo check --workspace
