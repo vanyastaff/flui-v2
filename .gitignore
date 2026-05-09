@@ -40,3 +40,7 @@ xcuserdata/
 .serena/project.local.yml
 .ai-factory/skill-context/
 
+# Per-spec implementer-local baseline captures (e.g., K15)
+.k15-*.txt
+.k15-*.log
+

@@ -5,5 +5,7 @@
 pub use crate::{
     AppContext as _, BorrowAppContext, Context, Element, InteractiveElement, IntoElement,
     ParentElement, Refineable, Render, RenderOnce, StatefulInteractiveElement, Styled, StyledImage,
-    VisualContext, local_util::FluentBuilder,
+    VisualContext,
+    local_util::FluentBuilder,
+    reentrancy::{ReentryError, ReentryMode},
 };

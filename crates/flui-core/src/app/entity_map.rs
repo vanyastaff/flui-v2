@@ -139,7 +139,7 @@ impl EntityMap {
         let entity = Some(
             self.entities
                 .remove(pointer.entity_id)
-                .unwrap_or_else(|| double_lease_panic::<T>("update")),
+                .unwrap_or_else(|| double_lease_panic::<T>("update", pointer.entity_id)),
         );
         Lease {
             entity,
@@ -161,7 +161,7 @@ impl EntityMap {
         self.entities
             .get(entity.entity_id)
             .and_then(|entity| entity.downcast_ref())
-            .unwrap_or_else(|| double_lease_panic::<T>("read"))
+            .unwrap_or_else(|| double_lease_panic::<T>("read", entity.entity_id))
     }
 
     fn assert_valid_context(&self, entity: &AnyEntity) {
@@ -204,9 +204,19 @@ impl EntityMap {
 }
 
 #[track_caller]
-fn double_lease_panic<T>(operation: &str) -> ! {
+fn double_lease_panic<T>(operation: &str, entity_id: EntityId) -> ! {
+    // K15 (Phase 0-K) unification: produce the same Display as the App-level
+    // re-entry check in `App::update_entity`. This unifies entity-side panic
+    // messages: direct same-entity re-entry (caught at `App::update_entity`)
+    // and multi-entity cycles (`A → B → A`, caught here when A's slot is
+    // empty during the inner re-entry attempt) both produce
+    // `ReentryError::NestedEntityUpdate(_)` Display, with the operation/type
+    // appended for additional diagnostic context. See K15 design spec.
+    let err = crate::reentrancy::ReentryError::NestedEntityUpdate(entity_id);
     panic!(
-        "cannot {operation} {} while it is already being updated",
+        "{} (during {} of type {})",
+        err,
+        operation,
         std::any::type_name::<T>()
     )
 }

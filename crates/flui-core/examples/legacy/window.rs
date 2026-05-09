@@ -200,13 +200,20 @@ impl Render for WindowDemo {
                 window.resize(size(content_size.height, content_size.width));
             }))
             .child(button("Prompt", |window, cx| {
-                let answer = window.prompt(
-                    PromptLevel::Info,
-                    "Are you sure?",
-                    None,
-                    &["Ok", "Cancel"],
-                    cx,
-                );
+                // K15 (Phase 0-K): `Window::prompt` returns
+                // `Result<Receiver, ReentryError>`. This button's click
+                // handler is documented as never re-entrant — no other
+                // prompt can be open at the moment of click — so `expect`
+                // is appropriate.
+                let answer = window
+                    .prompt(
+                        PromptLevel::Info,
+                        "Are you sure?",
+                        None,
+                        &["Ok", "Cancel"],
+                        cx,
+                    )
+                    .expect("documented as never re-entrant: button click handler runs outside any other prompt scope");
 
                 cx.spawn(async move |_| {
                     if answer.await.unwrap() == 0 {
@@ -218,13 +225,16 @@ impl Render for WindowDemo {
                 .detach();
             }))
             .child(button("Prompt (non-English)", |window, cx| {
-                let answer = window.prompt(
-                    PromptLevel::Info,
-                    "Are you sure?",
-                    None,
-                    &[PromptButton::ok("确定"), PromptButton::cancel("取消")],
-                    cx,
-                );
+                // K15: see "Prompt" button above.
+                let answer = window
+                    .prompt(
+                        PromptLevel::Info,
+                        "Are you sure?",
+                        None,
+                        &[PromptButton::ok("确定"), PromptButton::cancel("取消")],
+                        cx,
+                    )
+                    .expect("documented as never re-entrant: button click handler runs outside any other prompt scope");
 
                 cx.spawn(async move |_| {
                     if answer.await.unwrap() == 0 {

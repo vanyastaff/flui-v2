@@ -447,10 +447,11 @@ impl Platform for WindowsPlatform {
         );
 
         // Defer spawning to the foreground executor so it runs after the
-        // current `AppCell` borrow is released. On Windows, `Command::spawn()`
+        // current `AppCell` borrow is released, satisfying the K15 re-entrancy
+        // contract (see `flui_core::reentrancy`). On Windows, `Command::spawn()`
         // can pump the Win32 message loop (via `CreateProcessW`), which
-        // re-enters message handling possibly resulting in another mutable
-        // borrow of the `AppCell` ending up with a double borrow panic
+        // re-enters message handling — running this inline would hit
+        // `ReentryError::AppBorrowed` on a second `borrow_mut()` of the cell.
         self.foreground_executor
             .spawn(async move {
                 #[allow(

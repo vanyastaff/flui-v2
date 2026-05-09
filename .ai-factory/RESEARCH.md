@@ -1,7 +1,9 @@
 # Research
 
-Updated: 2026-05-08
+Updated: 2026-05-09
 Status: active
+
+**K15 (2026-05-09)** — Re-entrancy contract published at `crates/flui-core/src/reentrancy.rs` (second spec in the Phase 0-K critical chain after K99). `ReentryError` (`#[non_exhaustive]`) names every same-target re-entry case; `ReentryMode { Strict, Loose }` selects log level (Strict = `error!`, Loose = `warn!`); test default is Strict. Behavior: same-window `update_window` returns `Err(anyhow{ ReentryError::NestedWindowUpdate })`; same-entity `update_entity` panics with `ReentryError::NestedEntityUpdate(_)` Display (trait signature `R` cannot widen); multi-entity cycles `A → B → A` ALSO use the unified Display via the rewritten `EntityMap::double_lease_panic`; `with_element_state` recursive panic uses `ReentryError::ElementStateInUse { global_element_id, type_id }`; `Window::prompt` widens to `Result<Receiver, ReentryError>` and `AsyncWindowContext::prompt` widens to `anyhow::Result<Receiver>` (was: silently swallowed errors via dead receivers). `cx.defer` / `Window::defer` are the documented queue escape hatches — no new `Effect` variant introduced. `PanicLikeUpstream` mode and `legacy-reentry-panics` feature DEFERRED to K07 per adversarial-review consensus (the hatch could not faithfully reproduce upstream entity-side panic, and the runtime field for compile-time-gated variant is dead weight). Four Known Limitations documented in design spec: 10+ remaining `AsyncApp::borrow_mut()` sites unstructured (K07), `AsyncApp::as_mut` panic out of class, `web` platform unverified, `AppBorrowed` carries no source location (nightly-only API). Tests: 344 lib tests (333 baseline + 11 new — 6 type-level + 5 behavioral via `TestApp`). Spec: `docs/superpowers/specs/2026-05-09-K15-reentrancy-contract-design.md`.
 
 ## Active Summary (input for /aif-plan)
 <!-- aif:active-summary:start -->

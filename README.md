@@ -6,44 +6,56 @@ A Flutter-inspired GPU-accelerated UI framework for Rust, built on the foundatio
 
 flui-v2 takes GPUI's proven GPU rendering foundation and evolves it toward a Flutter-like developer experience in Rust: composable widgets, declarative routing, animations, and accessibility — all with native performance.
 
-## Architecture (5 layers)
+## Architecture (three-tier)
 
-```
+```text
 +-------------------------------------------------------+
-|  Layer 5: Application                                  |
-|  Your app code, examples, demos                        |
+|  C. ECOSYSTEM (community-writable)                    |
+|  flui-widgets, flui-material, flui-cupertino,         |
+|  flui-theme, flui-navigator, flui-a11y                |
 +-------------------------------------------------------+
-|  Layer 4: flui-navigator                               |
-|  Type-safe routing, transitions, guards, middleware     |
+|  B. FRAMEWORK (Flutter developer experience)          |
+|  flui-framework — PLANNED (Phase II-F)                |
+|  Widget + Key + State + BuildCx + Provider            |
 +-------------------------------------------------------+
-|  Layer 3: flui-widgets / flui-a11y                     |
-|  Widget library, accessibility                          |
-+-------------------------------------------------------+
-|  Layer 2: flui-core                                    |
-|  Entity system, views, elements, layout (Taffy),       |
-|  styling, input, async executor                        |
-+-------------------------------------------------------+
-|  Layer 1: Platform backends                            |
-|  Metal (macOS), DirectX (Windows), wgpu (Linux),       |
-|  Wayland, X11                                          |
+|  A. ENGINE (substrate)                                |
+|  flui-core (App + Entity + Element + Scene +          |
+|             Window + Layout + Text + Gesture +        |
+|             Animation)                                |
+|  flui-platform (skeleton — Phase III)                 |
+|  flui-macros (proc macros)                            |
 +-------------------------------------------------------+
 ```
+
+Hard fork of [gpui-ce](https://github.com/gpui-ce/gpui-ce) — see [ARCHITECTURE.md](.ai-factory/ARCHITECTURE.md) for the full rationale, the "2 structures + 1 cache" Framework-tier model, and Phase 0-K kernel-cleanup track.
 
 ## Workspace structure
 
-```
+```text
 flui-v2/
   crates/
-    flui-core/       # GPU rendering, element system, layout, platform backends
+    flui-core/       # GPU rendering, entity system, layout (Taffy),
+                     # text (cosmic-text), gesture, animation, platform backends
+    flui-platform/   # Platform abstraction crate (skeleton — Phase III)
     flui-macros/     # Procedural macros (derive Render, IntoElement, etc.)
     flui-navigator/  # Routing: nested routes, transitions, guards, middleware
-    flui-widgets/    # Widget library (planned: Button, Input, Modal, Theme)
-    flui-a11y/       # Accessibility / semantic tree (planned)
+    flui-widgets/    # Widget library (skeleton — gated on Framework tier)
+    flui-material/   # Material design widgets (skeleton)
+    flui-theme/      # Theming (skeleton)
+    flui-a11y/       # Accessibility / semantic tree (skeleton)
   examples/
     nav_demo/        # Navigation routing demo
+    material_demo/   # Material widget demo
+    animation_demo/  # Animation system demo
+  tooling/
+    lock-checks/     # Lock-behavior regression checks
+  docs/superpowers/
+    specs/           # Design docs (YYYY-MM-DD-<id>-<slug>-design.md)
 ```
 
 ## Quick start
+
+**MSRV:** Rust 1.95 (edition 2024) — pinned via `rust-toolchain.toml`.
 
 ```toml
 [dependencies]
@@ -104,8 +116,14 @@ cargo run -p flui-core --example hello_world  # hello world
 
 ## Based on
 
-- [gpui-ce](https://github.com/gpui-ce/gpui-ce) - Community edition of Zed's GPUI
-- [gpui-navigator](https://github.com/vanyastaff/gpui-navigator) - Type-safe routing for GPUI
+- [gpui-ce](https://github.com/gpui-ce/gpui-ce) — Community edition of Zed's GPUI. flui-v2 is a **hard fork** (no upstream-sync commitment, no semver compatibility); breaking changes are the design goal. The `extern crate flui_core as gpui;` pattern shown above is a one-way migration aid for porting Zed-style code, not a compatibility contract.
+- [gpui-navigator](https://github.com/vanyastaff/gpui-navigator) — Type-safe routing for GPUI
+
+## Project status
+
+- **Phase 0-K (Kernel Cleanup) — active.** Architectural debt repayment in `flui-core` before Framework tier (Phase II-F) work begins. Tracked in [`.ai-factory/ROADMAP.md`](.ai-factory/ROADMAP.md). Done so far: [K99 MSRV bump](docs/superpowers/specs/2026-05-08-K99-msrv-bump-1.95-design.md), [K15 re-entrancy contract](docs/superpowers/specs/2026-05-09-K15-reentrancy-contract-design.md).
+- **Phase II — engine completeness.** Gesture arena (S07), animation parity (S21) done; semantics (S08), canvas facade (S09), media query (S14) pending.
+- **Phase II-F — Framework tier (Widget / State / setState).** Not started; gated on Phase 0-K critical chain completion.
 
 ## License
 
