@@ -92,7 +92,7 @@ pub enum ReentryError {
     #[error("update_window called recursively for window {0:?}; use cx.defer or window.defer to schedule work")]
     NestedWindowUpdate(WindowId),
 
-    #[error("update_entity called recursively for entity {0:?}; use cx.defer to schedule work")]
+    #[error("entity {0:?} is already leased; recursive re-entry is forbidden — use cx.defer to schedule work")]
     NestedEntityUpdate(EntityId),
 
     #[error("with_element_state called recursively for ({global_element_id:?}, {type_id:?})")]

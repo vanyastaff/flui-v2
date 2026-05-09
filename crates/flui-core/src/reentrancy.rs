@@ -36,7 +36,7 @@
 //! | `cx.update_entity(...)` | Forbidden ([`ReentryError::NestedEntityUpdate`]) | Synchronous | Detection via `App::currently_updating_entity == Some(id)` AND the unified `EntityMap::double_lease_panic` (which now uses [`ReentryError::NestedEntityUpdate`] Display). |
 //! | Multi-entity cycle `A→B→A` | Forbidden ([`ReentryError::NestedEntityUpdate`]) | n/a | Caught by `EntityMap::double_lease_panic` because A's slot is empty when the inner re-entry attempts `lease`. Same Display as direct re-entry. |
 //! | Observer / event-listener / release callback | Synchronous within callback | Synchronous | The internal `SubscriberSet::retain` snapshot pattern guarantees no concurrent mutation of the subscriber list. Nested same-target updates raise [`ReentryError`]; user is directed to `cx.defer`. |
-//! | `observe_in` / `subscribe_in` | Forbidden (inner update returns `Err`) | Synchronous | The `.unwrap_or(false)` discard at the closure end is preserved — but the error is logged at `warn!` first via this module. |
+//! | `observe_in` / `subscribe_in` | Forbidden (inner update returns `Err`) | Synchronous | The `.unwrap_or(false)` discard at the call site (`crate::app::context`) is preserved unchanged. The error itself is logged at `warn!` (Loose mode) or `error!` (Strict mode) inside `App::update_window_id` *before* the `Err` is returned to the discard site — so a re-entry inside `observe_in`/`subscribe_in` produces a `flui_core::reentrancy` log event, then is silently dropped at the closure boundary. Adding explicit `log::debug!` at the discard site is a follow-up if richer telemetry is needed. |
 //! | `Window::with_element_state(...)` | Forbidden ([`ReentryError::ElementStateInUse`]) — panic shape | n/a | Replaces the bare `expect("reentrant…")` panic with a structured `ReentryError` Display message. |
 //! | `Window::prompt(...)` | Forbidden ([`ReentryError::PromptInProgress`]) | n/a | `Window::prompt` widens to `Result<oneshot::Receiver<usize>, ReentryError>`. `AsyncWindowContext::prompt` widens to `Result<_, anyhow::Error>` and stops swallowing errors. |
 //! | `cx.defer(...)` / `Window::defer(...)` | Queued (existing) | Queued | The escape hatches. Always allowed; never produce [`ReentryError`]. |
@@ -101,14 +101,28 @@ pub enum ReentryError {
     )]
     NestedWindowUpdate(WindowId),
 
-    /// `update_entity` was called recursively for the same entity, either
-    /// directly (`A` calls `update_entity(A, ...)`) or via a cycle (`A → B → A`).
-    /// Both paths produce this same Display message — the multi-entity-cycle
-    /// case is caught by `EntityMap::double_lease_panic` at the lease layer
-    /// after K15's unification (Task 7).
+    /// The entity is already leased; a recursive re-entry attempted to access
+    /// it. Three concrete shapes funnel into this variant:
     ///
-    /// Use [`App::defer`](crate::App::defer) to schedule the work.
-    #[error("update_entity called recursively for entity {0:?}; use cx.defer to schedule work")]
+    /// 1. Direct: `A` calls `update_entity(A, ...)` from inside an outer
+    ///    `update_entity(A, ...)`. Caught at `App::update_entity` before
+    ///    `EntityMap::lease`.
+    /// 2. Cycle: `A → B → A`. Caught by `EntityMap::double_lease_panic` at
+    ///    the lease layer because `A`'s slot is empty during the inner
+    ///    re-entry.
+    /// 3. Read-while-leased: `read_entity(A)` while `update_entity(A, ...)`
+    ///    is still on the stack. Also caught by `EntityMap::double_lease_panic`
+    ///    via `EntityMap::read`.
+    ///
+    /// All three produce this same Display (the operation/type/lease vs
+    /// read distinction is appended by `double_lease_panic` for diagnostic
+    /// context but is not part of the structured contract).
+    ///
+    /// Use [`App::defer`](crate::App::defer) to schedule the work for after
+    /// the current update completes.
+    #[error(
+        "entity {0:?} is already leased; recursive re-entry is forbidden — use cx.defer to schedule work"
+    )]
     NestedEntityUpdate(EntityId),
 
     /// `Window::with_element_state` was called recursively for the same
@@ -177,8 +191,11 @@ pub enum ReentryMode {
 /// Emit a `log` event for a re-entry admission, choosing the level from the
 /// active [`ReentryMode`]. Always logs to target `flui_core::reentrancy`.
 ///
-/// Used internally by `App::update_window_id`, `App::update_entity`, and
-/// `EntityMap::double_lease_panic`. Not part of the public surface.
+/// Used internally by `App::update_window_id` and `App::update_entity`
+/// before the contract is enforced (return `Err` or panic). Note:
+/// `EntityMap::double_lease_panic` does NOT call this helper — that path is
+/// terminal (immediate `panic!`) and the panic Display itself carries the
+/// `ReentryError::NestedEntityUpdate` text. Not part of the public surface.
 pub(crate) fn log_reentry(mode: ReentryMode, err: &ReentryError) {
     match mode {
         ReentryMode::Strict => {
@@ -216,6 +233,13 @@ mod tests {
 
         let ent_err = format!("{}", ReentryError::NestedEntityUpdate(EntityId::default()));
         assert!(ent_err.contains("cx.defer"));
+        // NestedEntityUpdate is operation-agnostic (used by both lease for
+        // update AND read-while-leased) — its Display must NOT hard-code
+        // "update_entity" anymore.
+        assert!(
+            ent_err.contains("already leased"),
+            "Display should be operation-agnostic; got: {ent_err}"
+        );
     }
 
     #[test]
@@ -293,9 +317,8 @@ mod behavioral_tests {
         let mut app = TestApp::new();
         let entity = app.new_entity(|_| Counter { count: 0 });
 
-        // Snapshot the entity for the recursive call. We cannot use
-        // `entity.clone()` because Entity<T> isn't typically Clone; instead
-        // capture the handle via a clone of the underlying any-entity.
+        // Capture a second handle for the recursive inner call.
+        // `Entity<T>: Clone` (cheap Arc-bump under the hood).
         let entity_clone = entity.clone();
 
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -316,7 +339,7 @@ mod behavioral_tests {
             .unwrap_or("<non-string panic payload>");
 
         assert!(
-            msg.contains("update_entity called recursively"),
+            msg.contains("already leased"),
             "panic message must use ReentryError::NestedEntityUpdate Display; got: {msg}"
         );
         assert!(
@@ -359,13 +382,20 @@ mod behavioral_tests {
             .unwrap_or("<non-string panic payload>");
 
         assert!(
-            msg.contains("update_entity called recursively"),
+            msg.contains("already leased"),
             "multi-entity-cycle panic must use unified ReentryError::NestedEntityUpdate Display; got: {msg}"
         );
         // Also verify the legacy text is NOT present.
         assert!(
             !msg.contains("while it is already being updated"),
             "legacy double_lease_panic message must be replaced by ReentryError; got: {msg}"
+        );
+        // The diagnostic context appended by `EntityMap::double_lease_panic`
+        // (operation/type) should still be present so debug logs distinguish
+        // `lease` from `read` paths.
+        assert!(
+            msg.contains("during update of type") || msg.contains("during read of type"),
+            "operation/type context must be appended for diagnostic; got: {msg}"
         );
     }
 

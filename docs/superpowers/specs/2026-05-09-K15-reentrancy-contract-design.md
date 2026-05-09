@@ -183,7 +183,7 @@ Pre-existing test code that depends on the old entity-side panic message text (`
 
 **Behavioral integration tests (5, via `TestApp`)**:
 - `set_reentry_mode_setter_round_trips`
-- `nested_update_entity_same_target_panics_with_structured_display` (catches panic, asserts Display contains "update_entity called recursively" + "cx.defer")
+- `nested_update_entity_same_target_panics_with_structured_display` (catches panic, asserts Display contains "already leased" + "cx.defer" — the operation-agnostic message used by both `lease`/update and `read`/read-while-leased paths)
 - `entity_map_double_lease_uses_unified_reentry_display` (multi-entity cycle `A → B → A`, asserts unified Display, asserts legacy text absent)
 - `nested_update_entity_different_target_runs_synchronously` (positive case)
 - `cx_defer_avoids_reentry_panic` (escape hatch happy path)
