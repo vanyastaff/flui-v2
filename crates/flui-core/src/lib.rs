@@ -50,6 +50,11 @@ mod provider;
 #[cfg(any(target_os = "windows", target_os = "linux", target_family = "wasm"))]
 #[expect(missing_docs)]
 pub mod queue;
+/// Re-entrancy contract for the runtime: structured `ReentryError` and the
+/// `ReentryMode` selector. K15 (Phase 0-K Kernel Cleanup, critical chain).
+/// Authoritative spec:
+/// `docs/superpowers/specs/2026-05-09-K15-reentrancy-contract-design.md`.
+pub mod reentrancy;
 mod scene;
 /// The scheduler module provides task scheduling, execution, and timing primitives.
 pub mod scheduler;

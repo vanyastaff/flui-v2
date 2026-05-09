@@ -87,7 +87,13 @@ impl AppContext for AsyncApp {
         F: FnOnce(AnyView, &mut Window, &mut App) -> T,
     {
         let app = self.app.upgrade().context("app was released")?;
-        let mut lock = app.try_borrow_mut()?;
+        // K15 (Phase 0-K): route the BorrowMutError through ReentryError so
+        // the anyhow chain carries `ReentryError::AppBorrowed` Display
+        // instead of bare `BorrowMutError`. Existing `?` callers compile
+        // unchanged because anyhow's blanket From handles ReentryError.
+        let mut lock = app
+            .try_borrow_mut()
+            .map_err(crate::reentrancy::ReentryError::from)?;
         if lock.quitting {
             bail!("app is quitting");
         }
@@ -342,21 +348,32 @@ impl AsyncWindowContext {
     /// Present a platform dialog.
     /// The provided message will be presented, along with buttons for each answer.
     /// When a button is clicked, the returned Receiver will receive the index of the clicked button.
+    ///
+    /// Returns `Err` if the window has been released, the app is quitting,
+    /// or a previous prompt is still awaiting the user's response
+    /// (`ReentryError::PromptInProgress`). K15 (Phase 0-K) widened this from
+    /// the prior shape that swallowed errors via `.unwrap_or_else(|_| oneshot::channel().1)`,
+    /// which produced a dead receiver and caused callers' `.await.unwrap()`
+    /// to deadlock or panic with "receiver dropped" instead of surfacing
+    /// the structured re-entry error.
     pub fn prompt<T>(
         &mut self,
         level: PromptLevel,
         message: &str,
         detail: Option<&str>,
         answers: &[T],
-    ) -> oneshot::Receiver<usize>
+    ) -> anyhow::Result<oneshot::Receiver<usize>>
     where
         T: Clone + Into<PromptButton>,
     {
+        // `update_window` returns `Result<window.prompt(...)>` (anyhow), and
+        // `window.prompt(...)` itself returns `Result<_, ReentryError>` after
+        // K15. Flatten the nested Result so callers see a single error chain.
         self.app
             .update_window(self.window, |_, window, cx| {
                 window.prompt(level, message, detail, answers, cx)
             })
-            .unwrap_or_else(|_| oneshot::channel().1)
+            .and_then(|inner| inner.map_err(anyhow::Error::from))
     }
 }
 

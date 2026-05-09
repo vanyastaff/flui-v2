@@ -494,12 +494,14 @@ impl Platform for MacPlatform {
     }
 
     fn quit(&self) {
-        // Quitting the app causes us to close windows, which invokes `Window::on_close` callbacks
-        // synchronously before this method terminates. If we call `Platform::quit` while holding a
-        // borrow of the app state (which most of the time we will do), we will end up
-        // double-borrowing the app state in the `on_close` callbacks for our open windows. To solve
-        // this, we make quitting the application asynchronous so that we aren't holding borrows to
-        // the app state on the stack when we actually terminate the app.
+        // Defer the close callback to the next run loop iteration to satisfy
+        // the K15 re-entrancy contract (see `flui_core::reentrancy`). Calling
+        // `Platform::quit` while holding an `AppCell` borrow would otherwise
+        // hit `ReentryError::AppBorrowed` when `Window::on_close` callbacks
+        // fire synchronously on platform shutdown — they would attempt a
+        // second `borrow_mut()` on the cell that this method is currently
+        // holding. Asynchronous dispatch ensures the outer borrow is
+        // released before the close callbacks run.
 
         unsafe {
             DispatchQueue::main().exec_async_f(ptr::null_mut(), quit);
@@ -1251,9 +1253,11 @@ extern "C" fn on_keyboard_layout_change(this: &mut Object, _: Sel, _: id) {
 }
 
 extern "C" fn on_thermal_state_change(this: &mut Object, _: Sel, _: id) {
-    // Defer to the next run loop iteration to avoid re-entrant borrows of the App RefCell,
-    // as NSNotificationCenter delivers this notification synchronously and it may fire while
-    // the App is already borrowed (same pattern as quit() above).
+    // Defer to the next run loop iteration to satisfy the K15 re-entrancy
+    // contract (see `flui_core::reentrancy`). NSNotificationCenter delivers
+    // this notification synchronously, so it may fire while the App is
+    // already borrowed; running the handler inline would hit
+    // `ReentryError::AppBorrowed`. Same pattern as `quit()` above.
     let platform = unsafe { get_mac_platform(this) };
     let platform_ptr = platform as *const MacPlatform as *mut c_void;
     unsafe {

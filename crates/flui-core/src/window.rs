@@ -3152,9 +3152,24 @@ impl Window {
                 })
                 .unwrap();
 
-            let state = state_box.take().expect(
-                "reentrant call to with_element_state for the same state type and element id",
-            );
+            // K15 (Phase 0-K): structured re-entry panic. The bare `expect`
+            // is replaced with `unwrap_or_else(|| panic!(...))` carrying a
+            // `ReentryError::ElementStateInUse` Display so log scrapers and
+            // diagnostics see a stable, structured message. The function
+            // signature is unchanged (still returns `R`, not
+            // `Result<R, ReentryError>`) — preserves source compat at all 7
+            // callsites; the panic shape satisfies the ROADMAP K15 intent of
+            // "no undefined `RefCell::borrow_mut` panics" because the panic
+            // is now defined and named.
+            let state = state_box.take().unwrap_or_else(|| {
+                panic!(
+                    "{}",
+                    crate::reentrancy::ReentryError::ElementStateInUse {
+                        global_element_id: global_id.clone(),
+                        type_id: TypeId::of::<S>(),
+                    }
+                )
+            });
             let (result, state) = f(Some(state), self);
             state_box.replace(state);
             self.next_frame.element_states.insert(
@@ -5138,7 +5153,13 @@ impl Window {
 
     /// Present a platform dialog.
     /// The provided message will be presented, along with buttons for each answer.
-    /// When a button is clicked, the returned Receiver will receive the index of the clicked button.
+    /// When a button is clicked, the returned `Receiver` will receive the index of the clicked button.
+    ///
+    /// Returns `Err(ReentryError::PromptInProgress)` if another prompt is
+    /// already awaiting the user's response — wait for the previous prompt's
+    /// `Receiver` to complete before opening a new one. K15 (Phase 0-K) made
+    /// this case structured: prior to K15 it produced an `unreachable!`
+    /// panic with no machine-readable type.
     pub fn prompt<T>(
         &mut self,
         level: PromptLevel,
@@ -5146,13 +5167,14 @@ impl Window {
         detail: Option<&str>,
         answers: &[T],
         cx: &mut App,
-    ) -> oneshot::Receiver<usize>
+    ) -> Result<oneshot::Receiver<usize>, crate::reentrancy::ReentryError>
     where
         T: Clone + Into<PromptButton>,
     {
         let prompt_builder = cx.prompt_builder.take();
         let Some(prompt_builder) = prompt_builder else {
-            unreachable!("Re-entrant window prompting is not supported by GPUI");
+            // K15: replace `unreachable!` with structured `ReentryError`.
+            return Err(crate::reentrancy::ReentryError::PromptInProgress);
         };
 
         let answers = answers
@@ -5174,7 +5196,7 @@ impl Window {
 
         cx.prompt_builder = Some(prompt_builder);
 
-        receiver
+        Ok(receiver)
     }
 
     fn build_custom_prompt(

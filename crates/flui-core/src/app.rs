@@ -651,6 +651,18 @@ pub struct App {
     pub(crate) text_rendering_mode: Rc<Cell<TextRenderingMode>>,
 
     pub(crate) window_update_stack: Vec<WindowId>,
+    /// K15 (Phase 0-K): currently-leased entity for re-entrancy detection.
+    /// Set by `App::update_entity` before calling `EntityMap::lease`; cleared on
+    /// return. Same-entity nested `update_entity` is detected here BEFORE the
+    /// lease; multi-entity cycles (`A → B → A`) are caught by
+    /// `EntityMap::double_lease_panic` after this field has been replaced with
+    /// the inner entity's id. Both paths now produce the same
+    /// `ReentryError::NestedEntityUpdate(_)` Display.
+    pub(crate) currently_updating_entity: Option<EntityId>,
+    /// K15 (Phase 0-K): selects how re-entry contract violations are reported.
+    /// See `flui_core::reentrancy::ReentryMode`. Default is `Strict` in
+    /// `cfg(test)` and `Loose` in release.
+    pub(crate) reentry_mode: crate::reentrancy::ReentryMode,
     pub(crate) mode: GpuiMode,
     flushing_effects: bool,
     pending_updates: usize,
@@ -707,6 +719,12 @@ impl App {
                 new_entity_observers: SubscriberSet::new(),
                 windows: SlotMap::with_key(),
                 window_update_stack: Vec::new(),
+                currently_updating_entity: None,
+                reentry_mode: if cfg!(test) {
+                    crate::reentrancy::ReentryMode::Strict
+                } else {
+                    crate::reentrancy::ReentryMode::Loose
+                },
                 window_handles: FxHashMap::default(),
                 focus_handles: Arc::new(RwLock::new(SlotMap::with_key())),
                 keymap: Rc::new(RefCell::new(Keymap::default())),
@@ -1081,6 +1099,13 @@ impl App {
             let handle = WindowHandle::new(id);
             match Window::new(handle.into(), options, cx) {
                 Ok(mut window) => {
+                    // SAFETY-CONTRACT(K15): no re-entry check needed here —
+                    // `id` was just allocated by `cx.windows.insert(None)` a
+                    // few lines above, so no other code path holds it on
+                    // `window_update_stack`. The push/pop pair is purely for
+                    // bookkeeping (e.g., `Effect::EntityCreated` consults the
+                    // stack to associate new entities with the current
+                    // window).
                     cx.window_update_stack.push(id);
                     let root_view = build_root_view(&mut window, cx);
                     cx.window_update_stack.pop();
@@ -1360,6 +1385,17 @@ impl App {
         self.quit_mode = mode;
     }
 
+    /// Selects how the runtime reports re-entrancy contract violations
+    /// (K15, Phase 0-K). The default is
+    /// [`ReentryMode::Strict`](crate::reentrancy::ReentryMode::Strict) in
+    /// `cfg(test)` and
+    /// [`ReentryMode::Loose`](crate::reentrancy::ReentryMode::Loose) in
+    /// release. Tests typically leave this at the test-default `Strict` so
+    /// silent re-entry bugs surface as `error!` log events.
+    pub fn set_reentry_mode(&mut self, mode: crate::reentrancy::ReentryMode) {
+        self.reentry_mode = mode;
+    }
+
     /// Returns the SVG renderer used by the application.
     pub fn svg_renderer(&self) -> SvgRenderer {
         self.svg_renderer.clone()
@@ -1551,6 +1587,16 @@ impl App {
     where
         F: FnOnce(AnyView, &mut Window, &mut App) -> T,
     {
+        // K15 (Phase 0-K): same-window re-entry detection. Check BEFORE
+        // taking the window from storage, so on `Err` we don't have to
+        // restore it. Different-window re-entry is allowed (independent
+        // borrow domains).
+        if self.window_update_stack.contains(&id) {
+            let err = crate::reentrancy::ReentryError::NestedWindowUpdate(id);
+            crate::reentrancy::log_reentry(self.reentry_mode, &err);
+            return Err(anyhow::Error::from(err))
+                .context("nested update_window for the same window");
+        }
         self.update(|cx| {
             let mut window = cx.windows.get_mut(id)?.take()?;
 
@@ -1559,6 +1605,9 @@ impl App {
             cx.window_update_stack.push(window.handle.id);
             let result = update(root_view, &mut window, cx);
             fn trail(id: WindowId, window: Box<Window>, cx: &mut App) -> Option<()> {
+                // K15: pop FIRST so `window_closed_observers` (dispatched
+                // below) see the closing window's id ABSENT from the stack,
+                // matching pre-K15 semantics. Do NOT relocate this pop.
                 cx.window_update_stack.pop();
 
                 if window.removed {
@@ -2412,13 +2461,32 @@ impl AppContext for App {
         handle: &Entity<T>,
         update: impl FnOnce(&mut T, &mut Context<T>) -> R,
     ) -> R {
+        let id = handle.entity_id();
+        // K15 (Phase 0-K): same-entity re-entry detection. Multi-entity cycles
+        // (A → B → A) are caught by `EntityMap::double_lease_panic` after this
+        // field has been replaced with the inner entity's id; both paths
+        // produce the same `ReentryError::NestedEntityUpdate(_)` Display.
+        if self.currently_updating_entity == Some(id) {
+            let err = crate::reentrancy::ReentryError::NestedEntityUpdate(id);
+            crate::reentrancy::log_reentry(self.reentry_mode, &err);
+            // ROADMAP K15: "Either queue (preferred) or panic with structured
+            // error (acceptable)." `update_entity` returns generic `R`, so
+            // queueing is not viable; panic with the structured Display.
+            panic!("{}", err);
+        }
         self.update(|cx| {
+            // Save and replace `currently_updating_entity` so multi-entity
+            // chains (A calls B, B's lease may itself call C, etc.) restore
+            // correctly on return. Top-level enters with `None`, restores to
+            // `None`. K15 contract.
+            let prev_updating = cx.currently_updating_entity.replace(id);
             let mut entity = cx.entities.lease(handle);
             let result = update(
                 &mut entity,
                 &mut Context::new_context(cx, handle.downgrade()),
             );
             cx.entities.end_lease(entity);
+            cx.currently_updating_entity = prev_updating;
             result
         })
     }
