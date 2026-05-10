@@ -341,6 +341,13 @@ mod behavioral_tests {
             assert_eq!(cx.pending_updates_for_test(), 0);
             assert!(!cx.flushing_effects_for_test());
         });
+
+        app.update_entity(&entity, |counter, _cx| {
+            counter.count = 1;
+        });
+        app.read_entity(&entity, |counter, _cx| {
+            assert_eq!(counter.count, 1);
+        });
     }
 
     #[test]
@@ -361,8 +368,42 @@ mod behavioral_tests {
         assert!(result.is_err(), "open_window build closure must panic");
         app.read(|cx| {
             assert!(cx.window_update_stack.is_empty());
+            assert!(cx.windows.is_empty());
+            assert!(cx.window_handles.is_empty());
             assert_eq!(cx.pending_updates_for_test(), 0);
             assert!(!cx.flushing_effects_for_test());
+        });
+    }
+
+    #[test]
+    fn window_update_restores_taken_window_after_panic() {
+        let mut app = TestApp::new();
+        let window = app.open_window(|_window, _cx| crate::EmptyView);
+        let handle = window.handle();
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            app.update(|cx| {
+                let any_handle = handle.into();
+                let _: anyhow::Result<()> = cx.update_window(any_handle, |_root, _window, _cx| {
+                    panic!("intentional update_window panic");
+                });
+            });
+        }));
+
+        assert!(result.is_err(), "update_window closure must panic");
+        app.read(|cx| {
+            assert!(cx.window_update_stack.is_empty());
+            assert_eq!(cx.pending_updates_for_test(), 0);
+            assert!(!cx.flushing_effects_for_test());
+            assert!(
+                cx.windows
+                    .get(handle.window_id())
+                    .and_then(|slot| slot.as_ref())
+                    .is_some(),
+                "taken window must be restored after panic"
+            );
+            cx.read_window(&handle, |_root, _cx| ())
+                .expect("restored window should be readable");
         });
     }
 

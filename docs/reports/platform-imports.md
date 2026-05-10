@@ -12,7 +12,7 @@ These imports rely on the source items being reachable through the crate-level g
 | `crates/flui-core/src/platform/linux/platform.rs` | 1068 | `use super::*;` |
 | `crates/flui-core/src/platform/linux/x11/event.rs` | 127 | `use super::*;` |
 | `crates/flui-core/src/platform/mac/pasteboard.rs` | 343 | `use super::*;` |
-| `crates/flui-core/src/platform/mac/platform.rs` | 1408 | `use super::*;` |
+| `crates/flui-core/src/platform/mac/platform.rs` | 1401 | `use super::*;` |
 | `crates/flui-core/src/platform/windows/direct_write.rs` | 26 | `use super::*;` |
 | `crates/flui-core/src/platform/windows/direct_write.rs` | 27 | `use crate::*;` |
 | `crates/flui-core/src/platform/windows/directx_renderer.rs` | 23 | `use super::*;` |

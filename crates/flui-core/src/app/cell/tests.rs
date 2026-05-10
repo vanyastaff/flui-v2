@@ -21,6 +21,9 @@ fn is_app_borrowed<T>(result: Result<T, ReentryError>) -> bool {
 proptest! {
     #![proptest_config(ProptestConfig {
         cases: 32,
+        // Miri isolates filesystem APIs on Windows; proptest persistence calls
+        // into current-dir discovery there, so these cell invariants stay
+        // deterministic by case count instead.
         failure_persistence: None,
         ..ProptestConfig::default()
     })]

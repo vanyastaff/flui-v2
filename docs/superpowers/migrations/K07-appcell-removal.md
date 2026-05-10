@@ -40,6 +40,44 @@ if let Err(error) = async_app.open_window(options, build_root_view) {
 }
 ```
 
+## AsyncApp Gone-Away Panics
+
+`AsyncApp` still contains a weak app handle. If the underlying app has already
+been released, Result-returning methods now return `ReentryError::AppGoneAway`.
+Non-Result `AsyncApp` methods preserve their old panic shape, but the panic
+payload is now typed with `std::panic::panic_any(ReentryError::AppGoneAway)`.
+
+Before K07, `catch_unwind` callers saw an unspecified panic payload from the
+weak upgrade failure:
+
+```rust
+let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    async_app.update_entity(&entity, |state, cx| {
+        // ...
+    });
+}));
+```
+
+After K07, callers that recover from panics can identify the exact
+`ReentryError::AppGoneAway` payload:
+
+```rust
+let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    async_app.update_entity(&entity, |state, cx| {
+        // ...
+    });
+}));
+
+if let Err(payload) = result {
+    if matches!(
+        payload.downcast_ref::<ReentryError>(),
+        Some(ReentryError::AppGoneAway)
+    ) {
+        // The AsyncApp outlived the App; stop retrying or rebuild the handle.
+    }
+}
+```
+
 ## Window::prompt
 
 `Window::prompt` was already migrated by K15 and its post-K07 shape is
