@@ -1,7 +1,7 @@
 use crate::scheduler::Instant;
 use std::{
     any::{TypeId, type_name},
-    cell::{BorrowMutError, Cell, Ref, RefCell, RefMut},
+    cell::{Cell, RefCell, UnsafeCell},
     marker::PhantomData,
     mem,
     ops::{Deref, DerefMut},
@@ -12,7 +12,6 @@ use std::{
 };
 
 use anyhow::{Context as _, Result, anyhow};
-use derive_more::{Deref, DerefMut};
 use futures::{
     Future, FutureExt,
     channel::oneshot,
@@ -23,6 +22,8 @@ use parking_lot::RwLock;
 use slotmap::SlotMap;
 
 pub use async_context::*;
+use cell::BorrowState;
+pub use cell::{AppCell, AppRef, AppRefMut};
 use collections::{FxHashMap, FxHashSet, HashMap, VecDeque};
 pub use context::*;
 pub use entity_map::*;
@@ -55,6 +56,7 @@ use crate::{
 };
 
 mod async_context;
+mod cell;
 mod context;
 mod entity_map;
 #[cfg(any(test, feature = "test-support"))]
@@ -69,67 +71,100 @@ mod visual_test_context;
 /// The duration for which futures returned from [Context::on_app_quit] can run before the application fully quits.
 pub const SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(100);
 
-/// Temporary(?) wrapper around [`RefCell<App>`] to help us debug any double borrows.
-/// Strongly consider removing after stabilization.
-#[doc(hidden)]
-pub struct AppCell {
-    app: RefCell<App>,
+struct CurrentEntityGuard {
+    ptr: *mut Option<EntityId>,
+    prev: Option<EntityId>,
 }
 
-impl AppCell {
-    #[doc(hidden)]
-    #[track_caller]
-    pub fn borrow(&self) -> AppRef<'_> {
-        if option_env!("TRACK_THREAD_BORROWS").is_some() {
-            let thread_id = std::thread::current().id();
-            eprintln!("borrowed {thread_id:?}");
+impl CurrentEntityGuard {
+    fn replace(slot: &mut Option<EntityId>, id: EntityId) -> Self {
+        let prev = slot.replace(id);
+        Self {
+            ptr: slot as *mut _,
+            prev,
         }
-        AppRef(self.app.borrow())
-    }
-
-    #[doc(hidden)]
-    #[track_caller]
-    pub fn borrow_mut(&self) -> AppRefMut<'_> {
-        if option_env!("TRACK_THREAD_BORROWS").is_some() {
-            let thread_id = std::thread::current().id();
-            eprintln!("borrowed {thread_id:?}");
-        }
-        AppRefMut(self.app.borrow_mut())
-    }
-
-    #[doc(hidden)]
-    #[track_caller]
-    pub fn try_borrow_mut(&self) -> Result<AppRefMut<'_>, BorrowMutError> {
-        if option_env!("TRACK_THREAD_BORROWS").is_some() {
-            let thread_id = std::thread::current().id();
-            eprintln!("borrowed {thread_id:?}");
-        }
-        Ok(AppRefMut(self.app.try_borrow_mut()?))
     }
 }
 
-#[doc(hidden)]
-#[derive(Deref, DerefMut)]
-pub struct AppRef<'a>(Ref<'a, App>);
-
-impl Drop for AppRef<'_> {
+impl Drop for CurrentEntityGuard {
     fn drop(&mut self) {
-        if option_env!("TRACK_THREAD_BORROWS").is_some() {
-            let thread_id = std::thread::current().id();
-            eprintln!("dropped borrow from {thread_id:?}");
+        // SAFETY: `ptr` is derived from `&mut App::currently_updating_entity`
+        // inside the enclosing `App::update` closure. The guard stores only a
+        // raw pointer, so the closure body can continue using `cx: &mut App`.
+        // Drop runs before `cx` leaves that closure scope, including during
+        // stack unwind, and `App` is single-threaded (`AppCell: !Send + !Sync`).
+        unsafe {
+            *self.ptr = self.prev;
         }
     }
 }
 
-#[doc(hidden)]
-#[derive(Deref, DerefMut)]
-pub struct AppRefMut<'a>(RefMut<'a, App>);
+struct WindowUpdateStackGuard {
+    stack: *mut Vec<WindowId>,
+    active: bool,
+}
 
-impl Drop for AppRefMut<'_> {
+impl WindowUpdateStackGuard {
+    fn push(stack: &mut Vec<WindowId>, id: WindowId) -> Self {
+        stack.push(id);
+        Self {
+            stack: stack as *mut _,
+            active: true,
+        }
+    }
+
+    fn pop(&mut self) {
+        if self.active {
+            // SAFETY: `stack` is derived from `&mut App::window_update_stack`
+            // inside the enclosing `App::update` closure. The guard stores
+            // only a raw pointer, so `cx: &mut App` remains usable. Drop runs
+            // before `cx` leaves that closure scope, including during unwind.
+            unsafe {
+                (*self.stack).pop();
+            }
+            self.active = false;
+        }
+    }
+}
+
+impl Drop for WindowUpdateStackGuard {
     fn drop(&mut self) {
-        if option_env!("TRACK_THREAD_BORROWS").is_some() {
-            let thread_id = std::thread::current().id();
-            eprintln!("dropped {thread_id:?}");
+        self.pop();
+    }
+}
+
+struct PendingUpdateGuard {
+    app: *mut App,
+    active: bool,
+}
+
+impl PendingUpdateGuard {
+    fn new(app: &mut App) -> Self {
+        Self {
+            app: app as *mut _,
+            active: true,
+        }
+    }
+
+    fn disarm(&mut self) {
+        self.active = false;
+    }
+}
+
+impl Drop for PendingUpdateGuard {
+    fn drop(&mut self) {
+        if self.active {
+            // SAFETY: `app` is derived from the `&mut App` passed to
+            // `App::update`. The guard stores only a raw pointer, so the update
+            // closure can receive `&mut App`. During unwind, this Drop runs
+            // before the caller can observe the app again.
+            unsafe {
+                let app = &mut *self.app;
+                if app.pending_updates > 0 {
+                    app.pending_updates -= 1;
+                }
+                app.flushing_effects = false;
+            }
         }
     }
 }
@@ -698,7 +733,7 @@ impl App {
         let _ref_counts = entities.ref_counts_drop_handle();
 
         let app = Rc::new_cyclic(|this| AppCell {
-            app: RefCell::new(App {
+            app: UnsafeCell::new(App {
                 this: this.clone(),
                 platform: platform.clone(),
                 text_system,
@@ -766,6 +801,8 @@ impl App {
                 #[cfg(any(test, feature = "leak-detection"))]
                 _ref_counts,
             }),
+            borrowed: Cell::new(BorrowState::Free),
+            _not_send: PhantomData,
         });
 
         init_app_menus(platform.as_ref(), &app.borrow());
@@ -905,8 +942,10 @@ impl App {
 
     pub(crate) fn update<R>(&mut self, update: impl FnOnce(&mut Self) -> R) -> R {
         self.start_update();
+        let mut pending_update_guard = PendingUpdateGuard::new(self);
         let result = update(self);
         self.finish_update();
+        pending_update_guard.disarm();
         result
     }
 
@@ -921,6 +960,16 @@ impl App {
             self.flushing_effects = false;
         }
         self.pending_updates -= 1;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn pending_updates_for_test(&self) -> usize {
+        self.pending_updates
+    }
+
+    #[cfg(test)]
+    pub(crate) fn flushing_effects_for_test(&self) -> bool {
+        self.flushing_effects
     }
 
     /// Arrange a callback to be invoked when the given entity calls `notify` on its respective context.
@@ -1106,9 +1155,10 @@ impl App {
                     // bookkeeping (e.g., `Effect::EntityCreated` consults the
                     // stack to associate new entities with the current
                     // window).
-                    cx.window_update_stack.push(id);
+                    let mut window_update_guard =
+                        WindowUpdateStackGuard::push(&mut cx.window_update_stack, id);
                     let root_view = build_root_view(&mut window, cx);
-                    cx.window_update_stack.pop();
+                    window_update_guard.pop();
                     window.root.replace(root_view.into());
                     window.defer(cx, |window: &mut Window, cx| window.appearance_changed(cx));
 
@@ -1602,38 +1652,36 @@ impl App {
 
             let root_view = window.root.clone().unwrap();
 
-            cx.window_update_stack.push(window.handle.id);
+            let mut window_update_guard =
+                WindowUpdateStackGuard::push(&mut cx.window_update_stack, window.handle.id);
             let result = update(root_view, &mut window, cx);
-            fn trail(id: WindowId, window: Box<Window>, cx: &mut App) -> Option<()> {
-                // K15: pop FIRST so `window_closed_observers` (dispatched
-                // below) see the closing window's id ABSENT from the stack,
-                // matching pre-K15 semantics. Do NOT relocate this pop.
-                cx.window_update_stack.pop();
 
-                if window.removed {
-                    cx.window_handles.remove(&id);
-                    cx.windows.remove(id);
+            // K15: pop FIRST so `window_closed_observers` (dispatched below)
+            // see the closing window's id ABSENT from the stack, matching
+            // pre-K15 semantics. Do NOT relocate this pop.
+            window_update_guard.pop();
 
-                    cx.window_closed_observers.clone().retain(&(), |callback| {
-                        callback(cx);
-                        true
-                    });
+            if window.removed {
+                cx.window_handles.remove(&id);
+                cx.windows.remove(id);
 
-                    let quit_on_empty = match cx.quit_mode {
-                        QuitMode::Explicit => false,
-                        QuitMode::LastWindowClosed => true,
-                        QuitMode::Default => cfg!(not(target_os = "macos")),
-                    };
+                cx.window_closed_observers.clone().retain(&(), |callback| {
+                    callback(cx);
+                    true
+                });
 
-                    if quit_on_empty && cx.windows.is_empty() {
-                        cx.quit();
-                    }
-                } else {
-                    cx.windows.get_mut(id)?.replace(window);
+                let quit_on_empty = match cx.quit_mode {
+                    QuitMode::Explicit => false,
+                    QuitMode::LastWindowClosed => true,
+                    QuitMode::Default => cfg!(not(target_os = "macos")),
+                };
+
+                if quit_on_empty && cx.windows.is_empty() {
+                    cx.quit();
                 }
-                Some(())
+            } else {
+                cx.windows.get_mut(id)?.replace(window);
             }
-            trail(id, window, cx)?;
 
             Some(result)
         })
@@ -2394,7 +2442,7 @@ impl App {
 
     /// Returns the current platform brightness preference (light or dark).
     ///
-    /// Falls back to [`Brightness::Light`] if `SystemBrightness` has not been set.
+    /// Falls back to `Brightness::Light` if `SystemBrightness` has not been set.
     pub fn platform_brightness(&self) -> crate::Brightness {
         self.try_global::<crate::SystemBrightness>()
             .map(|sb| sb.0)
@@ -2472,7 +2520,7 @@ impl AppContext for App {
             // ROADMAP K15: "Either queue (preferred) or panic with structured
             // error (acceptable)." `update_entity` returns generic `R`, so
             // queueing is not viable; panic with the structured Display.
-            panic!("{}", err);
+            std::panic::panic_any(err);
         }
         self.update(|cx| {
             // Save and replace `currently_updating_entity` so multi-entity
@@ -2480,28 +2528,18 @@ impl AppContext for App {
             // correctly on return. Top-level enters with `None`, restores to
             // `None`. K15 contract.
             //
-            // PANIC-SAFETY (Known Limitation #6, design spec): if `update(...)`
-            // panics, the restore line below never runs and the slot stays
-            // `Some(id)` until the next non-panicking `update_entity`
-            // overwrites it. This matches the pre-existing panic-leak
-            // behavior of `cx.entities.lease(handle)` itself (a panicking
-            // closure leaks the entity slot too). RAII guards were considered
-            // and rejected during planning because they conflict with Rust
-            // borrow rules — a guard borrowing `&mut App` cannot coexist
-            // with `App` flowing through this closure body. Fixing both
-            // panic-leak classes is K07's job (it redesigns the borrow
-            // primitive). For users with `catch_unwind`-based recovery, call
-            // `app.set_reentry_mode(ReentryMode::Loose)` and accept the
-            // potential false-positive `NestedEntityUpdate` on the next
-            // `update_entity(id)` after a caught panic.
-            let prev_updating = cx.currently_updating_entity.replace(id);
+            // K07 closes K15 Known Limitation #6 with a raw-pointer field guard.
+            // The guard stores no `&mut App`, so the closure body can keep using
+            // `cx`; Drop restores the previous entity id during normal return or
+            // stack unwind.
+            let _currently_updating_guard =
+                CurrentEntityGuard::replace(&mut cx.currently_updating_entity, id);
             let mut entity = cx.entities.lease(handle);
             let result = update(
                 &mut entity,
                 &mut Context::new_context(cx, handle.downgrade()),
             );
             cx.entities.end_lease(entity);
-            cx.currently_updating_entity = prev_updating;
             result
         })
     }

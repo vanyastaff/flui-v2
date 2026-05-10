@@ -14,6 +14,7 @@ use crate::{
     PlatformTextSystem, Render, Reservation, Size, Task, TestDispatcher, TestPlatform, TextSystem,
     Window, WindowBounds, WindowHandle, WindowOptions,
     app::{GpuiBorrow, GpuiMode},
+    reentrancy::ReentryError,
 };
 use anyhow::Result;
 use image::RgbaImage;
@@ -227,7 +228,7 @@ impl AppContext for HeadlessAppContext {
     where
         T: 'static,
     {
-        panic!("Cannot use as_mut with HeadlessAppContext. Call update() instead.")
+        std::panic::panic_any(ReentryError::AsyncContextAsMut)
     }
 
     fn read_entity<T, R>(&self, handle: &Entity<T>, read: impl FnOnce(&T, &App) -> R) -> R

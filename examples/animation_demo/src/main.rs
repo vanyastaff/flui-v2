@@ -13,7 +13,7 @@
 //!   8. Combinators            — explanatory note (Proxy / Compound / TrainHopping)
 //!
 //! The "explanatory note" sections (7, 8) describe surface that requires
-//! Rc<dyn Animation<f64>> sources — they are meant for widget-layer
+//! `Rc<dyn Animation<f64>>` sources — they are meant for widget-layer
 //! composition and are exercised via unit tests in
 //! `crates/flui-core/src/animation/{combinator.rs, curved_animation.rs}`.
 

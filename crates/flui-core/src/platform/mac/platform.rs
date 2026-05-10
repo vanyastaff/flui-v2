@@ -494,14 +494,9 @@ impl Platform for MacPlatform {
     }
 
     fn quit(&self) {
-        // Defer the close callback to the next run loop iteration to satisfy
-        // the K15 re-entrancy contract (see `flui_core::reentrancy`). Calling
-        // `Platform::quit` while holding an `AppCell` borrow would otherwise
-        // hit `ReentryError::AppBorrowed` when `Window::on_close` callbacks
-        // fire synchronously on platform shutdown — they would attempt a
-        // second `borrow_mut()` on the cell that this method is currently
-        // holding. Asynchronous dispatch ensures the outer borrow is
-        // released before the close callbacks run.
+        // Defer the close callback to satisfy the K07 (post-AppCell)
+        // re-entrancy contract; calling `Platform::quit` while the new
+        // `AppCell` is mutably borrowed produces `ReentryError::AppBorrowed`.
 
         unsafe {
             DispatchQueue::main().exec_async_f(ptr::null_mut(), quit);
@@ -1253,11 +1248,9 @@ extern "C" fn on_keyboard_layout_change(this: &mut Object, _: Sel, _: id) {
 }
 
 extern "C" fn on_thermal_state_change(this: &mut Object, _: Sel, _: id) {
-    // Defer to the next run loop iteration to satisfy the K15 re-entrancy
-    // contract (see `flui_core::reentrancy`). NSNotificationCenter delivers
-    // this notification synchronously, so it may fire while the App is
-    // already borrowed; running the handler inline would hit
-    // `ReentryError::AppBorrowed`. Same pattern as `quit()` above.
+    // Defer the thermal-state observer to satisfy the K07 (post-AppCell)
+    // re-entrancy contract; running the observer synchronously while the new
+    // `AppCell` is mutably borrowed produces `ReentryError::AppBorrowed`.
     let platform = unsafe { get_mac_platform(this) };
     let platform_ptr = platform as *const MacPlatform as *mut c_void;
     unsafe {

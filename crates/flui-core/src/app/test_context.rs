@@ -5,7 +5,8 @@ use crate::{
     ModifiersChangedEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels,
     Platform, Point, Render, Result, Size, Task, TestDispatcher, TestPlatform,
     TestScreenCaptureSource, TestWindow, TextSystem, VisualContext, Window, WindowBounds,
-    WindowHandle, WindowOptions, app::GpuiMode, window::ElementArenaScope,
+    WindowHandle, WindowOptions, app::GpuiMode, reentrancy::ReentryError,
+    window::ElementArenaScope,
 };
 use anyhow::{anyhow, bail};
 use futures::{Stream, StreamExt, channel::oneshot};
@@ -65,7 +66,7 @@ impl AppContext for TestAppContext {
     where
         T: 'static,
     {
-        panic!("Cannot use as_mut with a test app context. Try calling update() first")
+        std::panic::panic_any(ReentryError::AsyncContextAsMut)
     }
 
     fn read_entity<T, R>(&self, handle: &Entity<T>, read: impl FnOnce(&T, &App) -> R) -> R

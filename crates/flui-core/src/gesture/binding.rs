@@ -45,8 +45,8 @@ pub(crate) enum RegistrationResult {
 }
 
 /// Per-window owner of the gesture arena, the configurable
-/// [`GestureSettings`], the [`PointerSanitizer`], the per-pointer
-/// [`WindowPointerState`] cache, and the per-pointer arena-hold
+/// [`GestureSettings`], the `PointerSanitizer`, the per-pointer
+/// `WindowPointerState` cache, and the per-pointer arena-hold
 /// timeout timers.
 ///
 /// One instance lives inside every `Window`; access it via
@@ -59,9 +59,9 @@ pub(crate) enum RegistrationResult {
 /// failure points at the `Rc` directly.
 ///
 /// **Recognizer registration seam (S07.5 T3):** call
-/// [`Self::register_recognizer`] from the dispatcher's `Down` handler
+/// `Self::register_recognizer` from the dispatcher's `Down` handler
 /// to add a recognizer to the arena. That method drives the
-/// [`RecognizerLifecycle`] hooks (per-window settings injection,
+/// `RecognizerLifecycle` hooks (per-window settings injection,
 /// arena back-channel, arena-hold) so neither `Window::dispatch_event`
 /// nor the recognizer impl needs to repeat the wiring boilerplate.
 ///
@@ -72,7 +72,7 @@ pub(crate) enum RegistrationResult {
 #[non_exhaustive]
 pub struct GestureBinding {
     /// Per-window arena manager. Wrapped in `Rc<RefCell<…>>` so
-    /// recognizers that opt into [`RecognizerLifecycle::needs_back_channel`]
+    /// recognizers that opt into `RecognizerLifecycle::needs_back_channel`
     /// can hold a `Weak` handle and call back into the arena from
     /// async timer tasks (LongPress) without dangling on
     /// window-tear-down. The dispatch loop inside `Window::dispatch_event`

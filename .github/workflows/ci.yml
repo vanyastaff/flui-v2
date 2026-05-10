@@ -196,6 +196,85 @@ jobs:
       - name: Test flui-core with test-support feature (gesture e2e)
         run: cargo test -p flui-core --features test-support --test gesture_dispatch_integration
 
+  miri-cell:
+    name: Miri (cell module — Stacked Borrows)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwayland-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev \
+            libfontconfig-dev \
+            libegl-dev \
+            libx11-dev \
+            libx11-xcb-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev \
+            libxcb1-dev \
+            libvulkan-dev \
+            libssl-dev \
+            libsqlite3-dev \
+            mesa-vulkan-drivers \
+            vulkan-tools
+
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Miri test
+        env:
+          # CI sets `RUSTFLAGS=-Dwarnings` globally for MSRV/stable jobs.
+          # Nightly Miri can surface unrelated future-compat warnings from
+          # dependencies or non-cell modules; keep this job focused on UB.
+          RUSTFLAGS: ""
+        run: cargo +nightly miri test -p flui-core cell
+
+  miri-cell-tree-borrows:
+    name: Miri (cell module — Tree Borrows, non-blocking)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwayland-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev \
+            libfontconfig-dev \
+            libegl-dev \
+            libx11-dev \
+            libx11-xcb-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev \
+            libxcb1-dev \
+            libvulkan-dev \
+            libssl-dev \
+            libsqlite3-dev \
+            mesa-vulkan-drivers \
+            vulkan-tools
+
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Miri Tree Borrows
+        env:
+          MIRIFLAGS: -Zmiri-tree-borrows
+          RUSTFLAGS: ""
+        run: cargo +nightly miri test -p flui-core cell
+
   format:
     name: Format
     runs-on: ubuntu-latest

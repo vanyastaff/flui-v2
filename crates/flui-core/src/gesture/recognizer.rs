@@ -13,7 +13,7 @@ use crate::FocusHandle;
 ///
 /// **Object-safety:** the trait is `dyn`-compatible — verified by use
 /// in `GestureArenaEntry`'s `Rc<RefCell<dyn GestureRecognizer>>` and
-/// by [`__assert_object_safe`] below.
+/// by the `__assert_object_safe` check below.
 ///
 /// **Threading:** `?Sync` (and `?Send`) — recognizers self-mutate
 /// from inside arena callbacks on the main thread only.
@@ -106,7 +106,7 @@ pub trait GestureRecognizer: 'static {
     ///
     /// Returned by recognizers that opt into [`AllowedButtonsFilter`]
     /// gating (typically via a `with_allowed_buttons_filter`
-    /// builder). [`super::GestureBinding::register_recognizer`]
+    /// builder). `GestureBinding::register_recognizer`
     /// evaluates this filter on the registering pointer event before
     /// `arena.add`; on rejection the recognizer is not added (Decision
     /// D10). Default `None` — no extra gating beyond the recognizer's

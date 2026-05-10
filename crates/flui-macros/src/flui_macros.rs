@@ -244,7 +244,10 @@ pub fn test(args: TokenStream, function: TokenStream) -> TokenStream {
 /// ```
 ///
 /// For more information on writing custom `Strategy` and `Arbitrary`
-/// implementations, see [the proptest book][book], and the [`Strategy`] trait.
+/// implementations, see the proptest book
+/// (<https://proptest-rs.github.io/proptest/intro.html>) and the `Strategy`
+/// trait
+/// (<https://docs.rs/proptest/latest/proptest/strategy/trait.Strategy.html>).
 ///
 /// ## Scheduler
 ///
@@ -254,9 +257,8 @@ pub fn test(args: TokenStream, function: TokenStream) -> TokenStream {
 /// affect **ONLY** the seed passed to the scheduler. To control other values,
 /// use custom `Strategy`s.
 ///
-/// [`#[proptest::property_test]`]: https://docs.rs/proptest/latest/proptest/attr.property_test.html
-/// [book]: https://proptest-rs.github.io/proptest/intro.html
-/// [`Strategy`]: https://docs.rs/proptest/latest/proptest/strategy/trait.Strategy.html
+/// `#[proptest::property_test]`:
+/// <https://docs.rs/proptest/latest/proptest/attr.property_test.html>
 #[proc_macro_attribute]
 pub fn property_test(args: TokenStream, function: TokenStream) -> TokenStream {
     property_test::test(args.into(), function.into()).into()

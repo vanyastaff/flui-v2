@@ -95,7 +95,7 @@ pub struct TapGestureRecognizer {
     /// [`GestureRecognizer::on_focus_request`] (S12 seam).
     pub request_focus_on_tap_down: Option<FocusHandle>,
     /// Optional `(buttons, modifiers) -> bool` predicate evaluated by
-    /// [`crate::gesture::GestureBinding::register_recognizer`] before
+    /// `GestureBinding::register_recognizer` before
     /// the recognizer joins the arena. `None` (the default) admits
     /// every event whose `buttons` contain [`Self::button`].
     pub allowed_buttons_filter: Option<AllowedButtonsFilter>,
@@ -134,7 +134,7 @@ impl TapGestureRecognizer {
     }
 
     /// Fluent setter for [`Self::allowed_buttons_filter`]. The closure
-    /// is evaluated by [`crate::gesture::GestureBinding::register_recognizer`]
+    /// is evaluated by `GestureBinding::register_recognizer`
     /// at registration time; on `false` the recognizer never enters
     /// the arena (Decision D10).
     pub fn with_allowed_buttons_filter(

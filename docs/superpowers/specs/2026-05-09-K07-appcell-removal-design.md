@@ -1,18 +1,21 @@
 # K07 — AppCell removal (token-based borrow model)
 
-**Status:** Design (revision 3 — second adversarial review absorbed; pending implementation).
+**Status:** Implementation in progress (revision 6 — Task 14a panic-safety correction absorbed).
 **Revision history:**
 - rev 1 (2026-05-09) — initial design, Candidate B locked.
 - rev 2 (2026-05-09) — absorbed first Task 6 findings; 8 BLOCKERs + 12 MAJORs + 10 MINORs.
-- rev 3 (2026-05-09) — absorbed SECOND Task 6 findings (rev 2 itself reviewed by 4 agents: 3 adversarial + 1 quality). **rev 2 introduced new BLOCKERs while fixing rev 1's** — most critically: (a) `unsafe impl UnwindSafe` is `error[E0199]` compile error since `UnwindSafe` is NOT an unsafe trait; (b) the entire "UnwindSafe regression" narrative was based on a factual error about std — `UnsafeCell<T>: UnwindSafe` automatically (only `!RefUnwindSafe` has a negative impl); (c) the `catch_unwind(AssertUnwindSafe(...))` pattern in Task 14a leaks `pending_updates` via `resume_unwind` through `App::update`'s frame; (d) `Q4 panic!("{}", e)` produces `String` payload, losing `ReentryError` type identity at `catch_unwind` boundary. **Major rev 3 corrections:** Drop manual `impl UnwindSafe` (auto-traited automatically); Replace `catch_unwind` pattern with raw-pointer field-projection guard (no unwind, no leak); Q4 use `panic_any(...)` for type-preservation OR document recovery-not-intended; Q2 fix `AsyncContextAsMut` Display to be context-agnostic; All "RAII guard" stale text updated; "4 unsafe blocks" → "2 unsafe blocks + N plain trait impls"; Miri CI job task added; criterion bench added; `static_assertions` explicit in `[dev-dependencies]`. 4 reviewers cross-confirmed convergence.
+- rev 3 (2026-05-09) — absorbed SECOND Task 6 findings (rev 2 itself reviewed by 4 agents: 3 adversarial + 1 quality). **rev 2 introduced new BLOCKERs while fixing rev 1's** — most critically: (a) `unsafe impl UnwindSafe` is `error[E0199]` compile error since `UnwindSafe` is NOT an unsafe trait; (b) the entire "UnwindSafe regression" narrative was based on a factual error about std — `UnsafeCell<T>: UnwindSafe` automatically (only `!RefUnwindSafe` has a negative impl); (c) the `catch_unwind(AssertUnwindSafe(...))` pattern in Task 14a leaks `pending_updates` via `resume_unwind` through `App::update`'s frame; (d) `Q4 panic!("{}", e)` produces `String` payload, losing `ReentryError` type identity at `catch_unwind` boundary. **Major rev 3 corrections:** Drop manual `impl UnwindSafe` (auto-traited automatically); Replace `catch_unwind` pattern with raw-pointer field-projection guard (no unwind, no leak); Q4 use `panic_any(...)` for type-preservation; Q2 fix `AsyncContextAsMut` Display to be context-agnostic; All "RAII guard" stale text updated; "4 unsafe blocks" → "2 cell projection blocks + 2 app.rs field-guard writes"; Miri CI job task added; app-cell bench example added without a Criterion dependency; `static_assertions` explicit in `[dev-dependencies]`. 4 reviewers cross-confirmed convergence.
+- rev 4 (2026-05-10) — aif-improve drift cleanup: scrubbed active spec contradictions left after rev 3; Q9 now states no manual auto-trait impls; panic sketches use `panic_any`; K15 test accounting recognizes the deleted `BorrowMutError` conversion test plus direct AppCell replacement; Criterion dependency avoided to preserve the no-lockfile-change non-goal.
+- rev 5 (2026-05-10) — Task 8 compile check corrected the active auto-trait assertion: Rust 1.95 has no negative `UnwindSafe` impl for `UnsafeCell<T>`, but current `App` is still `!UnwindSafe` because its fields include platform trait objects and interior mutability. K07 now locks `AppCell: !UnwindSafe + !RefUnwindSafe` with `assert_not_impl_any!` and does not use `AssertUnwindSafe`.
+- rev 6 (2026-05-10) — Task 14a implementation added an explicit `PendingUpdateGuard` in `App::update` because the panic-restoration test requires `pending_updates` to return to zero after unwind. K07 unsafe audit is now 2 cell projection blocks plus 3 `app.rs` raw-pointer guard writes.
 **Phase:** 0-K (Kernel Cleanup) — third spec in the critical chain (K99 → K15 → **K07** → K05 → K01 → K02 → K03 → K04).
-**Plan:** [`.ai-factory/plans/feature-K07-appcell-removal-token-borrow.md`](../../../.ai-factory/plans/feature-K07-appcell-removal-token-borrow.md) (rev 4).
+**Plan:** [`.ai-factory/plans/feature-K07-appcell-removal-token-borrow.md`](../../../.ai-factory/plans/feature-K07-appcell-removal-token-borrow.md) (rev 7).
 **Type:** structural refactor of the App ownership primitive. Replaces `AppCell = RefCell<App>` (marked "Strongly consider removing after stabilization" in `app.rs:73-74`) with a hand-rolled, K15-aware borrow primitive. **HIGH-RISK** — touches every callback path, but signature-compatible by design.
 **Cross-refs:** K99 spec (`2026-05-08-K99-msrv-bump-1.95-design.md`); K15 spec (`2026-05-09-K15-reentrancy-contract-design.md`); ROADMAP K07 entry; RESEARCH Active Summary; `docs/promt.md` §E3; ARCHITECTURE Key Principles 1, 6, 8, 11; K12 (drop-order codification — Q9 cross-link); K06 (Window decomposition — sharding successor); K17 (test harness simplification — K15 Limitation #5 cross-link).
 
 ## Context
 
-flui-v2 inherits `AppCell = RefCell<App>` from the `gpui-ce` fork. The cell is wrapped in `Rc<AppCell>` and shared across `Application` (the public top-level handle), `App.this: Weak<AppCell>` (internal back-pointer), `AsyncApp` (async context), and the four test-context types (`TestAppContext`, `TestApp`, `HeadlessAppContext`, `VisualTestContext`). Re-entrancy was previously undefined: any nested `update_window` / `update_entity` would trigger `RefCell::borrow_mut` and panic with bare `BorrowMutError` text. K15 (the immediately preceding Phase 0-K spec) structured the contract — `ReentryError` enum, `WindowUpdateGuard` / `EntityUpdateGuard` RAII, `ReentryMode { Strict, Loose }`, unified `EntityMap::double_lease_panic` Display — but explicitly deferred the borrow primitive itself to K07 (K15 spec line 240: *"K07 — AppCell removal. Inherits `ReentryError` (may add new variants under token model)"*).
+flui-v2 inherits `AppCell = RefCell<App>` from the `gpui-ce` fork. The cell is wrapped in `Rc<AppCell>` and shared across `Application` (the public top-level handle), `App.this: Weak<AppCell>` (internal back-pointer), `AsyncApp` (async context), and the four test-context types (`TestAppContext`, `TestApp`, `HeadlessAppContext`, `VisualTestContext`). Re-entrancy was previously undefined: any nested `update_window` / `update_entity` would trigger `RefCell::borrow_mut` and panic with bare `BorrowMutError` text. K15 (the immediately preceding Phase 0-K spec) structured the contract — `ReentryError` enum, inline `window_update_stack` / `currently_updating_entity` guards, `ReentryMode { Strict, Loose }`, unified `EntityMap::double_lease_panic` Display — but explicitly deferred the borrow primitive itself to K07 (K15 spec line 240: *"K07 — AppCell removal. Inherits `ReentryError` (may add new variants under token model)"*).
 
 K07 closes E3 from `docs/promt.md` ("AppCell = RefCell<App> with TODO 'remove after stabilization' (HIGH-RISK)") and unblocks K05 (Element trait → context object), K01 (Provider rewrite), K02 (Widget identity / Key), K03 (Widget::build separation), K04 (Effect/Frame contract), and the Framework tier (Phase II-F SF04 — State<W> + StateMap; SF05 — setState + dirty-list).
 
@@ -23,13 +26,13 @@ Phase 1 of the plan dispatched three parallel research agents (UI-framework comp
 1. Replace `AppCell = RefCell<App>` with `flui_core::app::cell::AppCell` — a hand-rolled cell whose `try_borrow_mut` returns `Result<AppRefMut<'_>, ReentryError>` directly, eliminating the `BorrowMutError → ReentryError` conversion K15 introduced.
 2. Preserve the `Application(Rc<AppCell>)` and `App.this: Weak<AppCell>` topology so that 100+ migration callsites are signature-compatible.
 3. Discharge K15's six Known Limitations (with explicit per-limitation closure status — see §"K15 contract preservation" below):
-   - Limitation #1 (10+ unstructured `app.borrow_mut()` in `async_context.rs`): convert to `try_borrow_mut().map(...)?` shape.
+   - Limitation #1 (10+ unstructured `app.borrow_mut()` in `async_context.rs`): convert to `try_borrow_mut()?` shape where the method already returns `Result`, or to typed `panic_any(ReentryError::...)` where the public signature cannot widen.
    - Limitation #2 (`AsyncApp::as_mut` raw panic): structure via `ReentryError::AsyncContextAsMut` Display.
    - Limitation #3 (`web` platform dispatcher exposure): verified via existing test platform; smoke gate in plan Task 41.
    - Limitation #4 (`AppBorrowed` no source location): `#[track_caller]` on every `borrow*` method; `RUST_LOG=flui_core::app::cell=trace` for callsite context.
    - Limitation #5 (Window-level reentry behavioral tests): deferred to K17 (test harness simplification) per K15's own deferral. K07 does NOT extend the harness.
-   - Limitation #6 (panic-leak on `currently_updating_entity` / `window_update_stack`): closed via plan Task 14a — **raw-pointer field-projection guards** with `Drop` running `unsafe { *self.ptr = self.prev }`. The pointer is derived from `&mut field` but stored in the guard as `*mut`, releasing the borrow conflict that defeated K15's RAII attempts AND avoiding the `catch_unwind`/`resume_unwind` path that would leak `pending_updates`.
-4. Establish Miri-verified `unsafe` discipline for the cell module, scoped to ~3-5 `unsafe` blocks all in `crates/flui-core/src/app/cell.rs`.
+   - Limitation #6 (panic-leak on `currently_updating_entity` / `window_update_stack`, plus `pending_updates` during panic-through-`App::update`): closed via plan Task 14a — **raw-pointer field-projection guards**. The pointers are derived from `&mut` fields but stored as raw pointers, releasing the borrow conflict that defeated K15's RAII attempts and avoiding production `catch_unwind`/`resume_unwind`.
+4. Establish Miri-verified `unsafe` discipline: two projection blocks in `crates/flui-core/src/app/cell.rs` plus the Task 14a raw-pointer field guards in `app.rs`, all with SAFETY comments and targeted tests.
 5. Preserve K15's re-entrancy contract verbatim — every existing `ReentryError::*` variant produces the same Display under K07.
 
 ## Non-goals
@@ -63,7 +66,7 @@ Phase 1 of the plan dispatched three parallel research agents (UI-framework comp
 | Async context | `AsyncApp { app: Weak<AppCell>, … }` | [async_context.rs:23](../../../crates/flui-core/src/app/async_context.rs#L23) |
 | Test contexts | `Rc<AppCell>` field shape (4 types) | [test_context.rs:32](../../../crates/flui-core/src/app/test_context.rs#L32), [test_app.rs:41/322](../../../crates/flui-core/src/app/test_app.rs#L41), [headless_app_context.rs:40](../../../crates/flui-core/src/app/headless_app_context.rs#L40), [visual_test_context.rs:23](../../../crates/flui-core/src/app/visual_test_context.rs#L23) |
 | Borrow API | `AppCell::borrow_mut() -> AppRefMut<'_>`, `try_borrow_mut() -> Result<…, BorrowMutError>` | [app.rs:75-108](../../../crates/flui-core/src/app.rs#L75) |
-| Re-entry detection | K15 contract via `WindowUpdateGuard` + `EntityUpdateGuard` + `double_lease_panic` unified Display | [reentrancy.rs](../../../crates/flui-core/src/reentrancy.rs) |
+| Re-entry detection | K15 contract via inline `window_update_stack` / `currently_updating_entity` checks plus `double_lease_panic` unified Display | [reentrancy.rs](../../../crates/flui-core/src/reentrancy.rs), [app.rs](../../../crates/flui-core/src/app.rs) |
 | AppCell-derived callsites (post-spike recount) | **103 narrow-pattern + 10 storage + 33 symbol references** | `.k07-recon.txt` |
 | `App.this.upgrade()` patterns | **5 distinct sites** (NOT ~30 as plan rev 1-3 claimed) | app.rs:215, context.rs:74,110,166, test_context.rs:660 |
 | Unstructured `app.borrow_mut()` in `AsyncApp` | 10+ at lines 39, 45, 55, 65, 126, 135, 152, 168, 182 | K15 Limitation #1 |
@@ -72,7 +75,7 @@ Phase 1 of the plan dispatched three parallel research agents (UI-framework comp
 | K15 Limitation #6 panic-leak | `currently_updating_entity` (app.rs:2497) and `window_update_stack` not RAII-restored on panic | K15 spec line 202 + inline comment app.rs:2483 |
 | AppCell `#[doc(hidden)]` | yes | [app.rs:74](../../../crates/flui-core/src/app.rs#L74) — type hidden, methods are `pub` |
 | `K15` test count baseline | 344 passed + 1 ignored | `.k07-baseline.txt` |
-| Existing `unsafe` block count in flui-core | 801 (FFI-heavy, mostly platform/) | K07 adds 3-5 in `app/cell.rs` (+0.5%) |
+| Existing `unsafe` block count in flui-core | 801 (FFI-heavy, mostly platform/) | K07 adds 2 in `app/cell.rs` plus 3 raw-pointer field-guard writes in `app.rs` (+0.6%) |
 
 ## Design choice — three candidates
 
@@ -88,7 +91,7 @@ Phase 1 of the plan dispatched three parallel research agents (UI-framework comp
 
 **`unsafe` count:** zero. Pure ownership solution.
 
-**K15 fit:** eliminates `ReentryError::AppBorrowed` by construction (no cell). `WindowUpdateGuard` / `EntityUpdateGuard` still required (same-target re-entry detection lives on `App` itself, not the cell).
+**K15 fit:** eliminates `ReentryError::AppBorrowed` by construction (no cell). Inline `window_update_stack` / `currently_updating_entity` same-target checks still required (same-target re-entry detection lives on `App` itself, not the cell).
 
 **`App.this: Weak<AppCell>`:** removed. 5 upgrade sites need rewiring; in particular `test_context.rs:660` (`cx.this.upgrade().unwrap()`) materializes an `Rc<AppCell>` for the test harness — fundamentally breaks under A.
 
@@ -104,9 +107,9 @@ Custom `AppCell { app: UnsafeCell<App>, borrowed: Cell<BorrowState>, _not_send: 
 
 **HRTB cost:** none.
 
-**`unsafe` count:** 3-5 blocks, all in `app/cell.rs`: `borrow()` projection, `borrow_mut()` projection, optional `try_borrow_mut()` projection (or thin wrapper), guard `Drop` flag clear. Auditable in one file. Comparable to `std::cell::RefCell`'s internals.
+**`unsafe` count:** 2 projection blocks in `app/cell.rs` (`try_borrow` shared projection and `try_borrow_mut` exclusive projection) plus 3 raw-pointer field-guard writes in `app.rs` for Task 14a panic-safety (`currently_updating_entity`, `window_update_stack`, `pending_updates` / `flushing_effects`). All five are SAFETY-commented and covered by targeted tests. Comparable to `std::cell::RefCell`'s internals for the cell projections, with separate app-field guard justification for the K15 panic-leak closure.
 
-**K15 fit:** native. `AppCell::try_borrow_mut` returns `Err(ReentryError::AppBorrowed)` directly — the K15 `From<BorrowMutError>` impl becomes redundant (deleted in Task 9). `WindowUpdateGuard` / `EntityUpdateGuard` are ORTHOGONAL to the cell flag and remain necessary: cell flag = "is App borrowed at all", K15 = "is THIS specific window/entity already being updated". Different concerns, both stay.
+**K15 fit:** native. `AppCell::try_borrow_mut` returns `Err(ReentryError::AppBorrowed)` directly — the K15 `From<BorrowMutError>` impl becomes redundant (deleted in Task 9). The inline `window_update_stack` / `currently_updating_entity` guards are ORTHOGONAL to the cell flag and remain necessary: cell flag = "is App borrowed at all", K15 = "is THIS specific window/entity already being updated". Different concerns, both stay.
 
 **`App.this: Weak<AppCell>`:** unchanged. `Rc::new_cyclic` at app.rs:700 continues to work (cell still inside `Rc`). All 5 upgrade sites compile unchanged.
 
@@ -124,7 +127,7 @@ Custom `AppCell { app: UnsafeCell<App>, borrowed: Cell<BorrowState>, _not_send: 
 
 **`unsafe` count:** ~2 blocks for the brand invariant (PhantomData<fn(&'id ()) -> &'id ()> is safe; `unsafe` is in the `with_token` constructor that asserts uniqueness). Confined to one module, but the `'id` brand is conceptually load-bearing across the entire crate.
 
-**K15 fit:** token presence proves "I have access" but not "no one else has access for THIS window/entity" — K15's same-target detection is unaffected. `WindowUpdateGuard` / `EntityUpdateGuard` remain necessary. `ReentryError::AppBorrowed` may become unreachable (the brand statically prevents two simultaneous `&mut App` references), but the other variants stay.
+**K15 fit:** token presence proves "I have access" but not "no one else has access for THIS window/entity" — K15's same-target detection is unaffected. Inline `window_update_stack` / `currently_updating_entity` guards remain necessary. `ReentryError::AppBorrowed` may become unreachable (the brand statically prevents two simultaneous `&mut App` references), but the other variants stay.
 
 **`App.this: Weak<AppCell>`:** cannot be expressed cleanly. `Weak<AppCell>` requires a stable type; `AppCell<'id>` makes the field unstorable across `'id` regions.
 
@@ -187,36 +190,33 @@ Custom `AppCell { app: UnsafeCell<App>, borrowed: Cell<BorrowState>, _not_send: 
 //! `AppRef<'_>: !Send + !Sync` (transitively).
 //! `AppRefMut<'_>: !Send + !Sync` (transitively).
 //!
-//! **`UnwindSafe` is automatic. No manual impl needed.** Rev 1 and rev 2 both
-//! claimed manual intervention was required, but the rust-api-migration-auditor
-//! verified against std source (`core/src/panic/unwind_safe.rs:181-202` in
-//! 1.95 toolchain) that:
-//! - `UnwindSafe` is a `pub auto trait UnwindSafe {}` with NO negative impl
-//!   for `UnsafeCell<T>` or `RefCell<T>`.
-//! - `RefUnwindSafe` is a `pub auto trait RefUnwindSafe {}` with the ONLY
-//!   negative impl: `impl<T: ?Sized> !RefUnwindSafe for UnsafeCell<T>`.
+//! **No manual `UnwindSafe` / `RefUnwindSafe` impls.** Rev 1 and rev 2 both
+//! claimed manual intervention was required, but those traits are auto traits.
+//! Rust 1.95 std source (`core/src/panic/unwind_safe.rs:181-202`) confirms there
+//! is no negative impl of `UnwindSafe` for `UnsafeCell<T>` itself; however,
+//! `App` contains trait objects and interior-mutable fields that are not
+//! `UnwindSafe`, so K07 must not widen the contract by wrapping the storage in
+//! `AssertUnwindSafe` or adding a manual impl.
 //!
-//! Therefore:
-//! - Pre-K07 `AppCell` (wrapping `RefCell<App>`): `UnwindSafe` (auto), `!RefUnwindSafe`
-//!   (via `UnsafeCell<T>` inside `RefCell<T>`).
-//! - Post-K07 `AppCell` (wrapping `UnsafeCell<App>`): `UnwindSafe` (auto, identical
-//!   to pre-K07), `!RefUnwindSafe` (auto, also identical to pre-K07).
+//! Therefore K07 locks the actual compiler-derived behavior:
+//! - `AppCell: !UnwindSafe`
+//! - `AppCell: !RefUnwindSafe`
 //!
-//! **There is no regression.** The compile-time assertion below LOCKS
-//! `AppCell: UnwindSafe` so that any future code change accidentally introducing
-//! a `!UnwindSafe` field (e.g., a closure) is caught at compile time:
+//! **There is no manual widening.** The compile-time assertion below locks that
+//! negative behavior as the regression guard:
 //!
 //! ```ignore
-//! // Locks the auto-impl. No manual impl needed.
-//! static_assertions::assert_impl_all!(AppCell: std::panic::UnwindSafe);
+//! static_assertions::assert_not_impl_any!(
+//!     AppCell: std::panic::UnwindSafe,
+//!              std::panic::RefUnwindSafe,
+//! );
 //! ```
 //!
-//! **`RefUnwindSafe` decision (rev 3):** K07 keeps `AppCell: !RefUnwindSafe`
-//! (matches pre-K07). NO manual `impl RefUnwindSafe`. Reasoning: `RefUnwindSafe`
-//! semantics are about shared (`&AppCell`) references surviving panic. Since
-//! `AppCell` is `!Sync`, multi-thread panic-safety is moot. Within a single
-//! thread, `AppRef<'_>` (shared borrow) IS `RefUnwindSafe`-flavored at use site,
-//! but the cell type itself stays `!RefUnwindSafe` to match pre-K07 baseline.
+//! **`RefUnwindSafe` decision:** K07 keeps `AppCell: !RefUnwindSafe`. Reasoning:
+//! `RefUnwindSafe` semantics are about shared (`&AppCell`) references surviving
+//! panic. Since `AppCell` is `!Sync`, multi-thread panic-safety is moot. Within
+//! a single thread, the borrow flag is released on guard drop during unwind, but
+//! the cell type itself stays `!RefUnwindSafe`.
 //! If a future K-spec needs `RefUnwindSafe` for a specific `catch_unwind` pattern,
 //! that's a deliberate widening at that point — not a K07 concern.
 
@@ -282,7 +282,7 @@ impl AppCell {
     pub fn borrow(&self) -> AppRef<'_> {
         match self.try_borrow() {
             Ok(r) => r,
-            Err(e) => panic!("{}", e),
+            Err(e) => std::panic::panic_any(e),
         }
     }
 
@@ -291,7 +291,7 @@ impl AppCell {
     pub fn borrow_mut(&self) -> AppRefMut<'_> {
         match self.try_borrow_mut() {
             Ok(r) => r,
-            Err(e) => panic!("{}", e),
+            Err(e) => std::panic::panic_any(e),
         }
     }
 
@@ -430,18 +430,10 @@ mod auto_trait_tests {
     assert_not_impl_any!(AppRef<'static>: Send, Sync);
     assert_not_impl_any!(AppRefMut<'static>: Send, Sync);
 
-    // R3 — UnwindSafe is auto-impl'd (no negative impl on UnsafeCell or
-    // RefCell in std). Lock the behavior so any future code change
-    // accidentally introducing a !UnwindSafe field is caught at compile
-    // time. Pre-K07 RefCell<App>: UnwindSafe (auto); post-K07
-    // UnsafeCell<App>: UnwindSafe (auto). Identical.
-    assert_impl_all!(AppCell: std::panic::UnwindSafe);
-
-    // R3b — RefUnwindSafe is NOT impl'd (UnsafeCell has negative impl).
-    // Pre-K07 RefCell<App>: !RefUnwindSafe (via UnsafeCell inside);
-    // post-K07 UnsafeCell<App>: !RefUnwindSafe (directly). Lock the
-    // negative side too.
-    assert_not_impl_any!(AppCell: std::panic::RefUnwindSafe);
+    // R3 — no manual unwind-safety widening. App contains trait objects and
+    // interior-mutable fields that are not UnwindSafe; lock the compiler-derived
+    // negative behavior instead of wrapping storage in AssertUnwindSafe.
+    assert_not_impl_any!(AppCell: std::panic::UnwindSafe, std::panic::RefUnwindSafe);
 }
 ```
 
@@ -519,7 +511,7 @@ The K15 `impl From<std::cell::BorrowMutError> for ReentryError` block (reentranc
 ### Phase 5 (sequential after Phase 4)
 
 - **Tasks 20-24.** `elements/`, `subscription.rs`, `executor.rs` (test fixture only), `platform/*` (with K15 deferral comment updates), `examples/`.
-- **Task 25.** Final scan — zero `BorrowMutError`, zero `TRACK_THREAD_BORROWS`, zero AppCell-derived `borrow*` hits via narrow-pattern grep.
+- **Task 25.** Final scan — zero `BorrowMutError`, zero `TRACK_THREAD_BORROWS`, zero legacy `RefCell<App>` hits. Candidate B intentionally preserves `AppCell::borrow*` spelling, so remaining AppCell borrow hits are audited as compatibility API calls against the new cell, not as migration leftovers.
 
 ## K15 contract preservation table
 
@@ -533,13 +525,14 @@ The K15 `impl From<std::cell::BorrowMutError> for ReentryError` block (reentranc
 | `ReentryError::PromptInProgress` | unchanged | window.rs:5142 area | `Window::prompt` Result shape preserved |
 | `ReentryError::AppBorrowed` | **now produced DIRECTLY by `AppCell::try_borrow_mut`** | app/cell.rs (new) | `From<BorrowMutError>` impl DELETED (semver MAJOR — see §"Semver impact (rev 2)") |
 | `ReentryMode { Strict, Loose }` | unchanged | reentrancy.rs | `PanicLikeUpstream` deferred decision: DROP per Q3 |
-| `window_update_stack` inline push/pop | **panic-safety added via Task 14a** (raw-pointer guard) | app.rs:1605 push, 1611 pop (in `trail`); app.rs:1109 push, 1111 pop (in `open_window`) | rev 3: raw-pointer field-projection guard restores stack length on panic without catching/resuming through `App::update`'s frame. Steady-state inline pattern preserved |
-| `currently_updating_entity` inline replace/restore | **remains inline** for the steady-state path; **panic-safety added via Task 14a** (raw-pointer field-projection guard) | app.rs:2497 replace, 2504 restore | rev 1 proposed `EntityScope { app: &mut App }` RAII — does not compile. rev 2 proposed `catch_unwind(AssertUnwindSafe(...))` — leaks `pending_updates` via `resume_unwind` through `App::update`'s frame (skips `finish_update`), AND clears the entity guard while leaving the entity slot leaked (worse than K15 baseline). **rev 3:** raw-pointer guard `Guard { ptr: *mut Option<EntityId>, prev }` with Drop running `unsafe { *self.ptr = self.prev }`. Holds `*mut`, not `&mut` — no borrow conflict with closure's `cx`. Drop runs on panic via standard stack-unwind; no `catch_unwind` needed; `pending_updates` semantics fully preserved |
+| `window_update_stack` inline push/pop | **panic-safety added via Task 14a** (`WindowUpdateStackGuard`) | `app.rs` `open_window` and `update_window_id` | raw-pointer guard restores stack length on panic without production `catch_unwind`; normal path still pops before window-closed observers |
+| `currently_updating_entity` inline replace/restore | **panic-safety added via Task 14a** (`CurrentEntityGuard`) | `app.rs` `update_entity` | raw-pointer guard restores previous entity id on panic without borrowing `&mut App` across the closure body |
+| `pending_updates` / `flushing_effects` | **panic-safety added via Task 14a** (`PendingUpdateGuard`) | `app.rs` `App::update` | guard decrements one pending update and clears `flushing_effects` during unwind; normal path disarms after `finish_update()` |
 | `EntityMap::double_lease_panic` unified Display | unchanged | app/entity_map.rs:142, 207 | Same |
 | `cx.defer` / `Window::defer` escape hatches | unchanged | app.rs:1655, window.rs:1799 | Same |
 | `observe_in` / `subscribe_in` callback discard | **unchanged** (silent-loss class — K15 documented as accepted) | context.rs:334, 363 | rev 1 omitted this row; rev 2 adds. Behavior: K15 logs `warn!` but `.unwrap_or(false)` discards the error. K07 preserves verbatim |
 | `borrow_mut_error_converts_to_app_borrowed` test | **DELETED in same commit as `From<BorrowMutError>`** (Task 9, commit 5) | reentrancy.rs:253-259 | rev 1 missed this. The test exercises the impl being deleted; deletion is mandatory, not optional |
-| K15 11 reentrancy tests | **all 11 pass under K07** | Various locations | Required by plan Task 26 done criterion 11 |
+| K15 reentrancy tests | **surviving tests pass under K07; deleted `BorrowMutError` conversion test replaced by direct AppCell contention test** | Various locations + new app/cell test | Required by plan Task 26 done criterion 11 |
 
 ## Decisions on Q1-Q12 (all resolved — rev 2 amendments)
 
@@ -553,7 +546,7 @@ The K15 `impl From<std::cell::BorrowMutError> for ReentryError` block (reentranc
 | Q6 | **PR-blocking scoped Miri** for `app/cell.rs` only — `cargo +nightly miri test -p flui-core cell` with default Stacked Borrows. **Tree Borrows (`MIRIFLAGS=-Zmiri-tree-borrows`) added as a separate non-blocking gate** (cargo-miri logs as scheduled CI job, not PR-blocking). Rationale: Tree Borrows is the active research successor; UnsafeCell projection behavior is changing. Run both during dev, gate only the stable model. | Soundness gate for new `unsafe`; bounded cost |
 | Q7 | NO split — single PR | Candidate B is signature-compatible; no review-overhead benefit from split |
 | Q8 | Keep `AppContext::as_mut` trait shape | Widening breaks 5 implementors + downstream |
-| Q9 | `UnsafeCell<App>` by-value via `Rc::new_cyclic` preserves Drop. **Manual `unsafe impl UnwindSafe for AppCell {}` required** (rev 2 — UnsafeCell<T>: !UnwindSafe by default; without manual impl, K07 regresses pre-K07 RefCell<App>: UnwindSafe). | Matches K12 invariant; restores pre-K07 UnwindSafe behavior |
+| Q9 | `UnsafeCell<App>` by-value via `Rc::new_cyclic` preserves Drop. **No manual `UnwindSafe` / `RefUnwindSafe` impls and no `AssertUnwindSafe` storage wrapper.** `App` is not `UnwindSafe` under Rust 1.95 because of trait objects and interior-mutable fields, so K07 locks `AppCell: !UnwindSafe + !RefUnwindSafe` with `assert_not_impl_any!`. | Avoids compile-error manual impls and avoids widening unwind-safety beyond the compiler-derived contract |
 | Q10 | `Application: Clone` remains absent | Out of K07 scope |
 | Q11 | K07-only CHANGELOG entry; K99/K15 backfill in separate PR | PR scope discipline |
 | Q12 | `K07 — AppCell removal (Phase 0-K, third spec)` | K15 PR #9 style; architectural change |
@@ -575,7 +568,7 @@ K07 introduces multiple semver breakages. cargo-semver-checks (roadmap R2, post-
 | `ReentryError::AppGoneAway` new variant | **MINOR** (forward-compatible) | Enum is `#[non_exhaustive]` |
 | `ReentryError::AsyncContextAsMut` new variant | **MINOR** (forward-compatible) | Same |
 | `AsyncApp::app()` (PRIVATE) widens return type | **NONE** (private method) | Cascade absorbed inside AsyncApp; public methods keep panic semantics for non-Result cases (Q4) |
-| Public AsyncApp methods that return `T` (e.g., `new`, `update_entity`) | **NONE** (semantics preserved via panic-Display) | Q4 keeps panic for non-Result methods; Display Text changes (`expect("app was released…")` → `panic!("{}", AppGoneAway)`) — affects `catch_unwind` payload type |
+| Public AsyncApp methods that return `T` (e.g., `new`, `update_entity`) | **NONE** (panic semantics preserved, payload type intentionally structured) | Q4 keeps panic for non-Result methods; payload changes (`expect("app was released…")` `&'static str` → `panic_any(ReentryError::AppGoneAway)`) — affects `catch_unwind` payload type |
 | `panic!` payload type changes from `&'static str` and `BorrowMutError` to `Box<ReentryError>` (via `panic_any`) | **OBSERVABLE** | Any `catch_unwind` that downcasts payload to `BorrowMutError` or specific `&str` breaks. K07 contract (rev 3): panic payloads are typed `Box<ReentryError>` for K07-introduced panic sites; old payloads (`&'static str`, `BorrowMutError`) gone. `catch_unwind` callers should `downcast_ref::<ReentryError>()` for K07 panics |
 
 **CHANGELOG (Task 32a) MUST flag the From<BorrowMutError> deletion and try_borrow_mut return-type widening as semver MAJOR breaks.** Migration guide (Task 32b) MUST show:
@@ -597,11 +590,13 @@ K07 introduces multiple semver breakages. cargo-semver-checks (roadmap R2, post-
 |---|---|---|---|
 | 1 | `try_borrow` `let app_ref = unsafe { &*self.app.get() }` | `borrowed` flag transitioned to `Shared(_)` before access; no `Mut` coexists; `app_ref` lifetime ≤ `AppRef::Drop` ≤ cell lifetime; one root reference; Stacked Borrows: projection is taken from the unique root reference `cell.app` with no aliased `&mut` from a different root in scope. | `prop_borrow_then_borrow_drop_releases` |
 | 2 | `try_borrow_mut` `let app_mut = unsafe { &mut *self.app.get() }` | `borrowed` flag transitioned to `Mut`; no `Shared` or `Mut` coexists by enum exhaustiveness; lifetime same as #1; one root reference. | `prop_borrow_mut_then_borrow_mut_returns_app_borrowed` |
-| 3* | `Guard { ptr, prev }` raw-pointer field-projection in Task 14a (`update_entity` and `update_window_id`) | `*self.ptr = self.prev` in `Drop`. SAFETY: `ptr: *mut Option<EntityId>` is derived from `&mut cx.currently_updating_entity` where `cx: &mut App` is alive for the entire enclosing `self.update(\|cx\| { … })` closure body; the guard is dropped at the end of the closure scope (or during unwind), strictly before `cx` exits scope. No aliased reference exists because the guard holds only the raw pointer, not a borrow. Single-threaded `!Send + !Sync` cell — no concurrent access. | `prop_currently_updating_entity_restored_after_panic` |
+| 3* | `CurrentEntityGuard` raw-pointer field projection in `update_entity` | `*self.ptr = self.prev` in `Drop`. SAFETY: `ptr` is derived from `&mut cx.currently_updating_entity`; the guard holds only the raw pointer, not a borrow, and drops before `cx` exits the enclosing update closure. | `currently_updating_entity_and_pending_updates_restore_after_panic` |
+| 4* | `WindowUpdateStackGuard` raw-pointer field projection in `open_window` / `update_window_id` | `(*self.stack).pop()` in `Drop` or the normal early-pop path. SAFETY: `stack` is derived from `&mut cx.window_update_stack`; the guard holds only the raw pointer and has an `active` flag to avoid double-pop after the normal observer-before-pop invariant is satisfied. | `window_update_stack_restores_after_open_window_panic` |
+| 5* | `PendingUpdateGuard` raw-pointer app projection in `App::update` | During unwind, decrement one pending update and clear `flushing_effects`. SAFETY: pointer is derived from the `&mut App` passed to `App::update`; guard stores only the raw pointer so the update closure can receive `&mut App`. | `currently_updating_entity_and_pending_updates_restore_after_panic` |
 
-**\*Block 3 lives in `app.rs`, not `app/cell.rs`** — it's part of Task 14a's panic-safety fix, not the cell primitive. Counted in K07's total `unsafe` audit but in a different module. Two analogous guards exist (one for `currently_updating_entity` in `update_entity`, one for `window_update_stack` in `update_window_id` — same SAFETY argument, distinct callsites).
+**\*Blocks 3-5 live in `app.rs`, not `app/cell.rs`** — they are Task 14a panic-safety guards, not the cell primitive.
 
-**Two `unsafe` blocks in `app/cell.rs`** (the cell primitive itself); **two `unsafe` blocks in `app.rs`** (Task 14a panic-safety guards). Total: 4 `unsafe` blocks across K07 implementation, all single-line `*self.ptr` writes or `&mut *cell.app.get()` projections.
+**Two `unsafe` blocks in `app/cell.rs`** (the cell primitive itself); **three `unsafe` blocks in `app.rs`** (Task 14a panic-safety guards). Total: 5 `unsafe` blocks across K07 implementation, all small field writes/pops or `cell.app.get()` projections.
 
 **NO `unsafe impl` blocks for auto-traits.** Rev 2 mistakenly added `unsafe impl UnwindSafe` / `unsafe impl RefUnwindSafe`; both are compile errors (E0199 — these traits aren't unsafe) AND unnecessary (UnwindSafe is auto-impl'd; RefUnwindSafe stays `!` to match pre-K07).
 
@@ -632,7 +627,7 @@ Adds `static_assertions = "1"` to `[dev-dependencies]` (single-use crate, ~50 Lo
   - `prop_panic_during_borrow_releases_borrow`
   - `prop_borrow_share_count_caps` (saturation guard)
   - `prop_currently_updating_entity_restored_after_panic` (R5 / Limitation #6)
-  - **Port forward all 11 K15 reentrancy tests** to the new primitive.
+  - **Port forward the surviving K15 reentrancy tests** to the new primitive and replace the deleted `borrow_mut_error_converts_to_app_borrowed` test with a direct AppCell contention test.
 - **AsyncApp behavioral tests (Task 28):**
   - `async_app_update_after_app_drop_returns_app_gone_away`
   - `async_app_as_mut_after_drop_returns_structured_error`
@@ -644,13 +639,13 @@ Adds `static_assertions = "1"` to `[dev-dependencies]` (single-use crate, ~50 Lo
 
 1. **Runtime borrow check not eliminated** — Candidate B keeps the `O(1)` flag check. ROADMAP Key Principle #8 ("no `Rc<RefCell<…>>` on hot paths") is interpreted permissively: the flag check is sub-microsecond, not a hot-path concern. Strict elimination would require Candidate A (deferred).
 2. **AsyncApp full surface redesign deferred** — K15 Limitation #1 (10+ unstructured) partially resolved via `try_borrow_mut() -> Result<_, ReentryError>`. Full enqueue-then-poll redesign is a future spec.
-3. **3-5 `unsafe` blocks added** — confined to one file; SAFETY-commented; Miri-verified. Marginal +0.5% over the 801 existing FFI-heavy unsafe sites.
+3. **5 K07 `unsafe` blocks added** — 2 projection blocks in `crates/flui-core/src/app/cell.rs` plus 3 raw-pointer field-guard writes in `app.rs` for Task 14a panic-safety. All are SAFETY-commented; the cell projections are Miri-verified by the scoped cell tests, and the app.rs guards are covered by panic-restoration tests. Marginal +0.6% over the 801 existing FFI-heavy unsafe sites.
 4. **Cargo-semver-checks (R2 in roadmap) will flag changes to `pub struct AppCell` internals** — `#[doc(hidden)]` is "soft private" for semver purposes. Documented for the future R2 spec.
 5. **K05 may need partial / sharded borrows** — out of K07 scope. K05's plan inherits the monolithic-cell choice; sharding is K06+ territory.
 
 ## Done criteria
 
-(Plan Done Criteria 1-24, listed verbatim. K07 closes when all 24 are checked. See plan §"Done criteria".)
+The authoritative checklist lives in the plan's `## Done criteria` section. As of plan rev 7 it contains 32 numbered / lettered criteria; K07 closes when the full plan checklist is satisfied.
 
 ## Cross-references
 
@@ -679,7 +674,7 @@ Adds `static_assertions = "1"` to `[dev-dependencies]` (single-use crate, ~50 Lo
 - **Tier 1 (PR-blocking):** R1 Stacked Borrows, R2 !Send+!Sync, R3 UnwindSafe, R4 #[track_caller], R5 panic-leak (Task 14a), R6 BorrowState transitions.
 - **Tier 2 (review-gating):** R7 Miri CI policy (RESOLVED to PR-blocking via Q6), R8 cargo-semver-checks (deferred), AsyncApp regressions, K15 test regressions, web-platform regressions, drop-order.
 - **Tier 3 (future-coupling, documented):** R9 K05 partial borrows, R10 Phase III `App: Send`, R11 mental model, R12 drop-on-panic.
-- **Tier 4 (honest limitations):** L1 runtime check not eliminated, L2 AsyncApp redesign deferred, L3 +3-5 `unsafe`.
+- **Tier 4 (honest limitations):** L1 runtime check not eliminated, L2 AsyncApp redesign deferred, L3 +5 K07 `unsafe` blocks split across `app/cell.rs` and `app.rs`.
 
 ## Future considerations
 
@@ -711,9 +706,9 @@ Three reviewers dispatched in parallel; total 8 BLOCKERs / 12 MAJORs / 10 MINORs
 
 1. **`WindowUpdateGuard` / `EntityUpdateGuard` / `commit_pop` types do not exist** (arch + verified via grep returning zero matches in `crates/flui-core/src/`). K15's plan documented these RAII types, but the implementation rejected them per the inline comment at app.rs:2488-2491 ("RAII guards conflicted with Rust borrow rules"). K15 uses inline push/pop on `window_update_stack` (app.rs:1605, 1611) and inline replace/restore on `currently_updating_entity` (app.rs:2497, 2504). Spec rev 1 K15 contract preservation table FABRICATED these types. **Rev 2 fix:** preservation table corrected to reflect actual inline patterns.
 
-2. **`UnwindSafe` claim INVERTED** (arch + api). Pre-K07: `RefCell<App>: UnwindSafe` UNCONDITIONALLY (std special-cases). Post-K07: `UnsafeCell<App>: !UnwindSafe` UNCONDITIONALLY (std special-cases). Rev 1 claimed "AppCell: UnwindSafe IFF App: UnwindSafe" — wrong direction. **Rev 2 fix:** manual `unsafe impl UnwindSafe for AppCell {}` and `unsafe impl RefUnwindSafe for AppCell {}` required, with safety comment mirroring std's RefCell impl. Two new entries in unsafe audit (count 3 → 4).
+2. **`UnwindSafe` claim INVERTED** (arch + api). Rev 2 believed pre-K07 and post-K07 auto-trait behavior diverged. **Rev 2 attempted fix, later superseded by rev 3:** manual `unsafe impl UnwindSafe for AppCell {}` / `unsafe impl RefUnwindSafe for AppCell {}`. Rev 3 verified this was both unnecessary and a compile error for `UnwindSafe`; the current design uses auto-trait assertions only.
 
-3. **`EntityScope { app: &'a mut App }` does not compile** (arch + migration). The proposed Task 14a RAII guard would require a `&mut App` borrow that aliases the closure's `cx: &mut App` — same conflict K15 had. **Rev 2 fix:** Task 14a re-scoped from `EntityScope` RAII to `std::panic::catch_unwind(AssertUnwindSafe(\|\| { … }))` pattern around the closure body; field restoration runs after catch.
+3. **`EntityScope { app: &'a mut App }` does not compile** (arch + migration). The proposed Task 14a RAII guard would require a `&mut App` borrow that aliases the closure's `cx: &mut App` — same conflict K15 had. **Rev 2 attempted fix, later superseded by rev 3:** `std::panic::catch_unwind(AssertUnwindSafe(...))` around the closure body. Rev 3 replaced this with raw-pointer field-projection guards because the catch/resume path leaks `pending_updates`.
 
 4. **Test `borrow_mut_error_converts_to_app_borrowed` orphans** at reentrancy.rs:253-259 (migration + api). Test exercises the `From<BorrowMutError>` impl being deleted. Plan Task 9 said "if any" — must be MANDATORY. **Rev 2 fix:** preservation table explicitly lists test for deletion in same commit as From impl (commit 5).
 
@@ -721,7 +716,7 @@ Three reviewers dispatched in parallel; total 8 BLOCKERs / 12 MAJORs / 10 MINORs
 
 5. **`#[track_caller]` on `Drop` is no-op** (api). Rust drop glue does not propagate caller location. Rev 1 plan Task 8 required it. **Rev 2 fix:** Drop impls explicitly do NOT carry `#[track_caller]`; only the acquire-side `borrow*` methods do. Documented in code comments and §"Type surface".
 
-6. **`AsyncApp::app()` cascade not enumerated** (api). Method is private but widening Result cascades to 10+ public AsyncApp methods. **Rev 2 fix:** Q4 amended — private widening absorbed inside AsyncApp; public methods retain current panic semantics via `unwrap_or_else(|e| panic!("{}", e))` for non-Result cases, propagate `?` for Result cases. `AppGoneAway` is dual-purpose: returnable in Result paths, panic-Display in T-return paths.
+6. **`AsyncApp::app()` cascade not enumerated** (api). Method is private but widening Result cascades to 10+ public AsyncApp methods. **Rev 2 fix, amended by rev 3:** private widening absorbed inside AsyncApp; Result-returning public methods propagate `?`; non-Result methods use `std::panic::panic_any(e)` so `catch_unwind` can downcast to `ReentryError`.
 
 7. **Four other `as_mut` panic sites** not covered by Q2 (migration). Sites: async_context.rs:412 (AsyncWindowContext), test_context.rs:68 (TestAppContext), headless_app_context.rs:230 (HeadlessAppContext), visual_test_context.rs:430 (VisualTestContext). **Rev 2 fix:** Q2 expanded to all 5 sites; plan Task 15 expanded to migrate all 5.
 
@@ -738,7 +733,7 @@ Three reviewers dispatched in parallel; total 8 BLOCKERs / 12 MAJORs / 10 MINORs
 **MINOR fixes:**
 
 - TLCell "drop-in replacement" softened to "functional alternative requiring API surface changes" (Future considerations).
-- "3 unsafe blocks total" corrected to "4 unsafe blocks total" (audit table now shows 2 projection blocks + 2 unsafe impl blocks).
+- "3 unsafe blocks total" was temporarily corrected to "4 unsafe blocks total" in rev 2; rev 3 re-corrected this to 2 projection blocks in `app/cell.rs` plus 2 raw-pointer guard writes in `app.rs`; rev 6 implementation added the `PendingUpdateGuard`, bringing the final implementation count to 5, with **no** unsafe impl blocks.
 - `migration-risk-adversary` finding #22 (Cargo.lock policy vs static_assertions) is a FALSE POSITIVE — `static_assertions v1.1.0` is already in lockfile transitively via postage v0.5.0 (verified by `rust-api-migration-auditor`). No policy violation.
 
 **Known false positives / disputed findings:**
@@ -749,8 +744,8 @@ Three reviewers dispatched in parallel; total 8 BLOCKERs / 12 MAJORs / 10 MINORs
 
 **Net rev 2 changes:**
 
-- Spec sections rewritten/added: K15 contract preservation table (corrected), Auto-trait invariants (UnwindSafe inverted), Type surface (Rc::new_cyclic, no AppCell::new, Debug on BorrowState, no #[track_caller] on Drop), unsafe audit (4 blocks not 3), Q2 (5 sites not 1), Q4 (cascade policy specified), Q9 (manual UnwindSafe impl), §"Semver impact (rev 2)", §"Re-export rule (rev 2)", §"`pub Rc<AppCell>` on test contexts — preserved".
-- Plan changes: Task 8 (Drop no #[track_caller], Debug on BorrowState, manual UnwindSafe impl, pub use not pub(crate) use); Task 9 (mandatory test deletion); Task 14a (catch_unwind + AssertUnwindSafe pattern, NOT EntityScope); Task 14b (NEW — paint/dispatch hot-path audit); Task 15 (5 as_mut sites); Task 26 (added catch_unwind tests).
+- Spec sections rewritten/added in rev 2: K15 contract preservation table, Type surface (Rc::new_cyclic, no AppCell::new, Debug on BorrowState, no #[track_caller] on Drop), Q2 (5 sites not 1), Q4 (cascade policy specified), §"Semver impact (rev 2)", §"Re-export rule (rev 2)", §"`pub Rc<AppCell>` on test contexts — preserved". Rev 3 superseded the rev 2 auto-trait and catch-unwind parts.
+- Plan changes in rev 2: Task 8 (Drop no #[track_caller], Debug on BorrowState, pub use not pub(crate) use); Task 9 (mandatory test deletion); Task 14b (NEW — paint/dispatch hot-path audit); Task 15 (5 as_mut sites). Rev 3 superseded the rev 2 manual-UnwindSafe and catch-unwind Task 14a instructions.
 
 ### Revision 3 (2026-05-09 — second adversarial review absorbed)
 
@@ -778,7 +773,7 @@ Rev 2 itself reviewed by 4 agents (3 adversarial: `flui-arch-reviewer`, `migrati
 
 **MAJOR fixes (rev 3):**
 - Q2 `AsyncContextAsMut` Display rephrased context-agnostic ("`AppContext::as_mut` is forbidden in async/test/headless context types") instead of misleading "AsyncApp" wording.
-- "4 unsafe blocks" → 4 (corrected accounting): 2 in `app/cell.rs` (projections) + 2 in `app.rs` (Task 14a guards). NO `unsafe impl` blocks (rev 2 mistakenly added two — both compile errors).
+- "4 unsafe blocks" → 5 (implementation accounting): 2 in `app/cell.rs` (projections) + 3 in `app.rs` (Task 14a guards, including `PendingUpdateGuard`). NO `unsafe impl` blocks (rev 2 mistakenly added two — both compile errors).
 - `static_assertions` MUST be added to `[dev-dependencies]` of `crates/flui-core/Cargo.toml` explicitly (in lockfile transitively but not in manifest).
 - Miri PR-blocking requires CI job — added explicit task: append step to `.github/workflows/ci.yml` with `dtolnay/rust-toolchain@nightly` + `cargo +nightly miri test -p flui-core cell`.
 - `#[track_caller]` does not propagate through `panic_any(e)` for non-Result methods. Documented as known DX limitation matching pre-K07 `expect()` parity.
@@ -794,7 +789,7 @@ Rev 2 itself reviewed by 4 agents (3 adversarial: `flui-arch-reviewer`, `migrati
 **Quality findings absorbed (general-purpose review):**
 - Saturation guard on `BorrowState::Shared(u32::MAX)` retained as defensive code, but corresponding proptest dropped (test was theatre per general-purpose review).
 - Audit pending: investigate whether ANY callsite genuinely needs `try_borrow` (shared) vs `try_borrow_mut` (exclusive). If zero, drop `BorrowState::Shared` entirely. Added Task 7a (NEW).
-- Criterion bench `bench_borrow_mut_acquire_release` — added Task 26b (NEW).
+- AppCell acquire/release bench example — added Task 26b (NEW), using the repo's existing `examples/bench/` pattern without adding Criterion or touching `Cargo.lock`.
 - `App.this: Weak<AppCell>` is K06 shard-resistance point — added to Future Considerations.
 - Xilem thread-local pattern — added one-line note in Future Considerations alongside K06 sharding.
 
@@ -804,7 +799,17 @@ Rev 2 itself reviewed by 4 agents (3 adversarial: `flui-arch-reviewer`, `migrati
 
 **Net rev 3 changes:**
 - Spec sections rewritten: Auto-trait invariants (no manual impls; auto-trait analysis), Type surface (no unsafe impl), unsafe audit (4 blocks all single-line projections/writes), K15 contract preservation table (raw-pointer guards), Q2 + Q4 (panic_any), §"Semver impact" (typed payload), §"Decisions on Q1-Q12" Q9 (NO manual UnwindSafe impl).
-- Plan changes: Task 8 (no unsafe impl, no manual UnwindSafe; assertion-based; debug_assert! cfg-gated); Task 9 (line-96 update atomic); Task 14a (raw-pointer guards, NOT catch_unwind); Task 14b (unconditionally PR-blocking, audit output committed); Task 26 (panic_any tests, pending_updates tests, Display tests for new variants); NEW Task 7a (try_borrow shared-call audit); NEW Task 8a (Cargo.toml dev-deps); NEW Task 26b (criterion bench); NEW Task 27a (Miri CI job).
+- Plan changes: Task 8 (no unsafe impl, no manual UnwindSafe; assertion-based; debug_assert! cfg-gated); Task 9 (line-96 update atomic); Task 14a (raw-pointer guards, NOT catch_unwind); Task 14b (unconditionally PR-blocking, audit output committed); Task 26 (panic_any tests, pending_updates tests, Display tests for new variants); NEW Task 7a (try_borrow shared-call audit); NEW Task 8a (Cargo.toml dev-deps); NEW Task 26b (bench example); NEW Task 27a (Miri CI job).
 - Open Questions: still EMPTY — Q1-Q12 all resolved with rev 3 amendments.
 
-51 → **55 tasks** (+1 try_borrow audit, +1 Cargo.toml, +1 criterion bench, +1 Miri CI job).
+50 → **54 checkbox tasks** (+1 try_borrow audit, +1 Cargo.toml, +1 bench example, +1 Miri CI job). Plan rev 7 adds Task 7b, bringing the active plan to 55 checkbox tasks.
+
+### Revision 4 (2026-05-10 — aif-improve drift cleanup)
+
+Rev 4 is an editorial/spec-consistency pass after plan rev 7. It removes active contradictions without changing Candidate B:
+
+- Active K15 references now name the real inline `window_update_stack` / `currently_updating_entity` checks rather than nonexistent guard types.
+- Q9 now matches the rev 3 auto-trait correction: no manual `UnwindSafe` / `RefUnwindSafe` impls; compile-time assertions lock behavior.
+- Panic sketches use `std::panic::panic_any(e)` for typed `ReentryError` payloads.
+- K15 test accounting recognizes that the `BorrowMutError` conversion test is deleted and replaced with a direct AppCell contention test.
+- Task 26b is described as a bench example, not a Criterion benchmark, to preserve K07's no-`Cargo.lock`-modification non-goal.

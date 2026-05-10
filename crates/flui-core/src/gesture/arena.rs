@@ -162,7 +162,7 @@ impl ArenaTerminalResolution {
 /// an async timer task). The handle is internally `Weak`, so:
 ///
 /// - Window teardown drops the underlying arena `Rc`, and every
-///   subsequent [`Self::declare_winner`] / [`Self::release`] call
+///   subsequent `declare_winner` / `release` call
 ///   returns silently without dispatching anything.
 /// - Recognizer code never sees the private `GestureArenaManager`
 ///   type; the public surface is exactly the methods on this struct.

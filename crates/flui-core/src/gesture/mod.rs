@@ -42,26 +42,26 @@
 //!
 //! # Module overview
 //!
-//! - [`pointer_event`] — `PointerEvent`, `PointerKind`, `PointerPhase`,
+//! - `pointer_event` — `PointerEvent`, `PointerKind`, `PointerPhase`,
 //!   `PointerId`, `PointerButtons`. The normalized wire format.
-//! - [`pointer_signal`] — `PointerSignalEvent`
+//! - `pointer_signal` — `PointerSignalEvent`
 //!   (`Scroll` | `Scale` | `ScrollInertiaCancel`),
 //!   non-competitive signals that bypass the arena.
-//! - [`hit_test`] — `HitTestEntry`, `HitTestResult`, `HitTestBehavior`.
+//! - `hit_test` — `HitTestEntry`, `HitTestResult`, `HitTestBehavior`.
 //!   Reuses the existing `Hitbox` infrastructure.
-//! - [`gesture_settings`] — `GestureSettings` (Flutter-parity defaults).
-//! - [`binding`] — `GestureBinding`, the per-`Window` owner of arena +
+//! - `gesture_settings` — `GestureSettings` (Flutter-parity defaults).
+//! - `binding` — `GestureBinding`, the per-`Window` owner of arena +
 //!   settings + sanitizer.
-//! - [`dispatch`] — `PlatformInput` → `PointerEvent` conversion +
+//! - `dispatch` — `PlatformInput` → `PointerEvent` conversion +
 //!   `PointerSanitizer`. `pub(crate)` only.
-//! - [`arena`] — `GestureArenaManager` and friends. The arena types
+//! - `arena` — `GestureArenaManager` and friends. The arena types
 //!   themselves are `pub(crate)`; consumers reach the manager via
 //!   `pub(crate)` accessors on `GestureBinding`.
-//! - [`arena_team`] — `GestureArenaTeam`, captain-deferred grouping.
-//! - [`recognizer`] — `GestureRecognizer` trait + `SemanticAction` enum.
-//! - [`velocity_tracker`] — `VelocityTracker` + `Velocity` +
+//! - `arena_team` — `GestureArenaTeam`, captain-deferred grouping.
+//! - `recognizer` — `GestureRecognizer` trait + `SemanticAction` enum.
+//! - `velocity_tracker` — `VelocityTracker` + `Velocity` +
 //!   `PositionSample`. Flutter-LSQ port.
-//! - [`recognizers`] — Five concrete recognizers + their `*Details`
+//! - `recognizers` — Five concrete recognizers + their `*Details`
 //!   types.
 //!
 //! # Performance characteristics
@@ -84,14 +84,14 @@
 //!
 //! - **DoubleTap hold/release wired through dispatch.** `arena.hold`
 //!   runs on `Down` for any recognizer that opts into
-//!   [`recognizer::RecognizerLifecycle::needs_arena_hold`]; a
-//!   per-pointer `Task<()>` stored on [`binding::GestureBinding`]
+//!   `RecognizerLifecycle::needs_arena_hold`; a
+//!   per-pointer `Task<()>` stored on `GestureBinding`
 //!   schedules the deferred `arena.release` after
 //!   `double_tap_timeout`. Cancellation paths drop the timer when
 //!   the second tap accepts, when the arena is cancelled, or when
 //!   the binding itself drops.
 //! - **LongPress timer-driven acceptance.** `LongPress` registers a
-//!   [`arena::ArenaBackChannel`] (a `Weak`-backed handle to the
+//!   `ArenaBackChannel` (a `Weak`-backed handle to the
 //!   per-window `GestureArenaManager`) and the spawned timer task
 //!   upgrades it to call `arena.declare_winner` on expiry. Window
 //!   teardown is a silent no-op via the `Weak` upgrade contract.
@@ -100,11 +100,11 @@
 //!   snapshot without producing duplicate `(PointerId, GestureArena)`
 //!   pairs. Locked by P-T15.5-A property test.
 //! - **`MouseExit` → `PointerPhase::Removed`.** Per-target leave
-//!   events stay synthesized via [`dispatch::PointerSanitizer::diff_hover`]
+//!   events stay synthesized via `PointerSanitizer::diff_hover`
 //!   as `Exit`; device-leave is `Removed`. See
-//!   [`pointer_event::PointerPhase`] for the distinction.
+//!   `PointerPhase` for the distinction.
 //! - **Per-window settings flow.** `GestureBinding::register_recognizer`
-//!   invokes [`recognizer::RecognizerLifecycle::configure_settings`]
+//!   invokes `RecognizerLifecycle::configure_settings`
 //!   so `window.gesture_settings_mut()` overrides actually take
 //!   effect for recognizers built via fluent `__internal_on_*`
 //!   helpers (which run inside `render()` and thus previously baked
@@ -198,14 +198,14 @@
 //! # Common pitfalls
 //!
 //! - **Do not call `cx.stop_propagation()` from inside
-//!   [`recognizer::GestureRecognizer::handle_event`].** Propagation
+//!   `GestureRecognizer::handle_event`.** Propagation
 //!   control belongs to the raw-listener chain
 //!   (`on_mouse_*`/`on_click`); the arena declares winners via
-//!   [`arena::GestureDisposition::Accepted`]. The dispatcher resets
+//!   `GestureDisposition::Accepted`. The dispatcher resets
 //!   `cx.propagate_event = true` between the arena pass and the raw
 //!   chain to preserve the `cx.active_drag`/`AnyDrag` contract.
 //! - **`HitTestBehavior` ≠ `HitboxBehavior`.** They are orthogonal —
-//!   see the table on [`hit_test::HitTestBehavior`]. Setting one does
+//!   see the table on `HitTestBehavior`. Setting one does
 //!   not change the other.
 //! - **`PointerSignalEvent` bypasses the arena.**
 //!   Do not register a recognizer expecting to compete on scroll
@@ -278,7 +278,7 @@
 //! (recognizers, arenas, bindings). The two coexist: platform-side
 //! `GestureEvent`s are translated into this module's `PointerEvent` /
 //! `PointerSignalEvent` via the conversions in
-//! [`dispatch`](self::dispatch).
+//! `dispatch`.
 
 // Submodules are `pub(crate)` so the public surface is **only** the
 // per-symbol `pub use` block below (mirrored by the canonical flat

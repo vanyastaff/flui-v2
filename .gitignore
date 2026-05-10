@@ -47,3 +47,5 @@ xcuserdata/
 .k07-baseline.txt
 .k07-recon.txt
 .k07-recon-final.txt
+.k07-shared-borrow-audit.md
+.k07-bench-results.txt

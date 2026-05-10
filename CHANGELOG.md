@@ -8,6 +8,41 @@ intent — every breaking change ships with a migration note even though we
 have not yet published a numbered release. Cross-references point to the
 plan and design docs in `.ai-factory/plans/` and `docs/superpowers/specs/`.
 
+## [Unreleased] — K07 AppCell removal (token-based borrow model)
+
+K07 replaces the inherited `AppCell = RefCell<App>` runtime primitive with
+`flui_core::app::cell::AppCell` (Candidate B: hand-rolled `UnsafeCell<App>` +
+`BorrowState` returning `ReentryError` directly). The public doc-hidden
+`AppCell` / `AppRef` / `AppRefMut` spelling is preserved for compatibility,
+but `try_borrow_mut` now reports `ReentryError::AppBorrowed` directly, the
+K15 `From<BorrowMutError>` conversion is removed, and `TRACK_THREAD_BORROWS`
+is replaced by `log::trace!` under `flui_core::app::cell`.
+
+Plan: `.ai-factory/plans/feature-K07-appcell-removal-token-borrow.md`.
+Design spec:
+`docs/superpowers/specs/2026-05-09-K07-appcell-removal-design.md`.
+Migration guide:
+`docs/superpowers/migrations/K07-appcell-removal.md`.
+
+### Breaking — AppCell borrow errors are now `ReentryError`
+
+- `AppCell::try_borrow_mut()` now returns `Result<AppRefMut<'_>, ReentryError>`
+  instead of `Result<_, std::cell::BorrowMutError>`.
+- `impl From<std::cell::BorrowMutError> for ReentryError` was removed.
+- `catch_unwind` callers that inspected `BorrowMutError` or string panic
+  payloads should downcast K07-introduced panics to `ReentryError`.
+- `AsyncApp` result-returning methods now propagate `AppGoneAway` /
+  `AppBorrowed` structurally; non-`Result` methods use typed `panic_any`.
+
+### Validation
+
+- Added AppCell property tests, direct AppBorrowed replacement coverage, scoped
+  Miri (Stacked Borrows plus non-blocking Tree Borrows), CI Miri jobs, a
+  hot-path audit, and an `app_cell_bench` acquire/release fixture.
+
+**Q11 decision:** no K99/K15 CHANGELOG backfill in this PR; keep that as a
+separate hygiene change if needed.
+
 ## [Unreleased] — S21 Animation Flutter parity
 
 This entry captures the S21 milestone work, which brings `flui-core::animation`

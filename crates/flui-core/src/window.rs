@@ -2242,7 +2242,7 @@ impl Window {
 
     /// Compute a typed `HitTestResult` for `position` against the
     /// rendered frame, paired with each entry's `HitTestBehavior`
-    /// from the per-frame [`Self::hit_test_behaviors`] map.
+    /// from the per-frame `hit_test_behaviors` map.
     ///
     /// Always honours `position`: walks `rendered_frame.hit_test(position)`
     /// rather than relying on the cached `mouse_hit_test` (which is
@@ -2331,7 +2331,7 @@ impl Window {
     }
 
     /// Produces a new frame and assigns it to `rendered_frame`. To actually show
-    /// the contents of the new [`Scene`], use [`Self::present`].
+    /// the contents of the new [`Scene`], use `Self::present`.
     #[profiling::function]
     pub fn draw(&mut self, cx: &mut App) -> ArenaClearNeeded {
         // Set up the per-App arena for element allocation during this draw.
