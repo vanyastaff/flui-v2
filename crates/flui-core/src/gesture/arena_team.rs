@@ -37,7 +37,7 @@ impl GestureArenaTeam {
     /// The captain is the only recognizer in the team that may
     /// declare [`GestureDisposition::Accepted`]; team members that
     /// return `Accepted` are coerced to `Possible` by the team via
-    /// [`Self::resolve_member`].
+    /// `Self::resolve_member`.
     pub fn with_captain(captain: Box<dyn GestureRecognizer>) -> Self {
         Self {
             captain: Rc::new(RefCell::new(captain)),

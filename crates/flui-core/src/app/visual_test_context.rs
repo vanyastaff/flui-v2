@@ -3,7 +3,7 @@ use crate::{
     Bounds, ClipboardItem, Context, Entity, ForegroundExecutor, Global, InputEvent, Keystroke,
     Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Platform, Point,
     Render, Result, Size, Task, TestDispatcher, TextSystem, VisualTestPlatform, Window,
-    WindowBounds, WindowHandle, WindowOptions, app::GpuiMode,
+    WindowBounds, WindowHandle, WindowOptions, app::GpuiMode, reentrancy::ReentryError,
 };
 use anyhow::anyhow;
 use image::RgbaImage;
@@ -427,7 +427,7 @@ impl AppContext for VisualTestAppContext {
     where
         T: 'static,
     {
-        panic!("Cannot use as_mut with a visual test app context. Try calling update() first")
+        std::panic::panic_any(ReentryError::AsyncContextAsMut)
     }
 
     fn read_entity<T, R>(&self, handle: &Entity<T>, read: impl FnOnce(&T, &App) -> R) -> R

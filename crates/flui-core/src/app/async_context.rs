@@ -2,22 +2,27 @@ use crate::{
     AnyView, AnyWindowHandle, App, AppCell, AppContext, BackgroundExecutor, BorrowAppContext,
     Entity, EventEmitter, Focusable, ForegroundExecutor, Global, GpuiBorrow, PromptButton,
     PromptLevel, Render, Reservation, Result, Subscription, Task, VisualContext, Window,
-    WindowHandle,
+    WindowHandle, reentrancy::ReentryError,
 };
-use anyhow::{Context as _, bail};
+use anyhow::bail;
 use derive_more::{Deref, DerefMut};
 use futures::channel::oneshot;
 use futures::future::FutureExt;
-use std::{future::Future, rc::Weak};
+use std::{
+    future::Future,
+    rc::{Rc, Weak},
+};
 
 use super::{Context, WeakEntity};
 
 /// An async-friendly version of [App] with a static lifetime so it can be held across `await` points in async code.
 /// You're provided with an instance when calling [App::spawn], and you can also create one with [App::to_async].
 ///
-/// Internally, this holds a weak reference to an `App`. Methods will panic if the app has been dropped,
-/// but this should not happen in practice when using foreground tasks spawned via `cx.spawn()`,
-/// as the executor checks if the app is alive before running each task.
+/// Internally, this holds a weak reference to an `App`. Methods whose public
+/// shape already returns `Result` propagate `ReentryError::AppGoneAway` after
+/// the app has been dropped; methods whose shape cannot widen panic with a
+/// typed `ReentryError` payload. Foreground tasks spawned via `cx.spawn()` are
+/// still expected to run only while the app is alive.
 #[derive(Clone)]
 pub struct AsyncApp {
     pub(crate) app: Weak<AppCell>,
@@ -26,22 +31,28 @@ pub struct AsyncApp {
 }
 
 impl AsyncApp {
-    fn app(&self) -> std::rc::Rc<AppCell> {
-        self.app
-            .upgrade()
-            .expect("app was released before async operation completed")
+    fn app(&self) -> std::result::Result<Rc<AppCell>, ReentryError> {
+        self.app.upgrade().ok_or(ReentryError::AppGoneAway)
+    }
+
+    #[track_caller]
+    fn app_or_panic(&self) -> Rc<AppCell> {
+        match self.app() {
+            Ok(app) => app,
+            Err(err) => std::panic::panic_any(err),
+        }
     }
 }
 
 impl AppContext for AsyncApp {
     fn new<T: 'static>(&mut self, build_entity: impl FnOnce(&mut Context<T>) -> T) -> Entity<T> {
-        let app = self.app();
+        let app = self.app_or_panic();
         let mut app = app.borrow_mut();
         app.new(build_entity)
     }
 
     fn reserve_entity<T: 'static>(&mut self) -> Reservation<T> {
-        let app = self.app();
+        let app = self.app_or_panic();
         let mut app = app.borrow_mut();
         app.reserve_entity()
     }
@@ -51,7 +62,7 @@ impl AppContext for AsyncApp {
         reservation: Reservation<T>,
         build_entity: impl FnOnce(&mut Context<T>) -> T,
     ) -> Entity<T> {
-        let app = self.app();
+        let app = self.app_or_panic();
         let mut app = app.borrow_mut();
         app.insert_entity(reservation, build_entity)
     }
@@ -61,7 +72,7 @@ impl AppContext for AsyncApp {
         handle: &Entity<T>,
         update: impl FnOnce(&mut T, &mut Context<T>) -> R,
     ) -> R {
-        let app = self.app();
+        let app = self.app_or_panic();
         let mut app = app.borrow_mut();
         app.update_entity(handle, update)
     }
@@ -70,14 +81,14 @@ impl AppContext for AsyncApp {
     where
         T: 'static,
     {
-        panic!("Cannot as_mut with an async context. Try calling update() first")
+        std::panic::panic_any(ReentryError::AsyncContextAsMut)
     }
 
     fn read_entity<T, R>(&self, handle: &Entity<T>, callback: impl FnOnce(&T, &App) -> R) -> R
     where
         T: 'static,
     {
-        let app = self.app();
+        let app = self.app_or_panic();
         let lock = app.borrow();
         lock.read_entity(handle, callback)
     }
@@ -86,14 +97,8 @@ impl AppContext for AsyncApp {
     where
         F: FnOnce(AnyView, &mut Window, &mut App) -> T,
     {
-        let app = self.app.upgrade().context("app was released")?;
-        // K15 (Phase 0-K): route the BorrowMutError through ReentryError so
-        // the anyhow chain carries `ReentryError::AppBorrowed` Display
-        // instead of bare `BorrowMutError`. Existing `?` callers compile
-        // unchanged because anyhow's blanket From handles ReentryError.
-        let mut lock = app
-            .try_borrow_mut()
-            .map_err(crate::reentrancy::ReentryError::from)?;
+        let app = self.app()?;
+        let mut lock = app.try_borrow_mut()?;
         if lock.quitting {
             bail!("app is quitting");
         }
@@ -108,8 +113,8 @@ impl AppContext for AsyncApp {
     where
         T: 'static,
     {
-        let app = self.app.upgrade().context("app was released")?;
-        let lock = app.borrow();
+        let app = self.app()?;
+        let lock = app.try_borrow()?;
         if lock.quitting {
             bail!("app is quitting");
         }
@@ -128,7 +133,7 @@ impl AppContext for AsyncApp {
     where
         G: Global,
     {
-        let app = self.app();
+        let app = self.app_or_panic();
         let mut lock = app.borrow_mut();
         lock.update(|this| this.read_global(callback))
     }
@@ -137,7 +142,7 @@ impl AppContext for AsyncApp {
 impl AsyncApp {
     /// Schedules all windows in the application to be redrawn.
     pub fn refresh(&self) {
-        let app = self.app();
+        let app = self.app_or_panic();
         let mut lock = app.borrow_mut();
         lock.refresh_windows();
     }
@@ -154,7 +159,7 @@ impl AsyncApp {
 
     /// Invoke the given function in the context of the app, then flush any effects produced during its invocation.
     pub fn update<R>(&self, f: impl FnOnce(&mut App) -> R) -> R {
-        let app = self.app();
+        let app = self.app_or_panic();
         let mut lock = app.borrow_mut();
         lock.update(f)
     }
@@ -170,7 +175,7 @@ impl AsyncApp {
         T: 'static + EventEmitter<Event>,
         Event: 'static,
     {
-        let app = self.app();
+        let app = self.app_or_panic();
         let mut lock = app.borrow_mut();
         lock.subscribe(entity, on_event)
     }
@@ -184,8 +189,8 @@ impl AsyncApp {
     where
         V: 'static + Render,
     {
-        let app = self.app();
-        let mut lock = app.borrow_mut();
+        let app = self.app()?;
+        let mut lock = app.try_borrow_mut()?;
         if lock.quitting {
             bail!("app is quitting");
         }
@@ -206,7 +211,7 @@ impl AsyncApp {
 
     /// Determine whether global state of the specified type has been assigned.
     pub fn has_global<G: Global>(&self) -> bool {
-        let app = self.app();
+        let app = self.app_or_panic();
         let app = app.borrow_mut();
         app.has_global::<G>()
     }
@@ -215,7 +220,7 @@ impl AsyncApp {
     ///
     /// Panics if no global state of the specified type has been assigned.
     pub fn read_global<G: Global, R>(&self, read: impl FnOnce(&G, &App) -> R) -> R {
-        let app = self.app();
+        let app = self.app_or_panic();
         let app = app.borrow_mut();
         read(app.global(), &app)
     }
@@ -224,7 +229,7 @@ impl AsyncApp {
     ///
     /// Similar to [`AsyncApp::read_global`], but returns an error instead of panicking
     pub fn try_read_global<G: Global, R>(&self, read: impl FnOnce(&G, &App) -> R) -> Option<R> {
-        let app = self.app();
+        let app = self.app_or_panic();
         let app = app.borrow_mut();
         if app.quitting {
             return None;
@@ -238,7 +243,7 @@ impl AsyncApp {
         &self,
         read: impl FnOnce(&G, &App) -> R,
     ) -> R {
-        let app = self.app();
+        let app = self.app_or_panic();
         let mut app = app.borrow_mut();
         app.update(|cx| {
             cx.default_global::<G>();
@@ -249,7 +254,7 @@ impl AsyncApp {
     /// A convenience method for [`App::update_global`](BorrowAppContext::update_global)
     /// for updating the global state of the specified type.
     pub fn update_global<G: Global, R>(&self, update: impl FnOnce(&mut G, &mut App) -> R) -> R {
-        let app = self.app();
+        let app = self.app_or_panic();
         let mut app = app.borrow_mut();
         app.update(|cx| cx.update_global(update))
     }
@@ -409,7 +414,7 @@ impl AppContext for AsyncWindowContext {
     where
         T: 'static,
     {
-        panic!("Cannot use as_mut() from an async context, call `update`")
+        std::panic::panic_any(ReentryError::AsyncContextAsMut)
     }
 
     fn read_entity<T, R>(&self, handle: &Entity<T>, read: impl FnOnce(&T, &App) -> R) -> R

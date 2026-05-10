@@ -1738,6 +1738,7 @@ dependencies = [
  "smol",
  "spin 0.10.0",
  "stacksafe",
+ "static_assertions",
  "strum 0.27.2",
  "swash",
  "taffy",

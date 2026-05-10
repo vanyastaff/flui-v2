@@ -1,7 +1,7 @@
 use crate::scheduler::Instant;
 use std::{
     any::{TypeId, type_name},
-    cell::{BorrowMutError, Cell, Ref, RefCell, RefMut},
+    cell::{Cell, RefCell, UnsafeCell},
     marker::PhantomData,
     mem,
     ops::{Deref, DerefMut},
@@ -12,7 +12,6 @@ use std::{
 };
 
 use anyhow::{Context as _, Result, anyhow};
-use derive_more::{Deref, DerefMut};
 use futures::{
     Future, FutureExt,
     channel::oneshot,
@@ -23,6 +22,8 @@ use parking_lot::RwLock;
 use slotmap::SlotMap;
 
 pub use async_context::*;
+use cell::BorrowState;
+pub use cell::{AppCell, AppRef, AppRefMut};
 use collections::{FxHashMap, FxHashSet, HashMap, VecDeque};
 pub use context::*;
 pub use entity_map::*;
@@ -55,6 +56,7 @@ use crate::{
 };
 
 mod async_context;
+mod cell;
 mod context;
 mod entity_map;
 #[cfg(any(test, feature = "test-support"))]
@@ -68,71 +70,6 @@ mod visual_test_context;
 
 /// The duration for which futures returned from [Context::on_app_quit] can run before the application fully quits.
 pub const SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(100);
-
-/// Temporary(?) wrapper around [`RefCell<App>`] to help us debug any double borrows.
-/// Strongly consider removing after stabilization.
-#[doc(hidden)]
-pub struct AppCell {
-    app: RefCell<App>,
-}
-
-impl AppCell {
-    #[doc(hidden)]
-    #[track_caller]
-    pub fn borrow(&self) -> AppRef<'_> {
-        if option_env!("TRACK_THREAD_BORROWS").is_some() {
-            let thread_id = std::thread::current().id();
-            eprintln!("borrowed {thread_id:?}");
-        }
-        AppRef(self.app.borrow())
-    }
-
-    #[doc(hidden)]
-    #[track_caller]
-    pub fn borrow_mut(&self) -> AppRefMut<'_> {
-        if option_env!("TRACK_THREAD_BORROWS").is_some() {
-            let thread_id = std::thread::current().id();
-            eprintln!("borrowed {thread_id:?}");
-        }
-        AppRefMut(self.app.borrow_mut())
-    }
-
-    #[doc(hidden)]
-    #[track_caller]
-    pub fn try_borrow_mut(&self) -> Result<AppRefMut<'_>, BorrowMutError> {
-        if option_env!("TRACK_THREAD_BORROWS").is_some() {
-            let thread_id = std::thread::current().id();
-            eprintln!("borrowed {thread_id:?}");
-        }
-        Ok(AppRefMut(self.app.try_borrow_mut()?))
-    }
-}
-
-#[doc(hidden)]
-#[derive(Deref, DerefMut)]
-pub struct AppRef<'a>(Ref<'a, App>);
-
-impl Drop for AppRef<'_> {
-    fn drop(&mut self) {
-        if option_env!("TRACK_THREAD_BORROWS").is_some() {
-            let thread_id = std::thread::current().id();
-            eprintln!("dropped borrow from {thread_id:?}");
-        }
-    }
-}
-
-#[doc(hidden)]
-#[derive(Deref, DerefMut)]
-pub struct AppRefMut<'a>(RefMut<'a, App>);
-
-impl Drop for AppRefMut<'_> {
-    fn drop(&mut self) {
-        if option_env!("TRACK_THREAD_BORROWS").is_some() {
-            let thread_id = std::thread::current().id();
-            eprintln!("dropped {thread_id:?}");
-        }
-    }
-}
 
 /// A reference to a GPUI application, typically constructed in the `main` function of your app.
 /// You won't interact with this type much outside of initial configuration and startup.
@@ -698,7 +635,7 @@ impl App {
         let _ref_counts = entities.ref_counts_drop_handle();
 
         let app = Rc::new_cyclic(|this| AppCell {
-            app: RefCell::new(App {
+            app: UnsafeCell::new(App {
                 this: this.clone(),
                 platform: platform.clone(),
                 text_system,
@@ -766,6 +703,8 @@ impl App {
                 #[cfg(any(test, feature = "leak-detection"))]
                 _ref_counts,
             }),
+            borrowed: Cell::new(BorrowState::Free),
+            _not_send: PhantomData,
         });
 
         init_app_menus(platform.as_ref(), &app.borrow());
@@ -905,13 +844,34 @@ impl App {
 
     pub(crate) fn update<R>(&mut self, update: impl FnOnce(&mut Self) -> R) -> R {
         self.start_update();
-        let result = update(self);
-        self.finish_update();
-        result
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| update(self)));
+        match result {
+            Ok(result) => {
+                let finish = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    self.finish_update();
+                }));
+                if let Err(payload) = finish {
+                    self.abort_update_after_panic();
+                    std::panic::resume_unwind(payload);
+                }
+                result
+            }
+            Err(payload) => {
+                self.abort_update_after_panic();
+                std::panic::resume_unwind(payload);
+            }
+        }
     }
 
     pub(crate) fn start_update(&mut self) {
         self.pending_updates += 1;
+    }
+
+    fn abort_update_after_panic(&mut self) {
+        if self.pending_updates > 0 {
+            self.pending_updates -= 1;
+        }
+        self.flushing_effects = false;
     }
 
     pub(crate) fn finish_update(&mut self) {
@@ -921,6 +881,16 @@ impl App {
             self.flushing_effects = false;
         }
         self.pending_updates -= 1;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn pending_updates_for_test(&self) -> usize {
+        self.pending_updates
+    }
+
+    #[cfg(test)]
+    pub(crate) fn flushing_effects_for_test(&self) -> bool {
+        self.flushing_effects
     }
 
     /// Arrange a callback to be invoked when the given entity calls `notify` on its respective context.
@@ -1097,35 +1067,54 @@ impl App {
         self.update(|cx| {
             let id = cx.windows.insert(None);
             let handle = WindowHandle::new(id);
-            match Window::new(handle.into(), options, cx) {
-                Ok(mut window) => {
-                    // SAFETY-CONTRACT(K15): no re-entry check needed here —
-                    // `id` was just allocated by `cx.windows.insert(None)` a
-                    // few lines above, so no other code path holds it on
-                    // `window_update_stack`. The push/pop pair is purely for
-                    // bookkeeping (e.g., `Effect::EntityCreated` consults the
-                    // stack to associate new entities with the current
-                    // window).
-                    cx.window_update_stack.push(id);
-                    let root_view = build_root_view(&mut window, cx);
-                    cx.window_update_stack.pop();
-                    window.root.replace(root_view.into());
-                    window.defer(cx, |window: &mut Window, cx| window.appearance_changed(cx));
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                match Window::new(handle.into(), options, cx) {
+                    Ok(mut window) => {
+                        // SAFETY-CONTRACT(K15): no re-entry check needed here —
+                        // `id` was just allocated by `cx.windows.insert(None)` a
+                        // few lines above, so no other code path holds it on
+                        // `window_update_stack`. The push/pop pair is purely for
+                        // bookkeeping (e.g., `Effect::EntityCreated` consults the
+                        // stack to associate new entities with the current
+                        // window).
+                        let stack_len = cx.window_update_stack.len();
+                        cx.window_update_stack.push(id);
+                        let root_view =
+                            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                build_root_view(&mut window, cx)
+                            }));
+                        cx.window_update_stack.truncate(stack_len);
+                        let root_view = match root_view {
+                            Ok(root_view) => root_view,
+                            Err(payload) => std::panic::resume_unwind(payload),
+                        };
+                        window.root.replace(root_view.into());
+                        window.defer(cx, |window: &mut Window, cx| window.appearance_changed(cx));
 
-                    // allow a window to draw at least once before returning
-                    // this didn't cause any issues on non windows platforms as it seems we always won the race to on_request_frame
-                    // on windows we quite frequently lose the race and return a window that has never rendered, which leads to a crash
-                    // where DispatchTree::root_node_id asserts on empty nodes
-                    let clear = window.draw(cx);
-                    clear.clear();
+                        // allow a window to draw at least once before returning
+                        // this didn't cause any issues on non windows platforms as it seems we always won the race to on_request_frame
+                        // on windows we quite frequently lose the race and return a window that has never rendered, which leads to a crash
+                        // where DispatchTree::root_node_id asserts on empty nodes
+                        let clear = window.draw(cx);
+                        clear.clear();
 
-                    cx.window_handles.insert(id, window.handle);
-                    cx.windows.get_mut(id).unwrap().replace(Box::new(window));
-                    Ok(handle)
+                        let window_handle = window.handle;
+                        cx.windows.get_mut(id).unwrap().replace(Box::new(window));
+                        cx.window_handles.insert(id, window_handle);
+                        Ok(handle)
+                    }
+                    Err(e) => {
+                        cx.windows.remove(id);
+                        Err(e)
+                    }
                 }
-                Err(e) => {
+            }));
+            match result {
+                Ok(result) => result,
+                Err(payload) => {
+                    cx.window_handles.remove(&id);
                     cx.windows.remove(id);
-                    Err(e)
+                    std::panic::resume_unwind(payload);
                 }
             }
         })
@@ -1601,39 +1590,50 @@ impl App {
             let mut window = cx.windows.get_mut(id)?.take()?;
 
             let root_view = window.root.clone().unwrap();
+            let window_id = window.handle.id;
 
-            cx.window_update_stack.push(window.handle.id);
-            let result = update(root_view, &mut window, cx);
-            fn trail(id: WindowId, window: Box<Window>, cx: &mut App) -> Option<()> {
-                // K15: pop FIRST so `window_closed_observers` (dispatched
-                // below) see the closing window's id ABSENT from the stack,
-                // matching pre-K15 semantics. Do NOT relocate this pop.
-                cx.window_update_stack.pop();
+            let stack_len = cx.window_update_stack.len();
+            cx.window_update_stack.push(window_id);
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                update(root_view, &mut window, cx)
+            }));
+            // K15: pop FIRST so `window_closed_observers` (dispatched below)
+            // see the closing window's id ABSENT from the stack, matching
+            // pre-K15 semantics. Do NOT relocate this pop.
+            cx.window_update_stack.truncate(stack_len);
 
-                if window.removed {
-                    cx.window_handles.remove(&id);
-                    cx.windows.remove(id);
-
-                    cx.window_closed_observers.clone().retain(&(), |callback| {
-                        callback(cx);
-                        true
-                    });
-
-                    let quit_on_empty = match cx.quit_mode {
-                        QuitMode::Explicit => false,
-                        QuitMode::LastWindowClosed => true,
-                        QuitMode::Default => cfg!(not(target_os = "macos")),
-                    };
-
-                    if quit_on_empty && cx.windows.is_empty() {
-                        cx.quit();
-                    }
-                } else {
-                    cx.windows.get_mut(id)?.replace(window);
+            let result = match result {
+                Ok(result) => result,
+                Err(payload) => {
+                    cx.windows
+                        .get_mut(id)
+                        .expect("taken window slot must still exist")
+                        .replace(window);
+                    std::panic::resume_unwind(payload);
                 }
-                Some(())
+            };
+
+            if window.removed {
+                cx.window_handles.remove(&id);
+                cx.windows.remove(id);
+
+                cx.window_closed_observers.clone().retain(&(), |callback| {
+                    callback(cx);
+                    true
+                });
+
+                let quit_on_empty = match cx.quit_mode {
+                    QuitMode::Explicit => false,
+                    QuitMode::LastWindowClosed => true,
+                    QuitMode::Default => cfg!(not(target_os = "macos")),
+                };
+
+                if quit_on_empty && cx.windows.is_empty() {
+                    cx.quit();
+                }
+            } else {
+                cx.windows.get_mut(id)?.replace(window);
             }
-            trail(id, window, cx)?;
 
             Some(result)
         })
@@ -2394,7 +2394,7 @@ impl App {
 
     /// Returns the current platform brightness preference (light or dark).
     ///
-    /// Falls back to [`Brightness::Light`] if `SystemBrightness` has not been set.
+    /// Falls back to `Brightness::Light` if `SystemBrightness` has not been set.
     pub fn platform_brightness(&self) -> crate::Brightness {
         self.try_global::<crate::SystemBrightness>()
             .map(|sb| sb.0)
@@ -2472,7 +2472,7 @@ impl AppContext for App {
             // ROADMAP K15: "Either queue (preferred) or panic with structured
             // error (acceptable)." `update_entity` returns generic `R`, so
             // queueing is not viable; panic with the structured Display.
-            panic!("{}", err);
+            std::panic::panic_any(err);
         }
         self.update(|cx| {
             // Save and replace `currently_updating_entity` so multi-entity
@@ -2480,29 +2480,21 @@ impl AppContext for App {
             // correctly on return. Top-level enters with `None`, restores to
             // `None`. K15 contract.
             //
-            // PANIC-SAFETY (Known Limitation #6, design spec): if `update(...)`
-            // panics, the restore line below never runs and the slot stays
-            // `Some(id)` until the next non-panicking `update_entity`
-            // overwrites it. This matches the pre-existing panic-leak
-            // behavior of `cx.entities.lease(handle)` itself (a panicking
-            // closure leaks the entity slot too). RAII guards were considered
-            // and rejected during planning because they conflict with Rust
-            // borrow rules — a guard borrowing `&mut App` cannot coexist
-            // with `App` flowing through this closure body. Fixing both
-            // panic-leak classes is K07's job (it redesigns the borrow
-            // primitive). For users with `catch_unwind`-based recovery, call
-            // `app.set_reentry_mode(ReentryMode::Loose)` and accept the
-            // potential false-positive `NestedEntityUpdate` on the next
-            // `update_entity(id)` after a caught panic.
-            let prev_updating = cx.currently_updating_entity.replace(id);
+            // K07 closes K15 Known Limitation #6 by catching panics inside
+            // this update frame long enough to restore the entity id and
+            // return the leased entity before resuming the original unwind.
+            let previous_entity = cx.currently_updating_entity.replace(id);
             let mut entity = cx.entities.lease(handle);
-            let result = update(
-                &mut entity,
-                &mut Context::new_context(cx, handle.downgrade()),
-            );
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let mut context = Context::new_context(cx, handle.downgrade());
+                update(&mut entity, &mut context)
+            }));
+            cx.currently_updating_entity = previous_entity;
             cx.entities.end_lease(entity);
-            cx.currently_updating_entity = prev_updating;
-            result
+            match result {
+                Ok(result) => result,
+                Err(payload) => std::panic::resume_unwind(payload),
+            }
         })
     }
 

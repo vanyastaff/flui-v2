@@ -352,7 +352,7 @@ fn cubic_bezier_derivative(t: f32, a: f32, b: f32) -> f32 {
 /// `m·x'' + c·x' + k·(x − 1) = 0` over `t ∈ [0, 1]` with `m = 1`,
 /// `k = stiffness`, `c = damping`. For richer parametrisation (initial
 /// velocity, custom mass, configurable rest position) use
-/// `SpringSimulation` via [`AnimationController::animate_with`].
+/// `SpringSimulation` via `AnimationController::animate_with`.
 ///
 /// Invalid parameters (`stiffness <= 0.0`, non-finite values) fall back to
 /// `Curves::LINEAR` rather than emitting `NaN`/`Inf`; controllers that need

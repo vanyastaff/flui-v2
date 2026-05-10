@@ -37,7 +37,7 @@ impl ListenerId {
 
 /// A value-change listener callback.
 ///
-/// Internally stores `Rc<dyn Fn>` so [`LocalListeners::notify`] can clone
+/// Internally stores `Rc<dyn Fn>` so `LocalListeners::notify` can clone
 /// references into a snapshot before dispatching — the snapshot is what makes
 /// re-entrant `add_listener` / `remove_listener` from within a callback safe.
 /// The inner `Rc` is `pub(crate)` to keep the storage strategy out of the
@@ -74,8 +74,8 @@ impl StatusListenerCallback {
 ///
 /// # Listener model
 ///
-/// Implementors typically embed a [`LocalListeners`](crate::animation::LocalListeners)
-/// (and [`LocalStatusListeners`](crate::animation::LocalStatusListeners))
+/// Implementors typically embed `LocalListeners`
+/// (and `LocalStatusListeners`)
 /// mixin to satisfy the listener methods. The expected semantics, matching
 /// Flutter:
 ///

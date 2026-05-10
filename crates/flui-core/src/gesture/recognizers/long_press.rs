@@ -75,7 +75,7 @@ pub struct LongPressGestureRecognizer {
     /// construction (default: 16 ms / one 60 Hz frame).
     pub timer_budget: Duration,
     /// Optional `(buttons, modifiers) -> bool` predicate evaluated by
-    /// [`crate::gesture::GestureBinding::register_recognizer`] before
+    /// `GestureBinding::register_recognizer` before
     /// the recognizer joins the arena. `None` (the default) admits
     /// every event whose `buttons` contain [`Self::button`].
     pub allowed_buttons_filter: Option<AllowedButtonsFilter>,
@@ -127,7 +127,7 @@ impl LongPressGestureRecognizer {
     }
 
     /// Fluent setter for [`Self::allowed_buttons_filter`]. The closure
-    /// is evaluated by [`crate::gesture::GestureBinding::register_recognizer`]
+    /// is evaluated by `GestureBinding::register_recognizer`
     /// at registration time; on `false` the recognizer never enters
     /// the arena (Decision D10).
     pub fn with_allowed_buttons_filter(

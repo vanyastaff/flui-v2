@@ -59,7 +59,7 @@ use crate::{AppContext, Context, Entity};
 ///
 /// # Listener model
 ///
-/// Embeds [`LocalListeners`] + [`LocalStatusListeners`] to satisfy the
+/// Embeds `LocalListeners` + `LocalStatusListeners` to satisfy the
 /// [`Animation<f64>`] listener methods. Listeners fire after every state
 /// transition (forward / reverse / repeat / stop / reset / animate_with).
 /// On every notification the controller also calls `cx.notify()` so existing

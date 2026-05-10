@@ -12,7 +12,7 @@ The architecture is organized into **three tiers**:
 - **Tier B — Framework:** `flui-framework` (PLANNED, Phase II-F) — Widget, Key, State, BuildCx, Provider, reconciliation. The Flutter-DX layer.
 - **Tier C — Ecosystem:** `flui-widgets`, `flui-material`, `flui-cupertino`, `flui-theme`, `flui-a11y`, `flui-navigator`, third-party widget crates.
 
-**Current status:** Phase I (platform extraction) is FROZEN after S01 + S02a — S02b–S06 are deferred to Phase III. **Active work is Phase 0-K Kernel Cleanup** (K-track) — repaying 24+ items of architectural debt in `flui-core` (broken Provider, no Widget identity / `Key`, `Render::&mut self` semantics, Element trait param explosion, AppCell, action globals, undefined re-entrancy contract, leaky coordinate-space type-safety, no layout cache, etc.) that block a healthy Framework tier. Critical chain is sequential: `K99 (MSRV 1.95) → K15 → K07 → K05 → K01 → K02 → K03 → K04`. Phase II (Engine completeness — S08 Semantics, S09 Canvas, S10 Filters, S12 Focus, S13 Text, S14 MediaQuery, S15 Assets) runs in parallel with K-track since most specs are additive. Phase II-F (Framework tier — spec series SF##) is **gated on K-track critical chain completion**. Done: S07 Gesture, S07.5b PointerEvent surface, S21 Animation. See `.ai-factory/DESCRIPTION.md`, `.ai-factory/ROADMAP.md`, and `.ai-factory/RESEARCH.md` for full details.
+**Current status:** Phase I (platform extraction) is FROZEN after S01 + S02a — S02b–S06 are deferred to Phase III. **Active work is Phase 0-K Kernel Cleanup** (K-track) — repaying remaining architectural debt in `flui-core` (broken Provider, no Widget identity / `Key`, `Render::&mut self` semantics, Element trait param explosion, action globals, leaky coordinate-space type-safety, no layout cache, etc.) that blocks a healthy Framework tier. K99, K15, and K07 are complete; the next critical-chain item is K05. Remaining chain: `K05 → K01 → K02 → K03 → K04`. Phase II (Engine completeness — S08 Semantics, S09 Canvas, S10 Filters, S12 Focus, S13 Text, S14 MediaQuery, S15 Assets) runs in parallel with K-track since most specs are additive. Phase II-F (Framework tier — spec series SF##) is **gated on K-track critical chain completion**. Done: S07 Gesture, S07.5b PointerEvent surface, S21 Animation, K99 MSRV, K15 Re-entrancy, K07 app ownership primitive. See `.ai-factory/DESCRIPTION.md`, `.ai-factory/ROADMAP.md`, and `.ai-factory/RESEARCH.md` for full details.
 
 ## Tech Stack
 
@@ -46,6 +46,8 @@ flui-v2/
 ├── docs/
 │   ├── superpowers/
 │   │   ├── specs/        # Design docs (YYYY-MM-DD-<id>-<slug>-design.md)
+│   │   ├── audits/       # Focused implementation/review audit artifacts
+│   │   ├── migrations/   # User-facing migration guides for breaking changes
 │   │   └── plans/        # Implementation plans paired with specs
 │   ├── reports/          # Generated reports
 │   ├── fixtures/         # Test fixtures
@@ -87,7 +89,10 @@ flui-v2/
 | flui-core roadmap | `docs/superpowers/specs/2026-04-13-flui-core-roadmap.md` | Master roadmap for Phase I (platform extraction + Flutter-parity gaps) |
 | K99 — MSRV bump to Rust 1.95 | `docs/superpowers/specs/2026-05-08-K99-msrv-bump-1.95-design.md` | First Phase 0-K spec; workspace MSRV pinned to 1.95 + clippy.toml + CI gate |
 | K15 — Re-entrancy contract | `docs/superpowers/specs/2026-05-09-K15-reentrancy-contract-design.md` | Second Phase 0-K spec; `flui_core::reentrancy` module with `ReentryError` + `ReentryMode`; `cx.defer` / `Window::defer` named as escape hatches |
+| K07 — App ownership primitive | `docs/superpowers/specs/2026-05-09-K07-appcell-removal-design.md` | Third Phase 0-K spec; custom app borrow cell + structured re-entry errors |
+| K07 migration guide | `docs/superpowers/migrations/K07-appcell-removal.md` | Breaking-change guide for K07 callers |
 | Design specs | `docs/superpowers/specs/` | Per-task design documents (date-stamped) |
+| Migration guides | `docs/superpowers/migrations/` | User-facing guides for breaking changes |
 | Implementation plans | `.ai-factory/plans/` | Per-task implementation plans paired with specs (resolved via `paths.plans`) |
 | Lock coverage gaps | `docs/lock-coverage-gaps.md` | Tracking of lock-behavior regression coverage |
 

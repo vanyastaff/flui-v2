@@ -15,7 +15,7 @@
 //!   target is allowed. Examples: `cx.update_window(other_window, ...)` from
 //!   inside another `update_window`, observer callbacks reading state from
 //!   sibling entities.
-//! - **Forbidden** — re-entry for the *same* target produces a [`ReentryError`].
+//! - **Forbidden** — re-entry for the *same* target produces a `ReentryError`.
 //!   Never a bare `RefCell::borrow_mut` panic, never an unstructured message
 //!   from `EntityMap::double_lease_panic`. Examples: `cx.update_window(self, ...)`
 //!   from inside `update_window` for the same window, recursive
@@ -32,25 +32,25 @@
 //!
 //! | Callback class | Same-target re-entry | Different-target | Notes |
 //! |---|---|---|---|
-//! | `cx.update_window(...)` | Forbidden ([`ReentryError::NestedWindowUpdate`]) | Synchronous | Detection via `App::window_update_stack.contains(&id)`. |
-//! | `cx.update_entity(...)` | Forbidden ([`ReentryError::NestedEntityUpdate`]) | Synchronous | Detection via `App::currently_updating_entity == Some(id)` AND the unified `EntityMap::double_lease_panic` (which now uses [`ReentryError::NestedEntityUpdate`] Display). |
-//! | Multi-entity cycle `A→B→A` | Forbidden ([`ReentryError::NestedEntityUpdate`]) | n/a | Caught by `EntityMap::double_lease_panic` because A's slot is empty when the inner re-entry attempts `lease`. Same Display as direct re-entry. |
-//! | Observer / event-listener / release callback | Synchronous within callback | Synchronous | The internal `SubscriberSet::retain` snapshot pattern guarantees no concurrent mutation of the subscriber list. Nested same-target updates raise [`ReentryError`]; user is directed to `cx.defer`. |
+//! | `cx.update_window(...)` | Forbidden (`ReentryError::NestedWindowUpdate`) | Synchronous | Detection via `App::window_update_stack.contains(&id)`. |
+//! | `cx.update_entity(...)` | Forbidden (`ReentryError::NestedEntityUpdate`) | Synchronous | Detection via `App::currently_updating_entity == Some(id)` AND the unified `EntityMap::double_lease_panic` (which now uses `ReentryError::NestedEntityUpdate` Display). |
+//! | Multi-entity cycle `A→B→A` | Forbidden (`ReentryError::NestedEntityUpdate`) | n/a | Caught by `EntityMap::double_lease_panic` because A's slot is empty when the inner re-entry attempts `lease`. Same Display as direct re-entry. |
+//! | Observer / event-listener / release callback | Synchronous within callback | Synchronous | The internal `SubscriberSet::retain` snapshot pattern guarantees no concurrent mutation of the subscriber list. Nested same-target updates raise `ReentryError`; user is directed to `cx.defer`. |
 //! | `observe_in` / `subscribe_in` | Forbidden (inner update returns `Err`) | Synchronous | The `.unwrap_or(false)` discard at the call site (`crate::app::context`) is preserved unchanged. The error itself is logged at `warn!` (Loose mode) or `error!` (Strict mode) inside `App::update_window_id` *before* the `Err` is returned to the discard site — so a re-entry inside `observe_in`/`subscribe_in` produces a `flui_core::reentrancy` log event, then is silently dropped at the closure boundary. Adding explicit `log::debug!` at the discard site is a follow-up if richer telemetry is needed. |
-//! | `Window::with_element_state(...)` | Forbidden ([`ReentryError::ElementStateInUse`]) — panic shape | n/a | Replaces the bare `expect("reentrant…")` panic with a structured `ReentryError` Display message. |
-//! | `Window::prompt(...)` | Forbidden ([`ReentryError::PromptInProgress`]) | n/a | `Window::prompt` widens to `Result<oneshot::Receiver<usize>, ReentryError>`. `AsyncWindowContext::prompt` widens to `Result<_, anyhow::Error>` and stops swallowing errors. |
-//! | `cx.defer(...)` / `Window::defer(...)` | Queued (existing) | Queued | The escape hatches. Always allowed; never produce [`ReentryError`]. |
+//! | `Window::with_element_state(...)` | Forbidden (`ReentryError::ElementStateInUse`) — panic shape | n/a | Replaces the bare `expect("reentrant…")` panic with a structured `ReentryError` Display message. |
+//! | `Window::prompt(...)` | Forbidden (`ReentryError::PromptInProgress`) | n/a | `Window::prompt` widens to `Result<oneshot::Receiver<usize>, ReentryError>`. `AsyncWindowContext::prompt` widens to `Result<_, anyhow::Error>` and stops swallowing errors. |
+//! | `cx.defer(...)` / `Window::defer(...)` | Queued (existing) | Queued | The escape hatches. Always allowed; never produce `ReentryError`. |
 //! | Animation listener / Ticker tick | Synchronous within callback | Synchronous | Listener snapshot pattern (`animation/listeners.rs`). |
 //! | Gesture recognizer event handler | Synchronous within recognizer | Synchronous | Recognizers have their own scoped `Rc<RefCell<...>>` (A7-audit-closed). |
-//! | `AsyncApp::run_update` | Forbidden ([`ReentryError::AppBorrowed`]) | Synchronous | `try_borrow_mut()?` chain auto-converts via `From<BorrowMutError> for ReentryError`. |
+//! | `AsyncApp::run_update` | Forbidden (`ReentryError::AppBorrowed`) | Synchronous | `AppCell::try_borrow_mut()` returns `ReentryError` directly. |
 //!
 //! # Modes
 //!
-//! [`ReentryMode`] selects how re-entry is reported:
+//! `ReentryMode` selects how re-entry is reported:
 //!
-//! - [`ReentryMode::Strict`] (default in `cfg(test)`) — `ReentryError` is logged
+//! - `ReentryMode::Strict` (default in `cfg(test)`) — `ReentryError` is logged
 //!   at `error!` level. Suitable for tests so silent-pass bugs surface.
-//! - [`ReentryMode::Loose`] (default in release) — `ReentryError` is logged at
+//! - `ReentryMode::Loose` (default in release) — `ReentryError` is logged at
 //!   `warn!` level. The error is still produced; only the log level differs.
 //!
 //! Set the mode via [`App::set_reentry_mode`](crate::App::set_reentry_mode).
@@ -62,18 +62,20 @@
 //!
 //! # Known limitations (documented gaps — see design spec)
 //!
-//! 1. `AsyncApp` has 10+ direct `app.borrow_mut()` sites that remain
-//!    unstructured. K07 (AppCell removal) redesigns this surface.
-//! 2. `AsyncApp::as_mut` panics with `"Cannot as_mut with an async context"`
-//!    — different panic class, not re-entry.
+//! 1. `AsyncApp` methods whose signatures already return `Result` propagate
+//!    `ReentryError::AppBorrowed` / `ReentryError::AppGoneAway` directly after
+//!    K07. Methods whose signatures cannot widen panic with a typed
+//!    `ReentryError` payload via `panic_any`.
+//! 2. `AsyncApp::as_mut` and equivalent async/test/headless contexts panic
+//!    with `ReentryError::AsyncContextAsMut` because their trait shape cannot
+//!    return `Result`.
 //! 3. `web` platform dispatcher re-entry exposure unverified.
-//! 4. [`ReentryError::AppBorrowed`] does not carry a source location
-//!    (`std::cell::BorrowMutError::location()` is nightly-only). Use
-//!    `RUST_LOG=flui_core::reentrancy=warn` for callsite context via
-//!    `#[track_caller]` on the `From` impl.
+//! 4. `ReentryError::AppBorrowed` does not carry a source location directly.
+//!    K07's `AppCell::try_borrow_mut()` returns it directly. Use
+//!    `RUST_LOG=flui_core::app::cell=trace` for acquire callsite context via
+//!    `#[track_caller]`.
 
 use std::any::TypeId;
-use std::cell::BorrowMutError;
 
 use thiserror::Error;
 
@@ -82,9 +84,10 @@ use crate::{EntityId, GlobalElementId, WindowId};
 /// Structured error returned (or panicked with) when the runtime re-entrancy
 /// contract is violated.
 ///
-/// This enum is `#[non_exhaustive]`: K07 and follow-up Phase 0-K specs may
-/// introduce additional variants without a major version bump. Match arms in
-/// downstream code must include a wildcard arm.
+/// This enum is `#[non_exhaustive]`: K07 added variants for async-context and
+/// app-lifetime failures, and follow-up Phase 0-K specs may add more without a
+/// major version bump. Match arms in downstream code must include a wildcard
+/// arm.
 ///
 /// `ReentryError: std::error::Error + Send + Sync + 'static`, so it converts
 /// into [`anyhow::Error`] automatically via anyhow's blanket `From` impl —
@@ -150,19 +153,27 @@ pub enum ReentryError {
     /// returned called back into the runtime via [`AsyncApp`](crate::AsyncApp).
     ///
     /// Use [`App::defer`](crate::App::defer) to schedule the work for after
-    /// the current update completes. This variant carries no source location
-    /// in stable Rust because [`std::cell::BorrowMutError::location`] is
-    /// nightly-only; the `#[track_caller]` annotation on the `From` impl gives
-    /// the callsite context when logging is enabled.
+    /// the current update completes. K07's `AppCell::try_borrow_mut` returns
+    /// this variant directly; no legacy std borrow-error conversion is
+    /// performed.
     #[error("App was already mutably borrowed (callback re-entered the runtime; use cx.defer)")]
     AppBorrowed,
-}
 
-impl From<BorrowMutError> for ReentryError {
-    #[track_caller]
-    fn from(_: BorrowMutError) -> Self {
-        Self::AppBorrowed
-    }
+    /// `AppContext::as_mut` was called from a context type that cannot provide
+    /// direct mutable access. This variant is used as a typed panic payload; the
+    /// `AppContext::as_mut` trait method cannot return `Result`.
+    #[error(
+        "AppContext::as_mut is forbidden in async/test/headless context types; use the equivalent update(...) method to acquire mutable access"
+    )]
+    AsyncContextAsMut,
+
+    /// An async app handle outlived the underlying app.
+    ///
+    /// Public async methods that already return `Result` propagate this variant.
+    /// Methods whose public shape cannot widen preserve the previous panic
+    /// behavior with this typed payload.
+    #[error("app was released before async operation completed")]
+    AppGoneAway,
 }
 
 /// Selects how the runtime reports re-entry contract violations.
@@ -250,16 +261,6 @@ mod tests {
     }
 
     #[test]
-    fn borrow_mut_error_converts_to_app_borrowed() {
-        use std::cell::RefCell;
-        let cell = RefCell::new(0);
-        let _outer = cell.borrow_mut();
-        let inner_err = cell.try_borrow_mut().unwrap_err();
-        let r: ReentryError = inner_err.into();
-        assert!(matches!(r, ReentryError::AppBorrowed));
-    }
-
-    #[test]
     fn reentry_mode_default_is_loose() {
         assert_eq!(ReentryMode::default(), ReentryMode::Loose);
     }
@@ -309,6 +310,103 @@ mod behavioral_tests {
         });
     }
 
+    #[test]
+    fn app_cell_try_borrow_mut_reports_app_borrowed_directly() {
+        let mut app = TestApp::new();
+
+        app.update(|cx| {
+            let cell = cx.this.upgrade().expect("app cell should still be alive");
+            match cell.try_borrow_mut() {
+                Err(ReentryError::AppBorrowed) => {}
+                Err(err) => panic!("expected AppBorrowed, got {err}"),
+                Ok(_) => panic!("nested AppCell mutable borrow should fail"),
+            }
+        });
+    }
+
+    #[test]
+    fn currently_updating_entity_and_pending_updates_restore_after_panic() {
+        let mut app = TestApp::new();
+        let entity = app.new_entity(|_| Counter { count: 0 });
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            app.update_entity(&entity, |_counter, _cx| {
+                panic!("intentional update_entity panic");
+            });
+        }));
+
+        assert!(result.is_err(), "update_entity closure must panic");
+        app.read(|cx| {
+            assert_eq!(cx.currently_updating_entity, None);
+            assert_eq!(cx.pending_updates_for_test(), 0);
+            assert!(!cx.flushing_effects_for_test());
+        });
+
+        app.update_entity(&entity, |counter, _cx| {
+            counter.count = 1;
+        });
+        app.read_entity(&entity, |counter, _cx| {
+            assert_eq!(counter.count, 1);
+        });
+    }
+
+    #[test]
+    fn window_update_stack_restores_after_open_window_panic() {
+        let mut app = TestApp::new();
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            app.update(|cx| {
+                let _: anyhow::Result<crate::WindowHandle<crate::EmptyView>> = cx.open_window(
+                    Default::default(),
+                    |_window, _cx| -> crate::Entity<crate::EmptyView> {
+                        panic!("intentional open_window panic");
+                    },
+                );
+            });
+        }));
+
+        assert!(result.is_err(), "open_window build closure must panic");
+        app.read(|cx| {
+            assert!(cx.window_update_stack.is_empty());
+            assert!(cx.windows.is_empty());
+            assert!(cx.window_handles.is_empty());
+            assert_eq!(cx.pending_updates_for_test(), 0);
+            assert!(!cx.flushing_effects_for_test());
+        });
+    }
+
+    #[test]
+    fn window_update_restores_taken_window_after_panic() {
+        let mut app = TestApp::new();
+        let window = app.open_window(|_window, _cx| crate::EmptyView);
+        let handle = window.handle();
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            app.update(|cx| {
+                let any_handle = handle.into();
+                let _: anyhow::Result<()> = cx.update_window(any_handle, |_root, _window, _cx| {
+                    panic!("intentional update_window panic");
+                });
+            });
+        }));
+
+        assert!(result.is_err(), "update_window closure must panic");
+        app.read(|cx| {
+            assert!(cx.window_update_stack.is_empty());
+            assert_eq!(cx.pending_updates_for_test(), 0);
+            assert!(!cx.flushing_effects_for_test());
+            assert!(
+                cx.windows
+                    .get(handle.window_id())
+                    .and_then(|slot| slot.as_ref())
+                    .is_some(),
+                "taken window must be restored after panic"
+            );
+            cx.read_window(&handle, |_root, _cx| ())
+                .expect("restored window should be readable");
+        });
+    }
+
     /// Direct same-entity re-entry. Panic message must include the unified
     /// `ReentryError::NestedEntityUpdate` Display, NOT the legacy
     /// `"cannot update <T> while it is already being updated"` text.
@@ -333,10 +431,15 @@ mod behavioral_tests {
 
         let panic_payload = result.expect_err("nested update_entity must panic");
         let msg = panic_payload
-            .downcast_ref::<String>()
-            .map(String::as_str)
-            .or_else(|| panic_payload.downcast_ref::<&str>().copied())
-            .unwrap_or("<non-string panic payload>");
+            .downcast_ref::<ReentryError>()
+            .map(ToString::to_string)
+            .or_else(|| panic_payload.downcast_ref::<String>().cloned())
+            .or_else(|| {
+                panic_payload
+                    .downcast_ref::<&str>()
+                    .map(ToString::to_string)
+            })
+            .unwrap_or_else(|| "<non-string panic payload>".to_string());
 
         assert!(
             msg.contains("already leased"),
@@ -454,5 +557,115 @@ mod behavioral_tests {
             "deferred closure must run after outer update"
         );
         app.read_entity(&entity, |c, _| assert_eq!(c.count, 42));
+    }
+
+    #[test]
+    fn async_app_open_window_after_app_drop_returns_app_gone_away() {
+        let async_app = {
+            let app = TestApp::new();
+            app.to_async()
+        };
+
+        let result: anyhow::Result<crate::WindowHandle<crate::EmptyView>> = async_app
+            .open_window(Default::default(), |_window, cx| {
+                cx.new(|_| crate::EmptyView)
+            });
+
+        let Err(err) = result else {
+            panic!("open_window after app drop must return AppGoneAway");
+        };
+        assert!(
+            matches!(
+                err.downcast_ref::<ReentryError>(),
+                Some(ReentryError::AppGoneAway)
+            ),
+            "expected AppGoneAway, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn async_app_update_after_app_drop_panics_app_gone_away() {
+        let async_app = {
+            let app = TestApp::new();
+            app.to_async()
+        };
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            async_app.update(|_| ());
+        }));
+
+        let panic_payload = result.expect_err("update after app drop must panic");
+        assert!(
+            matches!(
+                panic_payload.downcast_ref::<ReentryError>(),
+                Some(ReentryError::AppGoneAway)
+            ),
+            "expected typed AppGoneAway panic payload"
+        );
+    }
+
+    #[test]
+    fn async_app_as_mut_panics_structured_error() {
+        let mut app = TestApp::new();
+        let entity = app.new_entity(|_| Counter { count: 0 });
+        let mut async_app = app.to_async();
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            async_app.as_mut(&entity);
+        }));
+
+        let panic_payload = result.expect_err("AsyncApp::as_mut must panic");
+        assert!(
+            matches!(
+                panic_payload.downcast_ref::<ReentryError>(),
+                Some(ReentryError::AsyncContextAsMut)
+            ),
+            "expected typed AsyncContextAsMut panic payload"
+        );
+    }
+
+    #[test]
+    fn async_app_borrow_mut_propagates_reentry_error() {
+        let mut app = TestApp::new();
+
+        app.update(|cx| {
+            let async_cx = cx.to_async();
+            let result: anyhow::Result<crate::WindowHandle<crate::EmptyView>> = async_cx
+                .open_window(Default::default(), |_window, cx| {
+                    cx.new(|_| crate::EmptyView)
+                });
+            let Err(err) = result else {
+                panic!("nested AsyncApp open_window must return AppBorrowed");
+            };
+            assert!(
+                matches!(
+                    err.downcast_ref::<ReentryError>(),
+                    Some(ReentryError::AppBorrowed)
+                ),
+                "expected AppBorrowed, got {err:?}"
+            );
+        });
+    }
+
+    #[test]
+    fn async_app_read_window_propagates_reentry_error() {
+        let mut app = TestApp::new();
+        let window = app.open_window(|_, _| crate::EmptyView);
+        let handle = window.handle();
+
+        app.update(|cx| {
+            let async_cx = cx.to_async();
+            let result = async_cx.read_window(&handle, |_root, _cx| ());
+            let Err(err) = result else {
+                panic!("nested AsyncApp read_window must return AppBorrowed");
+            };
+            assert!(
+                matches!(
+                    err.downcast_ref::<ReentryError>(),
+                    Some(ReentryError::AppBorrowed)
+                ),
+                "expected AppBorrowed, got {err:?}"
+            );
+        });
     }
 }

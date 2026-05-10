@@ -1,6 +1,6 @@
 //! `PointerEvent`, `PointerKind`, `PointerPhase`, `PointerId`,
 //! `PointerButtons`. The normalized wire format produced by
-//! [`crate::gesture::dispatch`] from `PlatformInput`.
+//! `crate::gesture::dispatch` from `PlatformInput`.
 //!
 //! See the design doc at
 //! `docs/superpowers/specs/2026-05-06-S07-gesture-arena-design.md`
@@ -22,7 +22,7 @@ use crate::{Modifiers, Pixels, Point};
 ///
 /// `#[non_exhaustive]` reserves space for future per-platform fields
 /// (e.g. tangential pressure on stylus). Construction goes through the
-/// platform-side conversion helpers in [`crate::gesture::dispatch`];
+/// platform-side conversion helpers in `crate::gesture::dispatch`;
 /// downstream users observe `PressureSample` only by reading the
 /// `pressure: Option<PressureSample>` field on [`PointerEvent`].
 ///
@@ -136,7 +136,7 @@ pub enum PointerEventProvenance {
     /// Emitted directly by the platform layer.
     #[default]
     Platform,
-    /// Synthesized by [`crate::gesture::dispatch::PointerSanitizer`]:
+    /// Synthesized by `crate::gesture::dispatch::PointerSanitizer`:
     /// per-target hover Enter/Exit, or orphan-Cancel events.
     SanitizerSynthesized,
     // S07.7 will add: ResamplerSynthesized,
@@ -230,10 +230,10 @@ impl PointerButtons {
 }
 
 /// A normalized pointer event, produced from `PlatformInput` by
-/// [`crate::gesture::dispatch`] and consumed by recognizers.
+/// `crate::gesture::dispatch` and consumed by recognizers.
 ///
 /// Construction goes through the conversion helpers in
-/// [`crate::gesture::dispatch`]; users do not construct `PointerEvent`
+/// `crate::gesture::dispatch`; users do not construct `PointerEvent`
 /// directly. The struct is `#[non_exhaustive]` so adding fields
 /// (`azimuth` for stylus, `device_id` for multi-monitor pointers in
 /// future S20 work) is non-breaking.
