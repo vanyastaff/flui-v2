@@ -2,7 +2,8 @@ use crate::{EntityId, FocusHandle, FocusId, SharedString};
 use smallvec::SmallVec;
 use std::{
     fmt::{self, Display},
-    ops::{Deref, DerefMut},
+    num::TryFromIntError,
+    ops::Deref,
     sync::Arc,
 };
 use uuid::Uuid;
@@ -78,9 +79,11 @@ impl From<usize> for ValueKey {
     }
 }
 
-impl From<i32> for ValueKey {
-    fn from(id: i32) -> Self {
-        Self(ElementId::from(id))
+impl TryFrom<i32> for ValueKey {
+    type Error = TryFromIntError;
+
+    fn try_from(id: i32) -> Result<Self, Self::Error> {
+        ElementId::try_from(id).map(Self)
     }
 }
 
@@ -330,9 +333,11 @@ impl From<usize> for ElementId {
     }
 }
 
-impl From<i32> for ElementId {
-    fn from(id: i32) -> Self {
-        Self::Integer(id as u64)
+impl TryFrom<i32> for ElementId {
+    type Error = TryFromIntError;
+
+    fn try_from(id: i32) -> Result<Self, Self::Error> {
+        Ok(Self::Integer(u64::try_from(id)?))
     }
 }
 
@@ -452,7 +457,7 @@ impl Default for ElementIdStack {
 impl ElementIdStack {
     /// Starts a new lifecycle pass without changing the current path.
     pub(crate) fn begin_pass(&mut self) {
-        debug_assert!(
+        assert!(
             self.path.is_empty(),
             "identity pass reset requires an empty element path"
         );
@@ -488,12 +493,12 @@ impl ElementIdStack {
     /// Pops the current element id.
     pub(crate) fn pop(&mut self) -> Option<ElementId> {
         debug_assert_eq!(self.local_occurrences.len(), self.path.len() + 1);
+        let element_id = self.path.pop()?;
         self.local_occurrences.pop();
         #[cfg(debug_assertions)]
         self.explicit_siblings.pop();
-        let element_id = self.path.pop();
         debug_assert_eq!(self.local_occurrences.len(), self.path.len() + 1);
-        element_id
+        Some(element_id)
     }
 
     /// Clears the path and resolver state.
@@ -572,12 +577,6 @@ impl Deref for ElementIdStack {
     }
 }
 
-impl DerefMut for ElementIdStack {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.path.as_mut_slice()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -638,6 +637,29 @@ mod tests {
         stack.begin_pass();
         stack.push("same-key");
         stack.pop();
+    }
+
+    #[test]
+    fn pop_empty_stack_preserves_root_scope() {
+        let location = same_location();
+        let mut stack = ElementIdStack::default();
+
+        assert_eq!(stack.pop(), None);
+        stack.push(ElementId::CodeLocation(location));
+
+        assert!(matches!(&stack[0], ElementId::Local(local) if local.occurrence() == 0));
+    }
+
+    #[test]
+    fn signed_integer_identity_rejects_negative_values() {
+        assert_eq!(ElementId::try_from(7i32).unwrap(), ElementId::Integer(7));
+        assert!(ElementId::try_from(-1i32).is_err());
+
+        assert_eq!(
+            ValueKey::try_from(7i32).unwrap().into_element_id(),
+            ElementId::Integer(7)
+        );
+        assert!(ValueKey::try_from(-1i32).is_err());
     }
 
     #[test]

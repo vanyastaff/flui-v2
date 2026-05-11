@@ -1,6 +1,6 @@
 # K02 - Element identity and Key
 
-**Branch:** `featrure/k02-element-identity-key`
+**Branch:** `featrure/k02-element-identity-key` (current PR branch name)
 **Created:** 2026-05-11
 **Refined:** 2026-05-11 - second-pass `/aif-improve` review against current `element`, `window`, `view`, provider, and macro code.
 **Phase:** 0-K (Kernel Cleanup) - sixth spec in the critical chain after K99, K15, K07, K05, and K01.

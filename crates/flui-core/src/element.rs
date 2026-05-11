@@ -722,44 +722,117 @@ impl<E: Element> Drawable<E> {
         }
     }
 
+    fn request_layout_in_current_identity(
+        &mut self,
+        window: &mut Window,
+        app: &mut App,
+        global_id: Option<GlobalElementId>,
+    ) -> LayoutId {
+        let inspector_id;
+        #[cfg(any(feature = "inspector", debug_assertions))]
+        {
+            inspector_id = self.element.source_location().map(|source| {
+                let path = crate::InspectorElementPath {
+                    global_id: GlobalElementId(Arc::from(&*window.element_id_stack)),
+                    source_location: source,
+                };
+                window.build_inspector_element_id(path)
+            });
+        }
+        #[cfg(not(any(feature = "inspector", debug_assertions)))]
+        {
+            inspector_id = None;
+        }
+
+        let mut element_cx = LayoutCx::new(window, app, global_id.as_ref(), inspector_id.as_ref());
+        let (layout_id, request_layout) = self.element.request_layout(&mut element_cx);
+
+        self.phase = ElementDrawPhase::RequestLayout {
+            layout_id,
+            global_id,
+            inspector_id,
+            request_layout,
+        };
+        layout_id
+    }
+
+    fn prepaint_in_current_identity(
+        &mut self,
+        window: &mut Window,
+        app: &mut App,
+        layout_id: LayoutId,
+        global_id: Option<GlobalElementId>,
+        inspector_id: Option<InspectorElementId>,
+        mut request_layout: E::RequestLayoutState,
+    ) {
+        let bounds = window.layout_bounds(layout_id);
+        let node_id = window.next_frame.dispatch_tree.push_node();
+        let prepaint = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+            let mut element_cx = PrepaintCx::new(
+                window,
+                app,
+                global_id.as_ref(),
+                inspector_id.as_ref(),
+                bounds,
+            );
+            self.element.prepaint(&mut element_cx, &mut request_layout)
+        }));
+        window.next_frame.dispatch_tree.pop_node();
+        let prepaint = match prepaint {
+            Ok(prepaint) => prepaint,
+            Err(payload) => panic::resume_unwind(payload),
+        };
+
+        self.phase = ElementDrawPhase::Prepaint {
+            node_id,
+            global_id,
+            inspector_id,
+            bounds,
+            request_layout,
+            prepaint,
+        };
+    }
+
+    fn paint_in_current_identity(
+        &mut self,
+        window: &mut Window,
+        app: &mut App,
+        node_id: DispatchNodeId,
+        global_id: Option<GlobalElementId>,
+        inspector_id: Option<InspectorElementId>,
+        bounds: Bounds<Pixels>,
+        mut request_layout: E::RequestLayoutState,
+        mut prepaint: E::PrepaintState,
+    ) -> (E::RequestLayoutState, E::PrepaintState) {
+        window.next_frame.dispatch_tree.set_active_node(node_id);
+        let mut element_cx = PaintCx::new(
+            window,
+            app,
+            global_id.as_ref(),
+            inspector_id.as_ref(),
+            bounds,
+        );
+        self.element
+            .paint(&mut element_cx, &mut request_layout, &mut prepaint);
+
+        self.phase = ElementDrawPhase::Painted;
+        (request_layout, prepaint)
+    }
+
     fn request_layout(&mut self, cx: &mut LayoutCx<'_>) -> LayoutId {
         match mem::take(&mut self.phase) {
             ElementDrawPhase::Start => cx.with_window_app(|window, app| {
-                let element_id_scope = self
-                    .element
-                    .id()
-                    .map(|element_id| window.push_element_id(element_id));
-                let global_id = element_id_scope
-                    .as_ref()
-                    .map(|scope| scope.global_id().clone());
-
-                let inspector_id;
-                #[cfg(any(feature = "inspector", debug_assertions))]
-                {
-                    inspector_id = self.element.source_location().map(|source| {
-                        let path = crate::InspectorElementPath {
-                            global_id: GlobalElementId(Arc::from(&*window.element_id_stack)),
-                            source_location: source,
-                        };
-                        window.build_inspector_element_id(path)
-                    });
+                if let Some(element_id) = self.element.id() {
+                    window.with_pushed_element_id(element_id, |global_id, window| {
+                        self.request_layout_in_current_identity(
+                            window,
+                            app,
+                            Some(global_id.clone()),
+                        )
+                    })
+                } else {
+                    self.request_layout_in_current_identity(window, app, None)
                 }
-                #[cfg(not(any(feature = "inspector", debug_assertions)))]
-                {
-                    inspector_id = None;
-                }
-
-                let mut element_cx =
-                    LayoutCx::new(window, app, global_id.as_ref(), inspector_id.as_ref());
-                let (layout_id, request_layout) = self.element.request_layout(&mut element_cx);
-
-                self.phase = ElementDrawPhase::RequestLayout {
-                    layout_id,
-                    global_id,
-                    inspector_id,
-                    request_layout,
-                };
-                layout_id
             }),
             _ => panic!("must call request_layout only once"),
         }
@@ -771,43 +844,37 @@ impl<E: Element> Drawable<E> {
                 layout_id,
                 global_id,
                 inspector_id,
-                mut request_layout,
+                request_layout,
             }
             | ElementDrawPhase::LayoutComputed {
                 layout_id,
                 global_id,
                 inspector_id,
-                mut request_layout,
+                request_layout,
                 ..
             } => cx.with_window_app(|window, app| {
-                let _element_id_scope = if let Some(global_id) = global_id.as_ref() {
-                    let scope = window.push_resolved_element_id(global_id);
-                    debug_assert_eq!(&*global_id.0, &*window.element_id_stack);
-                    Some(scope)
+                if let Some(stored_global_id) = global_id.as_ref().cloned() {
+                    window.with_resolved_element_id(&stored_global_id, |window| {
+                        debug_assert_eq!(&*stored_global_id.0, &*window.element_id_stack);
+                        self.prepaint_in_current_identity(
+                            window,
+                            app,
+                            layout_id,
+                            global_id,
+                            inspector_id,
+                            request_layout,
+                        );
+                    });
                 } else {
-                    None
-                };
-
-                let bounds = window.layout_bounds(layout_id);
-                let node_id = window.next_frame.dispatch_tree.push_node();
-                let mut element_cx = PrepaintCx::new(
-                    window,
-                    app,
-                    global_id.as_ref(),
-                    inspector_id.as_ref(),
-                    bounds,
-                );
-                let prepaint = self.element.prepaint(&mut element_cx, &mut request_layout);
-                window.next_frame.dispatch_tree.pop_node();
-
-                self.phase = ElementDrawPhase::Prepaint {
-                    node_id,
-                    global_id,
-                    inspector_id,
-                    bounds,
-                    request_layout,
-                    prepaint,
-                };
+                    self.prepaint_in_current_identity(
+                        window,
+                        app,
+                        layout_id,
+                        global_id,
+                        inspector_id,
+                        request_layout,
+                    );
+                }
             }),
             _ => panic!("must call request_layout before prepaint"),
         }
@@ -823,31 +890,36 @@ impl<E: Element> Drawable<E> {
                 global_id,
                 inspector_id,
                 bounds,
-                mut request_layout,
-                mut prepaint,
+                request_layout,
+                prepaint,
                 ..
             } => cx.with_window_app(|window, app| {
-                let _element_id_scope = if let Some(global_id) = global_id.as_ref() {
-                    let scope = window.push_resolved_element_id(global_id);
-                    debug_assert_eq!(&*global_id.0, &*window.element_id_stack);
-                    Some(scope)
+                if let Some(stored_global_id) = global_id.as_ref().cloned() {
+                    window.with_resolved_element_id(&stored_global_id, |window| {
+                        debug_assert_eq!(&*stored_global_id.0, &*window.element_id_stack);
+                        self.paint_in_current_identity(
+                            window,
+                            app,
+                            node_id,
+                            global_id,
+                            inspector_id,
+                            bounds,
+                            request_layout,
+                            prepaint,
+                        )
+                    })
                 } else {
-                    None
-                };
-
-                window.next_frame.dispatch_tree.set_active_node(node_id);
-                let mut element_cx = PaintCx::new(
-                    window,
-                    app,
-                    global_id.as_ref(),
-                    inspector_id.as_ref(),
-                    bounds,
-                );
-                self.element
-                    .paint(&mut element_cx, &mut request_layout, &mut prepaint);
-
-                self.phase = ElementDrawPhase::Painted;
-                (request_layout, prepaint)
+                    self.paint_in_current_identity(
+                        window,
+                        app,
+                        node_id,
+                        global_id,
+                        inspector_id,
+                        bounds,
+                        request_layout,
+                        prepaint,
+                    )
+                }
             }),
             _ => panic!("must call prepaint before paint"),
         }
@@ -1053,9 +1125,14 @@ impl AnyElement {
     ) -> Size<Pixels> {
         let mut cx = LayoutCx::new(window, cx, None, None);
         let element_id_stack = cx.window.element_id_stack.clone();
-        let size = self.layout_as_root(available_space, &mut cx);
+        let size = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+            self.layout_as_root(available_space, &mut cx)
+        }));
         cx.window.element_id_stack.clone_from(&element_id_stack);
-        size
+        match size {
+            Ok(size) => size,
+            Err(payload) => panic::resume_unwind(payload),
+        }
     }
 
     /// Prepaints this element at the given absolute origin.
@@ -1088,6 +1165,12 @@ impl AnyElement {
         window: &mut Window,
         cx: &mut App,
     ) -> Option<FocusHandle> {
+        // This helper is used both for standalone overlay roots and for nested list children.
+        // Root calls need a fresh lifecycle pass; nested calls must preserve the active parent
+        // namespace so children replay the ids normalized during layout.
+        if window.element_id_stack.len() == 0 {
+            window.element_id_stack.begin_pass();
+        }
         let mut cx = PrepaintCx::new(window, cx, None, None, Bounds::default());
         self.prepaint_at(origin, &mut cx)
     }
@@ -1221,8 +1304,8 @@ impl Element for Empty {
 mod tests {
     use super::*;
     use crate::{
-        DrawPhase, ElementArenaScope, EntityId, ParentElement, Render, TestAppContext, div, point,
-        px, size,
+        AnyView, AppContext, DrawPhase, ElementArenaScope, EntityId, ParentElement, Render,
+        StyleRefinement, TestAppContext, div, point, px, size,
     };
     use smallvec::smallvec;
     use std::{cell::RefCell, rc::Rc};
@@ -1488,6 +1571,76 @@ mod tests {
             }));
             assert!(result.is_err());
             assert_eq!(window.element_id_stack.len(), 0);
+        });
+    }
+
+    #[crate::test]
+    fn layout_as_root_with_window_restores_identity_stack_after_panic(cx: &mut TestAppContext) {
+        let cx = cx.add_empty_window();
+        cx.update(|window, cx| {
+            let _arena_scope = ElementArenaScope::enter(&cx.element_arena);
+            let mut element = IdentityPanicElement {
+                phase: IdentityPanicPhase::Layout,
+            }
+            .into_any_element();
+
+            window.invalidator.set_phase(DrawPhase::Prepaint);
+            window.with_id("outer", |window| {
+                let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+                    element.layout_as_root_with_window(
+                        size(
+                            AvailableSpace::Definite(px(10.)),
+                            AvailableSpace::Definite(px(10.)),
+                        ),
+                        window,
+                        cx,
+                    );
+                }));
+
+                assert!(result.is_err());
+                assert_eq!(window.element_id_stack.len(), 1);
+                assert_eq!(window.element_id_stack[0], ElementId::from("outer"));
+            });
+            window.invalidator.set_phase(DrawPhase::None);
+            assert_eq!(window.element_id_stack.len(), 0);
+
+            drop(element);
+            cx.element_arena.borrow_mut().clear();
+        });
+    }
+
+    struct CachedPanicView;
+
+    impl Render for CachedPanicView {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            IdentityPanicElement {
+                phase: IdentityPanicPhase::Layout,
+            }
+        }
+    }
+
+    #[crate::test]
+    fn cached_view_rerender_restores_runtime_state_after_layout_panic(cx: &mut TestAppContext) {
+        let cx = cx.add_empty_window();
+        let view = cx.new(|_| CachedPanicView);
+
+        let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+            cx.draw(
+                point(px(0.), px(0.)),
+                size(
+                    AvailableSpace::Definite(px(10.)),
+                    AvailableSpace::Definite(px(10.)),
+                ),
+                |_, _| AnyView::from(view.clone()).cached(StyleRefinement::default()),
+            );
+        }));
+
+        assert!(result.is_err());
+        cx.update(|window, cx| {
+            assert_eq!(window.element_id_stack.len(), 0);
+            assert!(!window.refreshing);
+            window.invalidator.set_phase(DrawPhase::None);
+            cx.element_arena.borrow_mut().clear();
         });
     }
 

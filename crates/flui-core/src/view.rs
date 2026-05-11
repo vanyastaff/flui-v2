@@ -8,9 +8,8 @@ use crate::{Empty, Window};
 use anyhow::Result;
 use collections::FxHashSet;
 use refineable::Refineable;
-use std::mem;
 use std::rc::Rc;
-use std::{any::TypeId, fmt, ops::Range};
+use std::{any::TypeId, fmt, mem, ops::Range, panic};
 
 struct AnyViewState {
     prepaint_range: Range<PrepaintStateIndex>,
@@ -202,53 +201,69 @@ impl Element for AnyView {
                         }
 
                         let refreshing = mem::replace(&mut window.refreshing, true);
-                        let prepaint_start = window.prepaint_index();
-                        let inherited_provider_start = window.inherited_provider_access_index();
-                        let inherited_dependency_start = window.inherited_dependency_index();
-                        let (mut element, accessed_entities) = cx.detect_accessed_entities(|cx| {
-                            let mut element = (self.render)(self, window, cx);
-                            let element_id_stack = window.element_id_stack.clone();
-                            let mut layout_cx = crate::LayoutCx::new(
-                                window,
-                                cx,
-                                global_id.as_ref(),
-                                inspector_id.as_ref(),
-                            );
-                            element.layout_as_root(bounds.size.into(), &mut layout_cx);
-                            window.element_id_stack.clone_from(&element_id_stack);
-                            let mut prepaint_cx = crate::PrepaintCx::new(
-                                window,
-                                cx,
-                                global_id.as_ref(),
-                                inspector_id.as_ref(),
-                                bounds,
-                            );
-                            element.prepaint_at(bounds.origin, &mut prepaint_cx);
-                            element
-                        });
+                        let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+                            let prepaint_start = window.prepaint_index();
+                            let inherited_provider_start = window.inherited_provider_access_index();
+                            let inherited_dependency_start = window.inherited_dependency_index();
+                            let (mut element, accessed_entities) =
+                                cx.detect_accessed_entities(|cx| {
+                                    let element_id_stack = window.element_id_stack.clone();
+                                    let element =
+                                        panic::catch_unwind(panic::AssertUnwindSafe(|| {
+                                            let mut element = (self.render)(self, window, cx);
+                                            let mut layout_cx = crate::LayoutCx::new(
+                                                window,
+                                                cx,
+                                                global_id.as_ref(),
+                                                inspector_id.as_ref(),
+                                            );
+                                            element
+                                                .layout_as_root(bounds.size.into(), &mut layout_cx);
+                                            window.element_id_stack.clone_from(&element_id_stack);
+                                            let mut prepaint_cx = crate::PrepaintCx::new(
+                                                window,
+                                                cx,
+                                                global_id.as_ref(),
+                                                inspector_id.as_ref(),
+                                                bounds,
+                                            );
+                                            element.prepaint_at(bounds.origin, &mut prepaint_cx);
+                                            element
+                                        }));
+                                    window.element_id_stack.clone_from(&element_id_stack);
+                                    match element {
+                                        Ok(element) => element,
+                                        Err(payload) => panic::resume_unwind(payload),
+                                    }
+                                });
 
-                        let prepaint_end = window.prepaint_index();
-                        let inherited_provider_accesses =
-                            window.inherited_provider_accesses_since(inherited_provider_start);
-                        let inherited_dependencies =
-                            window.inherited_dependencies_since(inherited_dependency_start);
-                        window.refreshing = refreshing;
+                            let prepaint_end = window.prepaint_index();
+                            let inherited_provider_accesses =
+                                window.inherited_provider_accesses_since(inherited_provider_start);
+                            let inherited_dependencies =
+                                window.inherited_dependencies_since(inherited_dependency_start);
 
-                        (
-                            Some(element),
-                            AnyViewState {
-                                accessed_entities,
-                                prepaint_range: prepaint_start..prepaint_end,
-                                paint_range: PaintIndex::default()..PaintIndex::default(),
-                                cache_key: ViewCacheKey {
-                                    bounds,
-                                    content_mask,
-                                    text_style,
+                            (
+                                Some(element),
+                                AnyViewState {
+                                    accessed_entities,
+                                    prepaint_range: prepaint_start..prepaint_end,
+                                    paint_range: PaintIndex::default()..PaintIndex::default(),
+                                    cache_key: ViewCacheKey {
+                                        bounds,
+                                        content_mask,
+                                        text_style,
+                                    },
+                                    inherited_provider_accesses,
+                                    inherited_dependencies,
                                 },
-                                inherited_provider_accesses,
-                                inherited_dependencies,
-                            },
-                        )
+                            )
+                        }));
+                        window.refreshing = refreshing;
+                        match result {
+                            Ok(result) => result,
+                            Err(payload) => panic::resume_unwind(payload),
+                        }
                     },
                 )
             })

@@ -1,7 +1,7 @@
 ## Test Plan: K02 Element Identity and Key
 
 **Date:** 2026-05-11
-**Branch / Version:** `featrure/k02-element-identity-key`
+**Branch / Version:** `featrure/k02-element-identity-key` (current PR branch name)
 **Environment:** local development branch, post-implementation QA
 
 > Post-implementation update: K02 now includes the runtime identity substrate and focused

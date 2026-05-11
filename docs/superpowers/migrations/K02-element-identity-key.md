@@ -112,8 +112,10 @@ div().children([
 ])
 ```
 
-Normal layout/prepaint/paint repeats do not count as duplicates. Release builds preserve deterministic
-map behavior without the debug tracking sets.
+Normal layout/prepaint/paint repeats do not count as duplicates. Release builds do not keep the
+debug duplicate-tracking sets on the hot path; duplicate explicit sibling keys are therefore a
+caller bug that can alias state/provider/cache identity instead of producing a release panic. Treat
+debug duplicate-key failures as correctness issues, not as optional diagnostics.
 
 ## Cache Behavior
 

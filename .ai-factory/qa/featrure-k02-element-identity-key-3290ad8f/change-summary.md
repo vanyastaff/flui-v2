@@ -6,7 +6,7 @@
 > component callsite propagation, lifecycle/deferred identity fixes, K02 docs, and verification
 > updates.
 
-**Commits:** 0
+**Commits:** 2
 **Changed files:** implementation, tests, specs, migration guide, and project status artifacts
 **Risk level:** High
 
@@ -14,9 +14,9 @@
 
 ### What Changed
 
-The current branch introduces and refines the K02 planning artifact for Element identity and Key work. No runtime implementation has landed yet. The change defines the intended QA surface for a future API-breaking `flui-core` identity refactor that will affect element identity, state retention, provider scope identity, cached view reuse, macro-generated components, and future Framework reconciliation.
+The current branch includes the landed K02 runtime implementation for Element identity and Key. The change defines the implemented QA surface for the API-breaking `flui-core` identity refactor across element identity, state retention, provider scope identity, cached view reuse, macro-generated components, lifecycle replay, deferred draw snapshots, and future Framework reconciliation.
 
-Because this is a design/planning change, QA focuses on whether the plan is complete enough to safely drive implementation and on the scenarios the eventual K02 implementation must satisfy.
+QA now focuses on validating the landed behavior and guarding regressions across the scenarios below.
 
 ---
 
@@ -24,12 +24,12 @@ Because this is a design/planning change, QA focuses on whether the plan is comp
 
 | Component | Change type | Description |
 |---|---|---|
-| `.ai-factory/plans/feature-K02-element-identity-key.md` | Added / refined | New 36-task implementation plan for K02, with second-pass refinements for deferred-draw identity snapshots, lifecycle duplicate detection, macro-generated components, state retention, and bounded cache substrate. |
-| `flui-core` Element identity model | Planned | Future work will touch `Element::id`, `ElementId`, `GlobalElementId`, `Window::element_id_stack`, lifecycle contexts, and built-in element id implementations. |
-| `Window` state retention | Planned | Future work must preserve `with_element_state`, `use_state`, `use_keyed_state`, and frame cleanup keyed by `(GlobalElementId, TypeId)`. |
-| K01 Provider registry | Planned regression area | Provider scope keys and cached inherited dependency replay must keep working after K02 identity changes. |
-| `AnyView::cached` / element cache behavior | Planned | Future work must either generalize cache internals safely or explicitly defer public keyed stateless caching without breaking current view cache behavior. |
-| `flui-macros` `derive(IntoElement)` | Planned regression area | Macro-generated `Component<Self>` wrappers must participate in the chosen Local identity model or be explicitly excluded by design. |
+| `.ai-factory/plans/feature-K02-element-identity-key.md` | Completed / refined | 36-task implementation plan for K02, with second-pass refinements for deferred-draw identity snapshots, lifecycle duplicate detection, macro-generated components, state retention, and bounded cache substrate. |
+| `flui-core` Element identity model | Implemented | `Element::id`, `ElementId`, `GlobalElementId`, `Window::element_id_stack`, lifecycle contexts, and built-in element id implementations now participate in normalized identity. |
+| `Window` state retention | Implemented | `with_element_state`, `use_state`, `use_keyed_state`, and frame cleanup remain keyed by `(GlobalElementId, TypeId)` with Local / Value / Global key input support. |
+| K01 Provider registry | Regression-covered | Provider scope keys and cached inherited dependency replay keep working after the K02 identity changes. |
+| `AnyView::cached` / element cache behavior | Preserved | Existing cached-view behavior is retained while public keyed stateless element cache wrappers remain deferred to SF02/SF05. |
+| `flui-macros` `derive(IntoElement)` | Regression-covered | Macro-generated `Component<Self>` wrappers participate in Local identity through preserved component callsite propagation. |
 
 ---
 

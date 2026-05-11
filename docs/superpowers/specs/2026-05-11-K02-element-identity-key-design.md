@@ -57,8 +57,7 @@ lists, keyed child matching, and cross-tree GlobalKey moves.
 
 K02 adds normalized identity classes:
 
-- `Local { source_location: Location<'static>, occurrence: u32 }`
-- `Local(LocalElementId)`
+- `Local(LocalElementId)` (where `LocalElementId` carries `source_location` and `occurrence`)
 - `GlobalKey(GlobalKey)`
 
 `CodeLocation(Location<'static>)` remains as a compatibility input. It should not appear in newly
@@ -123,6 +122,10 @@ Lifecycle repeat handling:
 - pending local occurrence counters for the current namespace,
 - debug-only explicit sibling key sets,
 - child namespace depth.
+
+The explicit sibling key sets are deliberately debug-only in K02. Release builds assume explicit
+keys are unique within their parent namespace to avoid per-sibling hot-path duplicate tracking;
+duplicate explicit keys are invalid input and may alias identity-backed state.
 
 Deferred prepaint and paint restore the snapshot before entering the deferred closure and clear the window
 stack after the pass. Root phase resets must not erase the deferred snapshot immediately before replay.

@@ -275,40 +275,6 @@ impl Drop for ElementArenaScope {
     }
 }
 
-pub(crate) struct ElementIdScope {
-    global_id: GlobalElementId,
-    _guard: ElementIdStackGuard,
-}
-
-impl ElementIdScope {
-    pub(crate) fn global_id(&self) -> &GlobalElementId {
-        &self.global_id
-    }
-}
-
-pub(crate) struct ElementIdStackGuard {
-    stack: *mut ElementIdStack,
-}
-
-impl ElementIdStackGuard {
-    fn new(stack: &mut ElementIdStack) -> Self {
-        Self { stack }
-    }
-}
-
-impl Drop for ElementIdStackGuard {
-    fn drop(&mut self) {
-        // SAFETY: guards are only created by `Window` immediately after pushing onto that
-        // window's identity stack. The guard never outlives the stack in normal control flow or
-        // unwinding, and its only mutation is the matching pop for that push.
-        let popped = unsafe { (&mut *self.stack).pop() };
-        debug_assert!(
-            popped.is_some(),
-            "element identity scope dropped with an empty stack"
-        );
-    }
-}
-
 /// Returned when the element arena has been used and so must be cleared before the next draw.
 #[must_use]
 pub struct ArenaClearNeeded {
@@ -2185,30 +2151,27 @@ impl Window {
         element_id: impl Into<ElementId>,
         f: impl FnOnce(&GlobalElementId, &mut Self) -> R,
     ) -> R {
-        self.with_id(element_id, |this| {
-            let global_id = GlobalElementId(Arc::from(&*this.element_id_stack));
-
-            f(&global_id, this)
-        })
+        self.with_pushed_element_id(element_id, f)
     }
 
-    pub(crate) fn push_element_id(&mut self, element_id: impl Into<ElementId>) -> ElementIdScope {
-        let guard = self.push_element_id_guard(element_id);
+    pub(crate) fn with_pushed_element_id<R>(
+        &mut self,
+        element_id: impl Into<ElementId>,
+        f: impl FnOnce(&GlobalElementId, &mut Self) -> R,
+    ) -> R {
+        self.element_id_stack.push(element_id.into());
         let global_id = GlobalElementId(Arc::from(&*self.element_id_stack));
-        ElementIdScope {
-            global_id,
-            _guard: guard,
-        }
+        self.with_current_element_id_scope(|this| f(&global_id, this))
     }
 
-    pub(crate) fn push_resolved_element_id(
+    pub(crate) fn with_resolved_element_id<R>(
         &mut self,
         global_id: &GlobalElementId,
-    ) -> ElementIdStackGuard {
+        f: impl FnOnce(&mut Self) -> R,
+    ) -> R {
         let parent_len = self.element_id_stack.len();
-        debug_assert_eq!(
-            &global_id[..parent_len],
-            &*self.element_id_stack,
+        assert!(
+            global_id.len() > parent_len && &global_id[..parent_len] == &*self.element_id_stack,
             "stored global id must extend the current element path"
         );
         let element_id = global_id
@@ -2216,12 +2179,20 @@ impl Window {
             .expect("stored global id must contain the current element segment")
             .clone();
         self.element_id_stack.push_resolved(element_id);
-        ElementIdStackGuard::new(&mut self.element_id_stack)
+        self.with_current_element_id_scope(f)
     }
 
-    fn push_element_id_guard(&mut self, element_id: impl Into<ElementId>) -> ElementIdStackGuard {
-        self.element_id_stack.push(element_id.into());
-        ElementIdStackGuard::new(&mut self.element_id_stack)
+    fn with_current_element_id_scope<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
+        let result = panic::catch_unwind(AssertUnwindSafe(|| f(self)));
+        let popped = self.element_id_stack.pop();
+        assert!(
+            popped.is_some(),
+            "element identity scope ended with an empty stack"
+        );
+        match result {
+            Ok(result) => result,
+            Err(payload) => panic::resume_unwind(payload),
+        }
     }
 
     /// Calls the provided closure with the element ID pushed on the stack.
@@ -2231,8 +2202,7 @@ impl Window {
         element_id: impl Into<ElementId>,
         f: impl FnOnce(&mut Self) -> R,
     ) -> R {
-        let _element_id_scope = self.push_element_id_guard(element_id);
-        f(self)
+        self.with_pushed_element_id(element_id, |_, this| f(this))
     }
 
     /// Executes the provided function with the specified rem size.
@@ -3145,8 +3115,7 @@ impl Window {
         element_id: impl Into<ElementId>,
         f: impl FnOnce(&mut Self) -> R,
     ) -> R {
-        let _element_id_scope = self.push_element_id_guard(element_id);
-        f(self)
+        self.with_pushed_element_id(element_id, |_, this| f(this))
     }
 
     /// Use a piece of state that exists as long this element is being rendered in consecutive frames.
