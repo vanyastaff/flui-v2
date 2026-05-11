@@ -20,10 +20,10 @@ use crate::PinchEvent;
 use crate::{
     AbsoluteLength, Action, AnyDrag, AnyElement, AnyTooltip, AnyView, App, Bounds, ClickEvent,
     DispatchPhase, Display, Element, ElementId, Entity, FocusHandle, Global, GlobalElementId,
-    Hitbox, HitboxBehavior, HitboxId, InspectorElementId, IntoElement, IsZero, KeyContext,
-    KeyDownEvent, KeyUpEvent, KeyboardButton, KeyboardClickEvent, LayoutId, ModifiersChangedEvent,
-    MouseButton, MouseClickEvent, MouseDownEvent, MouseMoveEvent, MousePressureEvent, MouseUpEvent,
-    Overflow, ParentElement, Pixels, Point, Render, ScrollWheelEvent, SharedString, Size, Style,
+    Hitbox, HitboxBehavior, HitboxId, IntoElement, IsZero, KeyContext, KeyDownEvent, KeyUpEvent,
+    KeyboardButton, KeyboardClickEvent, LayoutId, ModifiersChangedEvent, MouseButton,
+    MouseClickEvent, MouseDownEvent, MouseMoveEvent, MousePressureEvent, MouseUpEvent, Overflow,
+    ParentElement, Pixels, Point, Render, ScrollWheelEvent, SharedString, Size, Style,
     StyleRefinement, Styled, Task, TooltipId, Visibility, Window, WindowControlArea, point, px,
     size,
 };
@@ -1688,169 +1688,198 @@ impl Element for Div {
     #[stacksafe]
     fn request_layout(
         &mut self,
-        global_id: Option<&GlobalElementId>,
-        inspector_id: Option<&InspectorElementId>,
-        window: &mut Window,
-        cx: &mut App,
+        cx: &mut crate::LayoutCx<'_>,
     ) -> (LayoutId, Self::RequestLayoutState) {
-        let mut child_layout_ids = SmallVec::new();
-        let image_cache = self
-            .image_cache
-            .as_mut()
-            .map(|provider| provider.provide(window, cx));
+        let global_id = cx.global_id().cloned();
+        let inspector_id = cx.inspector_id().cloned();
+        cx.with_window_app(|window, cx| {
+            let mut child_layout_ids = SmallVec::new();
+            let image_cache = self
+                .image_cache
+                .as_mut()
+                .map(|provider| provider.provide(window, cx));
 
-        let layout_id = window.with_image_cache(image_cache, |window| {
-            self.interactivity.request_layout(
-                global_id,
-                inspector_id,
-                window,
-                cx,
-                |style, window, cx| {
-                    window.with_text_style(style.text_style().cloned(), |window| {
-                        child_layout_ids = self
-                            .children
-                            .iter_mut()
-                            .map(|child| child.request_layout(window, cx))
-                            .collect::<SmallVec<_>>();
-                        window.request_layout(style, child_layout_ids.iter().copied(), cx)
+            let layout_id = window.with_image_cache(image_cache, |window| {
+                let mut interactivity_cx =
+                    crate::LayoutCx::new(window, cx, global_id.as_ref(), inspector_id.as_ref());
+                self.interactivity
+                    .request_layout(&mut interactivity_cx, |style, window, cx| {
+                        window.with_text_style(style.text_style().cloned(), |window| {
+                            child_layout_ids = self
+                                .children
+                                .iter_mut()
+                                .map(|child| {
+                                    let mut child_cx = crate::LayoutCx::new(window, cx, None, None);
+                                    child.request_layout(&mut child_cx)
+                                })
+                                .collect::<SmallVec<_>>();
+                            window.request_layout(style, child_layout_ids.iter().copied(), cx)
+                        })
                     })
-                },
-            )
-        });
+            });
 
-        (layout_id, DivFrameState { child_layout_ids })
+            (layout_id, DivFrameState { child_layout_ids })
+        })
     }
 
     #[stacksafe]
     fn prepaint(
         &mut self,
-        global_id: Option<&GlobalElementId>,
-        inspector_id: Option<&InspectorElementId>,
-        bounds: Bounds<Pixels>,
+        cx: &mut crate::PrepaintCx<'_>,
         request_layout: &mut Self::RequestLayoutState,
-        window: &mut Window,
-        cx: &mut App,
     ) -> Option<Hitbox> {
-        let image_cache = self
-            .image_cache
-            .as_mut()
-            .map(|provider| provider.provide(window, cx));
+        let global_id = cx.global_id().cloned();
+        let inspector_id = cx.inspector_id().cloned();
+        let bounds = cx.bounds();
+        cx.with_window_app(|window, cx| {
+            let image_cache = self
+                .image_cache
+                .as_mut()
+                .map(|provider| provider.provide(window, cx));
 
-        let has_prepaint_listener = self.prepaint_listener.is_some();
-        let mut children_bounds = Vec::with_capacity(if has_prepaint_listener {
-            request_layout.child_layout_ids.len()
-        } else {
-            0
-        });
+            let has_prepaint_listener = self.prepaint_listener.is_some();
+            let mut children_bounds = Vec::with_capacity(if has_prepaint_listener {
+                request_layout.child_layout_ids.len()
+            } else {
+                0
+            });
 
-        let mut child_min = point(Pixels::MAX, Pixels::MAX);
-        let mut child_max = Point::default();
-        if let Some(handle) = self.interactivity.scroll_anchor.as_ref() {
-            *handle.last_origin.borrow_mut() = bounds.origin - window.element_offset();
-        }
-        let content_size = if request_layout.child_layout_ids.is_empty() {
-            bounds.size
-        } else if let Some(scroll_handle) = self.interactivity.tracked_scroll_handle.as_ref() {
-            let mut state = scroll_handle.0.borrow_mut();
-            state.child_bounds = Vec::with_capacity(request_layout.child_layout_ids.len());
-            for child_layout_id in &request_layout.child_layout_ids {
-                let child_bounds = window.layout_bounds(*child_layout_id);
-                child_min = child_min.min(&child_bounds.origin);
-                child_max = child_max.max(&child_bounds.bottom_right());
-                state.child_bounds.push(child_bounds);
+            let mut child_min = point(Pixels::MAX, Pixels::MAX);
+            let mut child_max = Point::default();
+            if let Some(handle) = self.interactivity.scroll_anchor.as_ref() {
+                *handle.last_origin.borrow_mut() = bounds.origin - window.element_offset();
             }
-            (child_max - child_min).into()
-        } else {
-            for child_layout_id in &request_layout.child_layout_ids {
-                let child_bounds = window.layout_bounds(*child_layout_id);
-                child_min = child_min.min(&child_bounds.origin);
-                child_max = child_max.max(&child_bounds.bottom_right());
-
-                if has_prepaint_listener {
-                    children_bounds.push(child_bounds);
+            let content_size = if request_layout.child_layout_ids.is_empty() {
+                bounds.size
+            } else if let Some(scroll_handle) = self.interactivity.tracked_scroll_handle.as_ref() {
+                let mut state = scroll_handle.0.borrow_mut();
+                state.child_bounds = Vec::with_capacity(request_layout.child_layout_ids.len());
+                for child_layout_id in &request_layout.child_layout_ids {
+                    let child_bounds = window.layout_bounds(*child_layout_id);
+                    child_min = child_min.min(&child_bounds.origin);
+                    child_max = child_max.max(&child_bounds.bottom_right());
+                    state.child_bounds.push(child_bounds);
                 }
+                (child_max - child_min).into()
+            } else {
+                for child_layout_id in &request_layout.child_layout_ids {
+                    let child_bounds = window.layout_bounds(*child_layout_id);
+                    child_min = child_min.min(&child_bounds.origin);
+                    child_max = child_max.max(&child_bounds.bottom_right());
+
+                    if has_prepaint_listener {
+                        children_bounds.push(child_bounds);
+                    }
+                }
+                (child_max - child_min).into()
+            };
+
+            if let Some(scroll_handle) = self.interactivity.tracked_scroll_handle.as_ref() {
+                scroll_handle.scroll_to_active_item();
             }
-            (child_max - child_min).into()
-        };
 
-        if let Some(scroll_handle) = self.interactivity.tracked_scroll_handle.as_ref() {
-            scroll_handle.scroll_to_active_item();
-        }
+            self.interactivity.prepaint(
+                &mut crate::PrepaintCx::new(
+                    window,
+                    cx,
+                    global_id.as_ref(),
+                    inspector_id.as_ref(),
+                    bounds,
+                ),
+                content_size,
+                |style, scroll_offset, hitbox, window, cx| {
+                    // skip children
+                    if style.display == Display::None {
+                        return hitbox;
+                    }
 
-        self.interactivity.prepaint(
-            global_id,
-            inspector_id,
-            bounds,
-            content_size,
-            window,
-            cx,
-            |style, scroll_offset, hitbox, window, cx| {
-                // skip children
-                if style.display == Display::None {
-                    return hitbox;
-                }
-
-                window.with_image_cache(image_cache, |window| {
-                    window.with_element_offset(scroll_offset, |window| {
-                        if let Some(order_fn) = &self.prepaint_order_fn {
-                            let order = order_fn(window, cx);
-                            for idx in order {
-                                if let Some(child) = self.children.get_mut(idx) {
-                                    child.prepaint(window, cx);
+                    window.with_image_cache(image_cache, |window| {
+                        window.with_element_offset(scroll_offset, |window| {
+                            if let Some(order_fn) = &self.prepaint_order_fn {
+                                let order = order_fn(window, cx);
+                                for idx in order {
+                                    if let Some(child) = self.children.get_mut(idx) {
+                                        let mut child_cx = crate::PrepaintCx::new(
+                                            window,
+                                            cx,
+                                            global_id.as_ref(),
+                                            inspector_id.as_ref(),
+                                            bounds,
+                                        );
+                                        child.prepaint(&mut child_cx);
+                                    }
+                                }
+                            } else {
+                                for child in &mut self.children {
+                                    let mut child_cx = crate::PrepaintCx::new(
+                                        window,
+                                        cx,
+                                        global_id.as_ref(),
+                                        inspector_id.as_ref(),
+                                        bounds,
+                                    );
+                                    child.prepaint(&mut child_cx);
                                 }
                             }
-                        } else {
-                            for child in &mut self.children {
-                                child.prepaint(window, cx);
-                            }
+                        });
+
+                        if let Some(listener) = self.prepaint_listener.as_ref() {
+                            listener(children_bounds, window, cx);
                         }
                     });
 
-                    if let Some(listener) = self.prepaint_listener.as_ref() {
-                        listener(children_bounds, window, cx);
-                    }
-                });
-
-                hitbox
-            },
-        )
+                    hitbox
+                },
+            )
+        })
     }
 
     #[stacksafe]
     fn paint(
         &mut self,
-        global_id: Option<&GlobalElementId>,
-        inspector_id: Option<&InspectorElementId>,
-        bounds: Bounds<Pixels>,
+        cx: &mut crate::PaintCx<'_>,
         _request_layout: &mut Self::RequestLayoutState,
         hitbox: &mut Option<Hitbox>,
-        window: &mut Window,
-        cx: &mut App,
     ) {
-        let image_cache = self
-            .image_cache
-            .as_mut()
-            .map(|provider| provider.provide(window, cx));
+        let global_id = cx.global_id().cloned();
+        let inspector_id = cx.inspector_id().cloned();
+        let bounds = cx.bounds();
+        cx.with_window_app(|window, cx| {
+            let image_cache = self
+                .image_cache
+                .as_mut()
+                .map(|provider| provider.provide(window, cx));
 
-        window.with_image_cache(image_cache, |window| {
-            self.interactivity.paint(
-                global_id,
-                inspector_id,
-                bounds,
-                hitbox.as_ref(),
-                window,
-                cx,
-                |style, window, cx| {
-                    // skip children
-                    if style.display == Display::None {
-                        return;
-                    }
+            window.with_image_cache(image_cache, |window| {
+                let mut interactivity_cx = crate::PaintCx::new(
+                    window,
+                    cx,
+                    global_id.as_ref(),
+                    inspector_id.as_ref(),
+                    bounds,
+                );
+                self.interactivity.paint(
+                    &mut interactivity_cx,
+                    hitbox.as_ref(),
+                    |style, window, cx| {
+                        // skip children
+                        if style.display == Display::None {
+                            return;
+                        }
 
-                    for child in &mut self.children {
-                        child.paint(window, cx);
-                    }
-                },
-            )
+                        for child in &mut self.children {
+                            let mut child_cx = crate::PaintCx::new(
+                                window,
+                                cx,
+                                global_id.as_ref(),
+                                inspector_id.as_ref(),
+                                bounds,
+                            );
+                            child.paint(&mut child_cx);
+                        }
+                    },
+                )
+            });
         });
     }
 }
@@ -1942,162 +1971,166 @@ impl Interactivity {
     /// Layout this element according to this interactivity state's configured styles
     pub fn request_layout(
         &mut self,
-        global_id: Option<&GlobalElementId>,
-        _inspector_id: Option<&InspectorElementId>,
-        window: &mut Window,
-        cx: &mut App,
+        cx: &mut crate::LayoutCx<'_>,
         f: impl FnOnce(Style, &mut Window, &mut App) -> LayoutId,
     ) -> LayoutId {
-        #[cfg(any(feature = "inspector", debug_assertions))]
-        window.with_inspector_state(
-            _inspector_id,
-            cx,
-            |inspector_state: &mut Option<DivInspectorState>, _window| {
-                if let Some(inspector_state) = inspector_state {
-                    self.base_style = inspector_state.base_style.clone();
-                } else {
-                    *inspector_state = Some(DivInspectorState {
-                        base_style: self.base_style.clone(),
-                        bounds: Default::default(),
-                        content_size: Default::default(),
-                    })
-                }
-            },
-        );
-
-        window.with_optional_element_state::<InteractiveElementState, _>(
-            global_id,
-            |element_state, window| {
-                let mut element_state =
-                    element_state.map(|element_state| element_state.unwrap_or_default());
-
-                if let Some(element_state) = element_state.as_ref()
-                    && cx.has_active_drag()
-                {
-                    if let Some(pending_mouse_down) = element_state.pending_mouse_down.as_ref() {
-                        *pending_mouse_down.borrow_mut() = None;
+        let global_id = cx.global_id().cloned();
+        let inspector_id = cx.inspector_id().cloned();
+        cx.with_window_app(|window, cx| {
+            #[cfg(any(feature = "inspector", debug_assertions))]
+            window.with_inspector_state(
+                inspector_id.as_ref(),
+                cx,
+                |inspector_state: &mut Option<DivInspectorState>, _window| {
+                    if let Some(inspector_state) = inspector_state {
+                        self.base_style = inspector_state.base_style.clone();
+                    } else {
+                        *inspector_state = Some(DivInspectorState {
+                            base_style: self.base_style.clone(),
+                            bounds: Default::default(),
+                            content_size: Default::default(),
+                        })
                     }
-                    if let Some(clicked_state) = element_state.clicked_state.as_ref() {
-                        *clicked_state.borrow_mut() = ElementClickedState::default();
-                    }
-                }
+                },
+            );
 
-                // Ensure we store a focus handle in our element state if we're focusable.
-                // If there's an explicit focus handle we're tracking, use that. Otherwise
-                // create a new handle and store it in the element state, which lives for as
-                // as frames contain an element with this id.
-                if self.focusable
-                    && self.tracked_focus_handle.is_none()
-                    && let Some(element_state) = element_state.as_mut()
-                {
-                    let mut handle = element_state
-                        .focus_handle
-                        .get_or_insert_with(|| cx.focus_handle())
-                        .clone()
-                        .tab_stop(self.tab_stop);
+            window.with_optional_element_state::<InteractiveElementState, _>(
+                global_id.as_ref(),
+                |element_state, window| {
+                    let mut element_state =
+                        element_state.map(|element_state| element_state.unwrap_or_default());
 
-                    if let Some(index) = self.tab_index {
-                        handle = handle.tab_index(index);
+                    if let Some(element_state) = element_state.as_ref()
+                        && cx.has_active_drag()
+                    {
+                        if let Some(pending_mouse_down) = element_state.pending_mouse_down.as_ref()
+                        {
+                            *pending_mouse_down.borrow_mut() = None;
+                        }
+                        if let Some(clicked_state) = element_state.clicked_state.as_ref() {
+                            *clicked_state.borrow_mut() = ElementClickedState::default();
+                        }
                     }
 
-                    self.tracked_focus_handle = Some(handle);
-                }
+                    // Ensure we store a focus handle in our element state if we're focusable.
+                    // If there's an explicit focus handle we're tracking, use that. Otherwise
+                    // create a new handle and store it in the element state, which lives for as
+                    // as frames contain an element with this id.
+                    if self.focusable
+                        && self.tracked_focus_handle.is_none()
+                        && let Some(element_state) = element_state.as_mut()
+                    {
+                        let mut handle = element_state
+                            .focus_handle
+                            .get_or_insert_with(|| cx.focus_handle())
+                            .clone()
+                            .tab_stop(self.tab_stop);
 
-                if let Some(scroll_handle) = self.tracked_scroll_handle.as_ref() {
-                    self.scroll_offset = Some(scroll_handle.0.borrow().offset.clone());
-                } else if (self.base_style.overflow.x == Some(Overflow::Scroll)
-                    || self.base_style.overflow.y == Some(Overflow::Scroll))
-                    && let Some(element_state) = element_state.as_mut()
-                {
-                    self.scroll_offset = Some(
-                        element_state
-                            .scroll_offset
-                            .get_or_insert_with(Rc::default)
-                            .clone(),
-                    );
-                }
+                        if let Some(index) = self.tab_index {
+                            handle = handle.tab_index(index);
+                        }
 
-                let style = self.compute_style_internal(None, element_state.as_mut(), window, cx);
-                let layout_id = f(style, window, cx);
-                (layout_id, element_state)
-            },
-        )
+                        self.tracked_focus_handle = Some(handle);
+                    }
+
+                    if let Some(scroll_handle) = self.tracked_scroll_handle.as_ref() {
+                        self.scroll_offset = Some(scroll_handle.0.borrow().offset.clone());
+                    } else if (self.base_style.overflow.x == Some(Overflow::Scroll)
+                        || self.base_style.overflow.y == Some(Overflow::Scroll))
+                        && let Some(element_state) = element_state.as_mut()
+                    {
+                        self.scroll_offset = Some(
+                            element_state
+                                .scroll_offset
+                                .get_or_insert_with(Rc::default)
+                                .clone(),
+                        );
+                    }
+
+                    let style =
+                        self.compute_style_internal(None, element_state.as_mut(), window, cx);
+                    let layout_id = f(style, window, cx);
+                    (layout_id, element_state)
+                },
+            )
+        })
     }
 
     /// Commit the bounds of this element according to this interactivity state's configured styles.
     pub fn prepaint<R>(
         &mut self,
-        global_id: Option<&GlobalElementId>,
-        _inspector_id: Option<&InspectorElementId>,
-        bounds: Bounds<Pixels>,
+        cx: &mut crate::PrepaintCx<'_>,
         content_size: Size<Pixels>,
-        window: &mut Window,
-        cx: &mut App,
         f: impl FnOnce(&Style, Point<Pixels>, Option<Hitbox>, &mut Window, &mut App) -> R,
     ) -> R {
         self.content_size = content_size;
-
-        #[cfg(any(feature = "inspector", debug_assertions))]
-        window.with_inspector_state(
-            _inspector_id,
-            cx,
-            |inspector_state: &mut Option<DivInspectorState>, _window| {
-                if let Some(inspector_state) = inspector_state {
-                    inspector_state.bounds = bounds;
-                    inspector_state.content_size = content_size;
-                }
-            },
-        );
-
-        if let Some(focus_handle) = self.tracked_focus_handle.as_ref() {
-            window.set_focus_handle(focus_handle, cx);
-        }
-        window.with_optional_element_state::<InteractiveElementState, _>(
-            global_id,
-            |element_state, window| {
-                let mut element_state =
-                    element_state.map(|element_state| element_state.unwrap_or_default());
-                let style = self.compute_style_internal(None, element_state.as_mut(), window, cx);
-
-                if let Some(element_state) = element_state.as_mut() {
-                    if let Some(clicked_state) = element_state.clicked_state.as_ref() {
-                        let clicked_state = clicked_state.borrow();
-                        self.active = Some(clicked_state.element);
+        let global_id = cx.global_id().cloned();
+        let inspector_id = cx.inspector_id().cloned();
+        let bounds = cx.bounds();
+        cx.with_window_app(|window, cx| {
+            #[cfg(any(feature = "inspector", debug_assertions))]
+            window.with_inspector_state(
+                inspector_id.as_ref(),
+                cx,
+                |inspector_state: &mut Option<DivInspectorState>, _window| {
+                    if let Some(inspector_state) = inspector_state {
+                        inspector_state.bounds = bounds;
+                        inspector_state.content_size = content_size;
                     }
-                    if self.hover_style.is_some() || self.group_hover_style.is_some() {
-                        element_state
-                            .hover_state
-                            .get_or_insert_with(Default::default);
-                    }
-                    if let Some(active_tooltip) = element_state.active_tooltip.as_ref() {
-                        if self.tooltip_builder.is_some() {
-                            self.tooltip_id = set_tooltip_on_window(active_tooltip, window);
-                        } else {
-                            // If there is no longer a tooltip builder, remove the active tooltip.
-                            element_state.active_tooltip.take();
+                },
+            );
+
+            if let Some(focus_handle) = self.tracked_focus_handle.as_ref() {
+                window.set_focus_handle(focus_handle, cx);
+            }
+            window.with_optional_element_state::<InteractiveElementState, _>(
+                global_id.as_ref(),
+                |element_state, window| {
+                    let mut element_state =
+                        element_state.map(|element_state| element_state.unwrap_or_default());
+                    let style =
+                        self.compute_style_internal(None, element_state.as_mut(), window, cx);
+
+                    if let Some(element_state) = element_state.as_mut() {
+                        if let Some(clicked_state) = element_state.clicked_state.as_ref() {
+                            let clicked_state = clicked_state.borrow();
+                            self.active = Some(clicked_state.element);
+                        }
+                        if self.hover_style.is_some() || self.group_hover_style.is_some() {
+                            element_state
+                                .hover_state
+                                .get_or_insert_with(Default::default);
+                        }
+                        if let Some(active_tooltip) = element_state.active_tooltip.as_ref() {
+                            if self.tooltip_builder.is_some() {
+                                self.tooltip_id = set_tooltip_on_window(active_tooltip, window);
+                            } else {
+                                // If there is no longer a tooltip builder, remove the active tooltip.
+                                element_state.active_tooltip.take();
+                            }
                         }
                     }
-                }
 
-                window.with_text_style(style.text_style().cloned(), |window| {
-                    window.with_content_mask(
-                        style.overflow_mask(bounds, window.rem_size()),
-                        |window| {
-                            let hitbox = if self.should_insert_hitbox(&style, window, cx) {
-                                Some(window.insert_hitbox(bounds, self.hitbox_behavior))
-                            } else {
-                                None
-                            };
+                    window.with_text_style(style.text_style().cloned(), |window| {
+                        window.with_content_mask(
+                            style.overflow_mask(bounds, window.rem_size()),
+                            |window| {
+                                let hitbox = if self.should_insert_hitbox(&style, window, cx) {
+                                    Some(window.insert_hitbox(bounds, self.hitbox_behavior))
+                                } else {
+                                    None
+                                };
 
-                            let scroll_offset =
-                                self.clamp_scroll_position(bounds, &style, window, cx);
-                            let result = f(&style, scroll_offset, hitbox, window, cx);
-                            (result, element_state)
-                        },
-                    )
-                })
-            },
-        )
+                                let scroll_offset =
+                                    self.clamp_scroll_position(bounds, &style, window, cx);
+                                let result = f(&style, scroll_offset, hitbox, window, cx);
+                                (result, element_state)
+                            },
+                        )
+                    })
+                },
+            )
+        })
     }
 
     fn should_insert_hitbox(&self, style: &Style, window: &Window, cx: &App) -> bool {
@@ -2200,8 +2233,30 @@ impl Interactivity {
     /// with the current scroll offset
     pub fn paint(
         &mut self,
+        cx: &mut crate::PaintCx<'_>,
+        hitbox: Option<&Hitbox>,
+        f: impl FnOnce(&Style, &mut Window, &mut App),
+    ) {
+        let global_id = cx.global_id().cloned();
+        let inspector_id = cx.inspector_id().cloned();
+        let bounds = cx.bounds();
+        cx.with_window_app(|window, cx| {
+            self.paint_with_window_app(
+                global_id.as_ref(),
+                inspector_id.as_ref(),
+                bounds,
+                hitbox,
+                window,
+                cx,
+                f,
+            );
+        });
+    }
+
+    fn paint_with_window_app(
+        &mut self,
         global_id: Option<&GlobalElementId>,
-        _inspector_id: Option<&InspectorElementId>,
+        inspector_id: Option<&crate::InspectorElementId>,
         bounds: Bounds<Pixels>,
         hitbox: Option<&Hitbox>,
         window: &mut Window,
@@ -2290,7 +2345,11 @@ impl Interactivity {
 
                                             #[cfg(debug_assertions)]
                                             self.paint_debug_info(
-                                                global_id, hitbox, &style, window, cx,
+                                                global_id,
+                                                hitbox,
+                                                &style,
+                                                window,
+                                                cx,
                                             );
 
                                             if let Some(drag) = cx.active_drag.as_ref() {
@@ -2330,7 +2389,7 @@ impl Interactivity {
                                             #[cfg(any(feature = "inspector", debug_assertions))]
                                             window.insert_inspector_hitbox(
                                                 _hitbox.id,
-                                                _inspector_id,
+                                                inspector_id,
                                                 cx,
                                             );
 
@@ -3525,46 +3584,26 @@ where
 
     fn request_layout(
         &mut self,
-        id: Option<&GlobalElementId>,
-        inspector_id: Option<&InspectorElementId>,
-        window: &mut Window,
-        cx: &mut App,
+        cx: &mut crate::LayoutCx<'_>,
     ) -> (LayoutId, Self::RequestLayoutState) {
-        self.element.request_layout(id, inspector_id, window, cx)
+        self.element.request_layout(cx)
     }
 
     fn prepaint(
         &mut self,
-        id: Option<&GlobalElementId>,
-        inspector_id: Option<&InspectorElementId>,
-        bounds: Bounds<Pixels>,
+        cx: &mut crate::PrepaintCx<'_>,
         state: &mut Self::RequestLayoutState,
-        window: &mut Window,
-        cx: &mut App,
     ) -> E::PrepaintState {
-        self.element
-            .prepaint(id, inspector_id, bounds, state, window, cx)
+        self.element.prepaint(cx, state)
     }
 
     fn paint(
         &mut self,
-        id: Option<&GlobalElementId>,
-        inspector_id: Option<&InspectorElementId>,
-        bounds: Bounds<Pixels>,
+        cx: &mut crate::PaintCx<'_>,
         request_layout: &mut Self::RequestLayoutState,
         prepaint: &mut Self::PrepaintState,
-        window: &mut Window,
-        cx: &mut App,
     ) {
-        self.element.paint(
-            id,
-            inspector_id,
-            bounds,
-            request_layout,
-            prepaint,
-            window,
-            cx,
-        );
+        self.element.paint(cx, request_layout, prepaint);
     }
 }
 

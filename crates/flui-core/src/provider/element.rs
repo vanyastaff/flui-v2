@@ -1,7 +1,4 @@
-use crate::{
-    AnyElement, App, Bounds, Element, ElementId, GlobalElementId, InspectorElementId, IntoElement,
-    LayoutId, Pixels, RenderOnce, Window,
-};
+use crate::{AnyElement, App, Element, ElementId, IntoElement, LayoutId, RenderOnce, Window};
 
 use super::{InheritedValue, stack};
 
@@ -69,39 +66,28 @@ impl<T: InheritedValue> Element for ProviderElement<T> {
 
     fn request_layout(
         &mut self,
-        _id: Option<&GlobalElementId>,
-        _inspector_id: Option<&InspectorElementId>,
-        window: &mut Window,
-        cx: &mut App,
+        cx: &mut crate::LayoutCx<'_>,
     ) -> (LayoutId, Self::RequestLayoutState) {
         stack::push(self.value.clone());
-        let layout_id = self.child.request_layout(window, cx);
+        let layout_id = self.child.request_layout(cx);
         (layout_id, ())
     }
 
     fn prepaint(
         &mut self,
-        _id: Option<&GlobalElementId>,
-        _inspector_id: Option<&InspectorElementId>,
-        _bounds: Bounds<Pixels>,
+        cx: &mut crate::PrepaintCx<'_>,
         _request_layout: &mut Self::RequestLayoutState,
-        window: &mut Window,
-        cx: &mut App,
     ) {
-        self.child.prepaint(window, cx);
+        self.child.prepaint(cx);
     }
 
     fn paint(
         &mut self,
-        _id: Option<&GlobalElementId>,
-        _inspector_id: Option<&InspectorElementId>,
-        _bounds: Bounds<Pixels>,
+        cx: &mut crate::PaintCx<'_>,
         _request_layout: &mut Self::RequestLayoutState,
         _prepaint: &mut Self::PrepaintState,
-        window: &mut Window,
-        cx: &mut App,
     ) {
-        self.child.paint(window, cx);
+        self.child.paint(cx);
         stack::pop::<T>();
     }
 }

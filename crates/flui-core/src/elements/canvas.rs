@@ -1,8 +1,7 @@
 use refineable::Refineable as _;
 
 use crate::{
-    App, Bounds, Element, ElementId, GlobalElementId, InspectorElementId, IntoElement, Pixels,
-    Style, StyleRefinement, Styled, Window,
+    App, Bounds, Element, ElementId, IntoElement, Pixels, Style, StyleRefinement, Styled, Window,
 };
 
 /// Construct a canvas element with the given paint callback.
@@ -48,42 +47,37 @@ impl<T: 'static> Element for Canvas<T> {
 
     fn request_layout(
         &mut self,
-        _id: Option<&GlobalElementId>,
-        _inspector_id: Option<&InspectorElementId>,
-        window: &mut Window,
-        cx: &mut App,
+        cx: &mut crate::LayoutCx<'_>,
     ) -> (crate::LayoutId, Self::RequestLayoutState) {
-        let mut style = Style::default();
-        style.refine(&self.style);
-        let layout_id = window.request_layout(style.clone(), [], cx);
-        (layout_id, style)
+        cx.with_window_app(|window, cx| {
+            let mut style = Style::default();
+            style.refine(&self.style);
+            let layout_id = window.request_layout(style.clone(), [], cx);
+            (layout_id, style)
+        })
     }
 
     fn prepaint(
         &mut self,
-        _id: Option<&GlobalElementId>,
-        _inspector_id: Option<&InspectorElementId>,
-        bounds: Bounds<Pixels>,
+        cx: &mut crate::PrepaintCx<'_>,
         _request_layout: &mut Style,
-        window: &mut Window,
-        cx: &mut App,
     ) -> Option<T> {
-        Some(self.prepaint.take().unwrap()(bounds, window, cx))
+        let bounds = cx.bounds();
+        cx.with_window_app(|window, cx| Some(self.prepaint.take().unwrap()(bounds, window, cx)))
     }
 
     fn paint(
         &mut self,
-        _id: Option<&GlobalElementId>,
-        _inspector_id: Option<&InspectorElementId>,
-        bounds: Bounds<Pixels>,
+        cx: &mut crate::PaintCx<'_>,
         style: &mut Style,
         prepaint: &mut Self::PrepaintState,
-        window: &mut Window,
-        cx: &mut App,
     ) {
+        let bounds = cx.bounds();
         let prepaint = prepaint.take().unwrap();
-        style.paint(bounds, window, cx, |window, cx| {
-            (self.paint.take().unwrap())(bounds, prepaint, window, cx)
+        cx.with_window_app(|window, cx| {
+            style.paint(bounds, window, cx, |window, cx| {
+                (self.paint.take().unwrap())(bounds, prepaint, window, cx)
+            });
         });
     }
 }

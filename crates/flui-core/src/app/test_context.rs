@@ -851,11 +851,17 @@ impl VisualTestContext {
 
             window.invalidator.set_phase(DrawPhase::Prepaint);
             let mut element = Drawable::new(f(window, cx));
-            element.layout_as_root(space.into(), window, cx);
-            window.with_absolute_element_offset(origin, |window| element.prepaint(window, cx));
+            let mut layout_cx = crate::LayoutCx::new(window, cx, None, None);
+            element.layout_as_root(space.into(), &mut layout_cx);
+            window.with_absolute_element_offset(origin, |window| {
+                let mut prepaint_cx =
+                    crate::PrepaintCx::new(window, cx, None, None, Bounds::default());
+                element.prepaint(&mut prepaint_cx);
+            });
 
             window.invalidator.set_phase(DrawPhase::Paint);
-            let (request_layout_state, prepaint_state) = element.paint(window, cx);
+            let mut paint_cx = crate::PaintCx::new(window, cx, None, None, Bounds::default());
+            let (request_layout_state, prepaint_state) = element.paint(&mut paint_cx);
 
             window.invalidator.set_phase(DrawPhase::None);
             window.refresh();
