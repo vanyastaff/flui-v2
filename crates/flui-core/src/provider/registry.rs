@@ -22,12 +22,19 @@ impl ProviderScopeKey {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct InheritedDependency {
     pub(crate) provider: ProviderScopeKey,
     pub(crate) provider_version: u64,
     pub(crate) dependent_element: GlobalElementId,
     pub(crate) dependent_view: EntityId,
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+struct InheritedDependencyKey {
+    provider: ProviderScopeKey,
+    dependent_element: GlobalElementId,
+    dependent_view: EntityId,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -44,10 +51,10 @@ struct InheritedEntry {
 }
 
 impl InheritedEntry {
-    fn new<T: InheritedValue>(value: T) -> Self {
+    fn new<T: InheritedValue>(value: T, version: u64) -> Self {
         Self {
             value: Box::new(value),
-            version: 0,
+            version,
             dependents: SmallVec::new(),
         }
     }
@@ -61,9 +68,9 @@ impl InheritedEntry {
         })
     }
 
-    fn replace<T: InheritedValue>(&mut self, value: T) {
+    fn replace<T: InheritedValue>(&mut self, value: T, version: u64) {
         self.value = Box::new(value);
-        self.version = self.version.saturating_add(1);
+        self.version = version;
     }
 
     fn upsert_dependent(&mut self, dependent: InheritedDependent) {
@@ -90,6 +97,7 @@ impl InheritedEntry {
 #[derive(Default)]
 pub(crate) struct InheritedRegistry {
     entries: FxHashMap<ProviderScopeKey, InheritedEntry>,
+    provider_generations: FxHashMap<ProviderScopeKey, u64>,
     active_by_type: FxHashMap<TypeId, SmallVec<[GlobalElementId; 4]>>,
     accessed_providers: FxHashSet<ProviderScopeKey>,
     accessed_provider_order: Vec<ProviderScopeKey>,
@@ -112,9 +120,10 @@ impl InheritedRegistry {
         let key = ProviderScopeKey::of::<T>(scope_id.clone());
         self.mark_provider_accessed(key.clone());
 
-        let Some(entry) = self.entries.get_mut(&key) else {
+        let Some(entry) = self.entries.get(&key) else {
+            let version = self.next_provider_version(&key);
             self.entries
-                .insert(key, InheritedEntry::new::<T>(value.clone()));
+                .insert(key, InheritedEntry::new::<T>(value.clone(), version));
             return SmallVec::new();
         };
 
@@ -123,7 +132,11 @@ impl InheritedRegistry {
         }
 
         let dirty_views = entry.dependent_views();
-        entry.replace::<T>(value.clone());
+        let version = self.next_provider_version(&key);
+        self.entries
+            .get_mut(&key)
+            .expect("provider entry must exist after equality check")
+            .replace::<T>(value.clone(), version);
         dirty_views
     }
 
@@ -205,6 +218,7 @@ impl InheritedRegistry {
 
         if entry.version != dependency.provider_version {
             push_unique_view(&mut dirty_views, dependency.dependent_view);
+            return dirty_views;
         }
 
         entry.upsert_dependent(InheritedDependent {
@@ -214,6 +228,29 @@ impl InheritedRegistry {
         });
 
         self.accessed_dependencies.push(dependency);
+        dirty_views
+    }
+
+    pub(crate) fn validate_cached_dependencies(
+        &self,
+        provider_accesses: &[ProviderScopeKey],
+        dependencies: &[InheritedDependency],
+    ) -> SmallVec<[EntityId; 8]> {
+        let mut dirty_views = SmallVec::new();
+
+        for dependency in dependencies {
+            let provider_was_accessed = self.accessed_providers.contains(&dependency.provider)
+                || provider_accesses.contains(&dependency.provider);
+            let provider_version_matches = self
+                .entries
+                .get(&dependency.provider)
+                .is_some_and(|entry| entry.version == dependency.provider_version);
+
+            if !provider_was_accessed || !provider_version_matches {
+                push_unique_view(&mut dirty_views, dependency.dependent_view);
+            }
+        }
+
         dirty_views
     }
 
@@ -329,6 +366,14 @@ impl InheritedRegistry {
         Some(value)
     }
 
+    fn next_provider_version(&mut self, key: &ProviderScopeKey) -> u64 {
+        let generation = self.provider_generations.entry(key.clone()).or_default();
+        *generation = generation
+            .checked_add(1)
+            .expect("provider version generation exhausted");
+        *generation
+    }
+
     fn mark_provider_accessed(&mut self, key: ProviderScopeKey) {
         if self.accessed_providers.insert(key.clone()) {
             self.accessed_provider_order.push(key);
@@ -336,14 +381,23 @@ impl InheritedRegistry {
     }
 
     fn prune_unaccessed_dependents(&mut self) {
-        let accessed_dependencies = &self.accessed_dependencies;
+        let accessed_dependencies = self
+            .accessed_dependencies
+            .iter()
+            .map(|dependency| InheritedDependencyKey {
+                provider: dependency.provider.clone(),
+                dependent_element: dependency.dependent_element.clone(),
+                dependent_view: dependency.dependent_view,
+            })
+            .collect::<FxHashSet<_>>();
 
         for (key, entry) in &mut self.entries {
+            let provider = key.clone();
             entry.dependents.retain(|dependent| {
-                accessed_dependencies.iter().any(|accessed| {
-                    accessed.provider == *key
-                        && accessed.dependent_element == dependent.element_id
-                        && accessed.dependent_view == dependent.view_id
+                accessed_dependencies.contains(&InheritedDependencyKey {
+                    provider: provider.clone(),
+                    dependent_element: dependent.element_id.clone(),
+                    dependent_view: dependent.view_id,
                 })
             });
         }
@@ -460,7 +514,7 @@ mod tests {
         let dirty_views = registry.provide::<i32>(&provider, &7);
 
         assert!(dirty_views.is_empty());
-        assert_eq!(registry.provider_version(&key), Some(0));
+        assert_eq!(registry.provider_version(&key), Some(1));
     }
 
     #[test]
@@ -477,7 +531,7 @@ mod tests {
         let dirty_views = registry.provide::<i32>(&provider, &8);
 
         assert_eq!(dirty_views.as_slice(), &[view(1)]);
-        assert_eq!(registry.provider_version(&key), Some(1));
+        assert_eq!(registry.provider_version(&key), Some(2));
     }
 
     #[test]
@@ -523,6 +577,33 @@ mod tests {
             &[view(1)]
         );
         assert!(!registry.contains_provider(&key));
+    }
+
+    #[test]
+    fn recreated_provider_uses_new_generation_to_dirty_stale_dependency() {
+        let mut registry = InheritedRegistry::default();
+        let provider = scope("provider");
+        let dependent = scope("dependent");
+        let key = ProviderScopeKey::of::<i32>(provider.clone());
+
+        registry.provide::<i32>(&provider, &7);
+        registry.push_active::<i32>(&provider);
+        registry.inherit::<i32>(&dependent, view(1));
+        let dependency = registry.accessed_dependencies()[0].clone();
+        assert_eq!(registry.provider_version(&key), Some(1));
+
+        registry.begin_frame();
+        registry.remove_unaccessed_providers();
+        assert!(!registry.contains_provider(&key));
+
+        registry.provide::<i32>(&provider, &7);
+        assert_eq!(registry.provider_version(&key), Some(2));
+
+        registry.begin_frame();
+        registry.replay_provider_access(key);
+        let dirty_views = registry.replay_dependency(dependency);
+
+        assert_eq!(dirty_views.as_slice(), &[view(1)]);
     }
 
     #[test]

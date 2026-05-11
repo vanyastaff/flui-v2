@@ -66,7 +66,7 @@ New explicit handling:
 
 ```rust
 let theme = cx
-    .inherit::<Theme>()
+    .read_inherited::<Theme>()
     .expect("Theme provider is required above this element");
 ```
 

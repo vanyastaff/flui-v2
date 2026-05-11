@@ -176,21 +176,29 @@ impl Element for AnyView {
                             && !window.dirty_views.contains(&self.entity_id())
                             && !window.refreshing
                         {
-                            let prepaint_start = window.prepaint_index();
-                            window.reuse_prepaint(element_state.prepaint_range.clone());
-                            window.replay_inherited_provider_accesses(
+                            if window.validate_inherited_cache(
                                 &element_state.inherited_provider_accesses,
-                            );
-                            window.replay_inherited_dependencies(
                                 &element_state.inherited_dependencies,
                                 cx,
-                            );
-                            cx.entities
-                                .extend_accessed(&element_state.accessed_entities);
-                            let prepaint_end = window.prepaint_index();
-                            element_state.prepaint_range = prepaint_start..prepaint_end;
+                            ) {
+                                window.replay_inherited_provider_accesses(
+                                    &element_state.inherited_provider_accesses,
+                                );
+                                let dirty_views = window.replay_inherited_dependencies(
+                                    &element_state.inherited_dependencies,
+                                    cx,
+                                );
+                                if dirty_views.is_empty() {
+                                    let prepaint_start = window.prepaint_index();
+                                    window.reuse_prepaint(element_state.prepaint_range.clone());
+                                    cx.entities
+                                        .extend_accessed(&element_state.accessed_entities);
+                                    let prepaint_end = window.prepaint_index();
+                                    element_state.prepaint_range = prepaint_start..prepaint_end;
 
-                            return (None, element_state);
+                                    return (None, element_state);
+                                }
+                            }
                         }
 
                         let refreshing = mem::replace(&mut window.refreshing, true);
@@ -281,13 +289,6 @@ impl Element for AnyView {
                                 window.refreshing = refreshing;
                             } else {
                                 window.reuse_paint(element_state.paint_range.clone());
-                                window.replay_inherited_provider_accesses(
-                                    &element_state.inherited_provider_accesses,
-                                );
-                                window.replay_inherited_dependencies(
-                                    &element_state.inherited_dependencies,
-                                    cx,
-                                );
                             }
 
                             let paint_end = window.paint_index();
@@ -329,8 +330,10 @@ fn extend_unique_inherited_dependencies(
     target: &mut Vec<InheritedDependency>,
     dependencies: Vec<InheritedDependency>,
 ) {
+    let mut seen = target.iter().cloned().collect::<FxHashSet<_>>();
+
     for dependency in dependencies {
-        if !target.contains(&dependency) {
+        if seen.insert(dependency.clone()) {
             target.push(dependency);
         }
     }
@@ -340,8 +343,10 @@ fn extend_unique_inherited_provider_accesses(
     target: &mut Vec<ProviderScopeKey>,
     provider_accesses: Vec<ProviderScopeKey>,
 ) {
+    let mut seen = target.iter().cloned().collect::<FxHashSet<_>>();
+
     for provider in provider_accesses {
-        if !target.contains(&provider) {
+        if seen.insert(provider.clone()) {
             target.push(provider);
         }
     }

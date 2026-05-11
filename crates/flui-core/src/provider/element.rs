@@ -110,10 +110,10 @@ impl<T: InheritedValue> Element for ProviderElement<T> {
     }
 
     fn request_layout(&mut self, cx: &mut LayoutCx<'_>) -> (LayoutId, Self::RequestLayoutState) {
-        let Some(scope_id) = cx.global_id().cloned() else {
-            let layout_id = self.child.request_layout(cx);
-            return (layout_id, ());
-        };
+        let scope_id = cx
+            .global_id()
+            .cloned()
+            .expect("ProviderElement invariant: missing global_id during request_layout");
 
         let inspector_id = cx.inspector_id().cloned();
         let value = &self.value;
@@ -134,10 +134,10 @@ impl<T: InheritedValue> Element for ProviderElement<T> {
         cx: &mut PrepaintCx<'_>,
         _request_layout: &mut Self::RequestLayoutState,
     ) {
-        let Some(scope_id) = cx.global_id().cloned() else {
-            self.child.prepaint(cx);
-            return;
-        };
+        let scope_id = cx
+            .global_id()
+            .cloned()
+            .expect("ProviderElement invariant: missing global_id during prepaint");
 
         let inspector_id = cx.inspector_id().cloned();
         let bounds = cx.bounds();
@@ -158,10 +158,10 @@ impl<T: InheritedValue> Element for ProviderElement<T> {
         _request_layout: &mut Self::RequestLayoutState,
         _prepaint: &mut Self::PrepaintState,
     ) {
-        let Some(scope_id) = cx.global_id().cloned() else {
-            self.child.paint(cx);
-            return;
-        };
+        let scope_id = cx
+            .global_id()
+            .cloned()
+            .expect("ProviderElement invariant: missing global_id during paint");
 
         let inspector_id = cx.inspector_id().cloned();
         let bounds = cx.bounds();
@@ -186,7 +186,7 @@ impl<T: InheritedValue> IntoElement for ProviderElement<T> {
 }
 
 fn provider_scope_id<T: InheritedValue>(base: ElementId) -> ElementId {
-    (base, format!("Provider<{}>", type_name::<T>())).into()
+    (base, type_name::<T>()).into()
 }
 
 #[cfg(test)]
@@ -234,7 +234,7 @@ mod tests {
         };
 
         assert!(matches!(&*base, ElementId::CodeLocation(_)));
-        assert_eq!(label.as_ref(), format!("Provider<{}>", type_name::<i32>()));
+        assert_eq!(label.as_ref(), type_name::<i32>());
     }
 
     #[test]
@@ -308,28 +308,36 @@ mod tests {
         }
     }
 
+    struct ReadRoot {
+        record: Rc<RefCell<ReadRecord>>,
+        provider_value: Option<i32>,
+    }
+
+    impl Render for ReadRoot {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            let child = ReadProbe {
+                record: self.record.clone(),
+            }
+            .into_any_element();
+
+            if let Some(value) = self.provider_value {
+                Provider::new(value, child).into_any_element()
+            } else {
+                child
+            }
+        }
+    }
+
     #[crate::test]
     fn provider_reads_work_in_all_lifecycle_phases(cx: &mut TestAppContext) {
-        let cx = cx.add_empty_window();
         let record = Rc::new(RefCell::new(ReadRecord::default()));
-        let probe_record = record.clone();
+        let record_for_root = record.clone();
+        let (_root, cx) = cx.add_window_view(move |_window, _cx| ReadRoot {
+            record: record_for_root,
+            provider_value: Some(11),
+        });
 
-        cx.draw(
-            point(px(0.), px(0.)),
-            size(
-                AvailableSpace::Definite(px(100.)),
-                AvailableSpace::Definite(px(100.)),
-            ),
-            move |_, _| {
-                Provider::new(
-                    11,
-                    ReadProbe {
-                        record: probe_record,
-                    },
-                )
-                .into_element()
-            },
-        );
+        draw_window(cx);
 
         let record = record.borrow();
         assert_eq!(record.layout, Some(11));
@@ -339,20 +347,14 @@ mod tests {
 
     #[crate::test]
     fn missing_provider_returns_none_in_lifecycle_phases(cx: &mut TestAppContext) {
-        let cx = cx.add_empty_window();
         let record = Rc::new(RefCell::new(ReadRecord::default()));
-        let probe_record = record.clone();
+        let record_for_root = record.clone();
+        let (_root, cx) = cx.add_window_view(move |_window, _cx| ReadRoot {
+            record: record_for_root,
+            provider_value: None,
+        });
 
-        cx.draw(
-            point(px(0.), px(0.)),
-            size(
-                AvailableSpace::Definite(px(100.)),
-                AvailableSpace::Definite(px(100.)),
-            ),
-            move |_, _| ReadProbe {
-                record: probe_record,
-            },
-        );
+        draw_window(cx);
 
         let record = record.borrow();
         assert_eq!(record.layout, None);
@@ -374,6 +376,7 @@ mod tests {
 
     struct ProviderToggleRoot {
         include_provider: bool,
+        provider_value: i32,
         child: Entity<CachedReaderView>,
     }
 
@@ -387,7 +390,7 @@ mod tests {
                 .into_any_element();
 
             if self.include_provider {
-                Provider::new_keyed("theme", 11, child).into_any_element()
+                Provider::new_keyed("theme", self.provider_value, child).into_any_element()
             } else {
                 child
             }
@@ -412,6 +415,7 @@ mod tests {
             });
             ProviderToggleRoot {
                 include_provider: true,
+                provider_value: 11,
                 child,
             }
         });
@@ -426,6 +430,33 @@ mod tests {
 
         draw_window(cx);
         assert_eq!(record.borrow().layout, None);
+    }
+
+    #[crate::test]
+    fn cached_view_rerenders_same_frame_when_provider_value_changes(cx: &mut TestAppContext) {
+        let record = Rc::new(RefCell::new(ReadRecord::default()));
+        let record_for_child = record.clone();
+        let (root, cx) = cx.add_window_view(move |_window, cx| {
+            let child = cx.new(|_| CachedReaderView {
+                record: record_for_child,
+            });
+            ProviderToggleRoot {
+                include_provider: true,
+                provider_value: 11,
+                child,
+            }
+        });
+
+        draw_window(cx);
+        assert_eq!(record.borrow().layout, Some(11));
+
+        root.update(cx, |root, cx| {
+            root.provider_value = 12;
+            cx.notify();
+        });
+
+        draw_window(cx);
+        assert_eq!(record.borrow().layout, Some(12));
     }
 
     #[derive(Clone, Copy)]

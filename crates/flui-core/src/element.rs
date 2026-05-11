@@ -106,11 +106,19 @@ impl<'a> LayoutCx<'a> {
     /// Reads the nearest inherited value of type `T` and subscribes the
     /// current element's view to future provider changes.
     pub fn inherit<T: InheritedValue>(&mut self) -> Option<T> {
+        debug_assert!(
+            self.global_id.is_some(),
+            "`inherit()` requires a stable element id; use `read_inherited()` for non-subscribing lookups",
+        );
         let Some(global_id) = self.global_id.cloned() else {
-            return self.read_inherited::<T>();
+            return None;
         };
+        debug_assert!(
+            self.window.try_current_view().is_some(),
+            "`inherit()` requires an active view; use `read_inherited()` for non-subscribing lookups",
+        );
         let Some(view_id) = self.window.try_current_view() else {
-            return self.read_inherited::<T>();
+            return None;
         };
 
         self.window.inherit_inherited::<T>(&global_id, view_id)
@@ -200,11 +208,19 @@ impl<'a> PrepaintCx<'a> {
     /// Reads the nearest inherited value of type `T` and subscribes the
     /// current element's view to future provider changes.
     pub fn inherit<T: InheritedValue>(&mut self) -> Option<T> {
+        debug_assert!(
+            self.global_id.is_some(),
+            "`inherit()` requires a stable element id; use `read_inherited()` for non-subscribing lookups",
+        );
         let Some(global_id) = self.global_id.cloned() else {
-            return self.read_inherited::<T>();
+            return None;
         };
+        debug_assert!(
+            self.window.try_current_view().is_some(),
+            "`inherit()` requires an active view; use `read_inherited()` for non-subscribing lookups",
+        );
         let Some(view_id) = self.window.try_current_view() else {
-            return self.read_inherited::<T>();
+            return None;
         };
 
         self.window.inherit_inherited::<T>(&global_id, view_id)
@@ -312,11 +328,19 @@ impl<'a> PaintCx<'a> {
     /// Reads the nearest inherited value of type `T` and subscribes the
     /// current element's view to future provider changes.
     pub fn inherit<T: InheritedValue>(&mut self) -> Option<T> {
+        debug_assert!(
+            self.global_id.is_some(),
+            "`inherit()` requires a stable element id; use `read_inherited()` for non-subscribing lookups",
+        );
         let Some(global_id) = self.global_id.cloned() else {
-            return self.read_inherited::<T>();
+            return None;
         };
+        debug_assert!(
+            self.window.try_current_view().is_some(),
+            "`inherit()` requires an active view; use `read_inherited()` for non-subscribing lookups",
+        );
         let Some(view_id) = self.window.try_current_view() else {
-            return self.read_inherited::<T>();
+            return None;
         };
 
         self.window.inherit_inherited::<T>(&global_id, view_id)

@@ -4065,17 +4065,40 @@ impl Window {
         }
     }
 
+    pub(crate) fn validate_inherited_cache(
+        &mut self,
+        provider_accesses: &[ProviderScopeKey],
+        dependencies: &[InheritedDependency],
+        cx: &mut App,
+    ) -> bool {
+        let dirty_views = self
+            .inherited_registry
+            .validate_cached_dependencies(provider_accesses, dependencies);
+        let is_valid = dirty_views.is_empty();
+        self.invalidate_inherited_dependents(dirty_views, cx);
+        is_valid
+    }
+
     pub(crate) fn replay_inherited_dependencies(
         &mut self,
         dependencies: &[InheritedDependency],
         cx: &mut App,
-    ) {
+    ) -> SmallVec<[EntityId; 8]> {
+        let mut dirty_views = SmallVec::new();
+
         for dependency in dependencies {
-            let dirty_views = self
+            for view_id in self
                 .inherited_registry
-                .replay_dependency(dependency.clone());
-            self.invalidate_inherited_dependents(dirty_views, cx);
+                .replay_dependency(dependency.clone())
+            {
+                if !dirty_views.contains(&view_id) {
+                    dirty_views.push(view_id);
+                }
+            }
         }
+
+        self.invalidate_inherited_dependents(dirty_views.clone(), cx);
+        dirty_views
     }
 
     pub(crate) fn with_inherited_provider<T: InheritedValue, R>(
