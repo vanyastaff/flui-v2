@@ -207,6 +207,7 @@ impl Element for AnyView {
                         let inherited_dependency_start = window.inherited_dependency_index();
                         let (mut element, accessed_entities) = cx.detect_accessed_entities(|cx| {
                             let mut element = (self.render)(self, window, cx);
+                            let element_id_stack = window.element_id_stack.clone();
                             let mut layout_cx = crate::LayoutCx::new(
                                 window,
                                 cx,
@@ -214,6 +215,7 @@ impl Element for AnyView {
                                 inspector_id.as_ref(),
                             );
                             element.layout_as_root(bounds.size.into(), &mut layout_cx);
+                            window.element_id_stack.clone_from(&element_id_stack);
                             let mut prepaint_cx = crate::PrepaintCx::new(
                                 window,
                                 cx,

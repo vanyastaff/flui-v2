@@ -42,9 +42,8 @@ impl<T: InheritedValue> Provider<T> {
 
     /// Create a new Provider with an explicit identity key.
     ///
-    /// Use this when constructing repeated same-type providers from the same
-    /// source location, such as inside loops. K02 will replace this fallback
-    /// with proper framework-level `Key` semantics.
+    /// Use this when constructing repeated same-type providers from the same source location,
+    /// such as inside loops. Prefer [`crate::Key::value`] for reorder-stable provider identity.
     #[track_caller]
     pub fn new_keyed(key: impl Into<ElementId>, value: T, child: impl IntoElement) -> Self {
         Self::new_with_id(
@@ -55,6 +54,7 @@ impl<T: InheritedValue> Provider<T> {
         )
     }
 
+    #[track_caller]
     fn new_with_id(
         id: ElementId,
         source_location: Option<&'static Location<'static>>,
@@ -82,15 +82,21 @@ impl<T: InheritedValue> RenderOnce for Provider<T> {
 }
 
 impl<T: InheritedValue> IntoElement for Provider<T> {
-    type Element = crate::element::Component<Self>;
+    type Element = ProviderElement<T>;
 
     fn into_element(self) -> Self::Element {
-        crate::element::Component::new(self)
+        ProviderElement::<T> {
+            id: self.id,
+            source_location: self.source_location,
+            value: self.value,
+            child: self.child,
+        }
     }
 }
 
 /// The actual Element implementation that manages the push/pop lifecycle.
-struct ProviderElement<T: InheritedValue> {
+#[doc(hidden)]
+pub struct ProviderElement<T: InheritedValue> {
     id: ElementId,
     source_location: Option<&'static Location<'static>>,
     value: T,
@@ -199,7 +205,7 @@ mod tests {
     };
 
     use crate::{
-        AppContext, AvailableSpace, Context, DrawPhase, Empty, Entity, Render, Style,
+        AppContext, AvailableSpace, Context, DrawPhase, Empty, Entity, Key, Render, Style,
         StyleRefinement, TestAppContext, point, px, size,
     };
 
@@ -208,6 +214,16 @@ mod tests {
     #[test]
     fn explicit_provider_key_is_part_of_scope_identity() {
         let provider = Provider::new_keyed("theme", 1i32, Empty);
+
+        assert_eq!(
+            provider.id,
+            provider_scope_id::<i32>(ElementId::from("theme"))
+        );
+    }
+
+    #[test]
+    fn provider_keyed_identity_accepts_key_api() {
+        let provider = Provider::new_keyed(Key::value("theme"), 1i32, Empty);
 
         assert_eq!(
             provider.id,
@@ -234,6 +250,21 @@ mod tests {
         };
 
         assert!(matches!(&*base, ElementId::CodeLocation(_)));
+        assert_eq!(label.as_ref(), type_name::<i32>());
+    }
+
+    #[test]
+    fn source_location_provider_scope_normalizes_through_identity_stack() {
+        let provider = Provider::new(1i32, Empty);
+        let mut stack = crate::element::ElementIdStack::default();
+
+        stack.push(provider.id);
+
+        let ElementId::NamedChild(base, label) = &stack[0] else {
+            panic!("provider id must remain type-salted after stack normalization");
+        };
+
+        assert!(matches!(&**base, ElementId::Local(_)));
         assert_eq!(label.as_ref(), type_name::<i32>());
     }
 

@@ -118,12 +118,12 @@ flui-v2/
 │   ├── flui-macros/                    # Engine — procedural macros (derive Render, IntoElement, …)
 │   │
 │   │   ╔══ Framework tier (B) ═══════════════════════════════════════╗
-│   ├── flui-framework/                 # Framework — Widget/Key/State/BuildCx/Provider (PLANNED — Phase II-F)
+│   ├── flui-framework/                 # Framework — Widget/State/BuildCx/Provider over core Key (PLANNED — Phase II-F)
 │   │   ├── Cargo.toml                  # depends on flui-core only
 │   │   └── src/
 │   │       ├── lib.rs
 │   │       ├── widget.rs               # Widget + StatefulWidget traits
-│   │       ├── key.rs                  # Key + GlobalKey + ValueKey
+│   │       ├── key.rs                  # Framework re-exports/wrappers over flui-core Key substrate
 │   │       ├── state.rs                # State<W> + StateMap (flat, keyed by ElementId)
 │   │       ├── build_cx.rs             # BuildCx: read/inherit/setState/depend
 │   │       ├── reconcile.rs            # Sibling reconciliation by (TypeId, Key)
@@ -412,4 +412,4 @@ impl WidgetState<MyWidget> for MyWidgetState {
 - ❌ **Silently deleting `unimplemented!()` / `unreachable!()` sites in platform code.** Classify them per the S01a inventory first.
 - ❌ **Tracking upstream `gpui-ce` API.** flui-v2 is a hard fork. May cherry-pick fixes, never preserves API for compatibility's sake.
 - ❌ **Bypassing review subagents.** Use `flui-arch-reviewer`, `migration-risk-adversary`, `wgpu-gpu-reviewer`, and `rust-api-migration-auditor` proactively on the matching change types.
-- ❌ **Conflating Engine and Framework concerns.** If something feels like "Flutter DX" (Widget, Key, State, BuildCx, Provider, setState, did_update_widget, dispose) it belongs in Tier B (`flui-framework`), not Tier A (`flui-core`). Existing `Render` / `Component` / `AnyView` machinery in `flui-core` stays as the Engine substrate; don't grow it into Framework concerns.
+- ❌ **Conflating Engine and Framework concerns.** If something feels like "Flutter DX" (Widget, State, BuildCx, Provider ergonomics, setState, did_update_widget, dispose) it belongs in Tier B (`flui-framework`), not Tier A (`flui-core`). K02 is the exception for identity substrate: `flui-core::Key` / `GlobalKey` / `ValueKey` are low-level engine identity primitives that the Framework tier consumes or wraps; don't define a second incompatible Key model. Existing `Render` / `Component` / `AnyView` machinery in `flui-core` stays as the Engine substrate; don't grow it into Framework concerns.

@@ -32,8 +32,8 @@
 //! your own custom layout algorithm or rendering a code editor.
 
 use crate::{
-    App, ArenaBox, AvailableSpace, Bounds, Context, DispatchNodeId, ElementId, FocusHandle,
-    InheritedValue, InspectorElementId, LayoutId, Pixels, Point, SharedString, Size, Style, Window,
+    App, ArenaBox, AvailableSpace, Bounds, Context, DispatchNodeId, FocusHandle, InheritedValue,
+    InspectorElementId, LayoutId, Pixels, Point, SharedString, Size, Style, Window,
     local_util::FluentBuilder, window::with_element_arena,
 };
 use derive_more::{Deref, DerefMut};
@@ -43,6 +43,11 @@ use std::{
     mem, panic,
     sync::Arc,
 };
+
+mod identity;
+
+pub(crate) use identity::ElementIdStack;
+pub use identity::{ElementId, GlobalKey, Key, LocalElementId, ValueKey};
 
 /// Layout-phase access to the current element lifecycle.
 ///
@@ -397,6 +402,10 @@ pub trait Element: 'static + IntoElement {
     ///
     /// The global id can in turn be used to access state that's connected to an element with the same id across
     /// frames. This id must be unique among children of the first containing element with an id.
+    ///
+    /// `ElementId::CodeLocation` is accepted as a compatibility/local-key input and is normalized by the
+    /// window identity stack into a parent-scoped Local segment. Reorder-sensitive children should use
+    /// explicit value keys.
     fn id(&self) -> Option<ElementId>;
 
     /// Source location where this element was constructed, used to disambiguate elements in the
@@ -437,9 +446,14 @@ pub trait IntoElement: Sized {
     type Element: Element;
 
     /// Convert self into a type that implements [`Element`].
+    ///
+    /// The caller location is part of Local identity for `RenderOnce` component wrappers, so
+    /// forwarding helpers should preserve `#[track_caller]`.
+    #[track_caller]
     fn into_element(self) -> Self::Element;
 
     /// Convert self into a dynamically-typed [`AnyElement`].
+    #[track_caller]
     fn into_any_element(self) -> AnyElement {
         self.into_element().into_any()
     }
@@ -479,6 +493,7 @@ pub trait ParentElement {
     fn extend(&mut self, elements: impl IntoIterator<Item = AnyElement>);
 
     /// Add a single child element to this element.
+    #[track_caller]
     fn child(mut self, child: impl IntoElement) -> Self
     where
         Self: Sized,
@@ -488,6 +503,7 @@ pub trait ParentElement {
     }
 
     /// Add multiple child elements to this element.
+    #[track_caller]
     fn children(mut self, children: impl IntoIterator<Item = impl IntoElement>) -> Self
     where
         Self: Sized,
@@ -498,11 +514,15 @@ pub trait ParentElement {
 }
 
 /// An element for rendering components. An implementation detail of the [`IntoElement`] derive macro
-/// for [`RenderOnce`]
+/// for [`RenderOnce`].
+///
+/// `Component<C>` is an engine wrapper, not the Framework-tier `Widget` adapter. It participates in
+/// engine Local identity via the callsite captured by [`Component::new`], and its children are still
+/// namespaced by the component type name. Future Widget reconciliation remains SF01/SF02 work.
 #[doc(hidden)]
 pub struct Component<C: RenderOnce> {
     component: Option<C>,
-    #[cfg(debug_assertions)]
+    key: Option<ElementId>,
     source: &'static core::panic::Location<'static>,
 }
 
@@ -512,9 +532,18 @@ impl<C: RenderOnce> Component<C> {
     pub fn new(component: C) -> Self {
         Component {
             component: Some(component),
-            #[cfg(debug_assertions)]
+            key: None,
             source: core::panic::Location::caller(),
         }
+    }
+
+    /// Assign an explicit identity key to this component boundary.
+    ///
+    /// Use this for repeated or reordered `RenderOnce` components whose internal state/provider
+    /// identity should follow application data.
+    pub fn key(mut self, key: impl Into<ElementId>) -> Self {
+        self.key = Some(key.into());
+        self
     }
 }
 
@@ -558,15 +587,15 @@ impl<C: RenderOnce> Element for Component<C> {
     type PrepaintState = ();
 
     fn id(&self) -> Option<ElementId> {
-        None
+        Some(
+            self.key
+                .clone()
+                .unwrap_or(ElementId::CodeLocation(*self.source)),
+        )
     }
 
     fn source_location(&self) -> Option<&'static core::panic::Location<'static>> {
-        #[cfg(debug_assertions)]
-        return Some(self.source);
-
-        #[cfg(not(debug_assertions))]
-        return None;
+        Some(self.source)
     }
 
     fn request_layout(&mut self, cx: &mut LayoutCx<'_>) -> (LayoutId, Self::RequestLayoutState) {
@@ -696,10 +725,13 @@ impl<E: Element> Drawable<E> {
     fn request_layout(&mut self, cx: &mut LayoutCx<'_>) -> LayoutId {
         match mem::take(&mut self.phase) {
             ElementDrawPhase::Start => cx.with_window_app(|window, app| {
-                let global_id = self.element.id().map(|element_id| {
-                    window.element_id_stack.push(element_id);
-                    GlobalElementId(Arc::from(&*window.element_id_stack))
-                });
+                let element_id_scope = self
+                    .element
+                    .id()
+                    .map(|element_id| window.push_element_id(element_id));
+                let global_id = element_id_scope
+                    .as_ref()
+                    .map(|scope| scope.global_id().clone());
 
                 let inspector_id;
                 #[cfg(any(feature = "inspector", debug_assertions))]
@@ -720,10 +752,6 @@ impl<E: Element> Drawable<E> {
                 let mut element_cx =
                     LayoutCx::new(window, app, global_id.as_ref(), inspector_id.as_ref());
                 let (layout_id, request_layout) = self.element.request_layout(&mut element_cx);
-
-                if global_id.is_some() {
-                    window.element_id_stack.pop();
-                }
 
                 self.phase = ElementDrawPhase::RequestLayout {
                     layout_id,
@@ -752,10 +780,13 @@ impl<E: Element> Drawable<E> {
                 mut request_layout,
                 ..
             } => cx.with_window_app(|window, app| {
-                if let Some(element_id) = self.element.id() {
-                    window.element_id_stack.push(element_id);
-                    debug_assert_eq!(&*global_id.as_ref().unwrap().0, &*window.element_id_stack);
-                }
+                let _element_id_scope = if let Some(global_id) = global_id.as_ref() {
+                    let scope = window.push_resolved_element_id(global_id);
+                    debug_assert_eq!(&*global_id.0, &*window.element_id_stack);
+                    Some(scope)
+                } else {
+                    None
+                };
 
                 let bounds = window.layout_bounds(layout_id);
                 let node_id = window.next_frame.dispatch_tree.push_node();
@@ -768,10 +799,6 @@ impl<E: Element> Drawable<E> {
                 );
                 let prepaint = self.element.prepaint(&mut element_cx, &mut request_layout);
                 window.next_frame.dispatch_tree.pop_node();
-
-                if global_id.is_some() {
-                    window.element_id_stack.pop();
-                }
 
                 self.phase = ElementDrawPhase::Prepaint {
                     node_id,
@@ -800,10 +827,13 @@ impl<E: Element> Drawable<E> {
                 mut prepaint,
                 ..
             } => cx.with_window_app(|window, app| {
-                if let Some(element_id) = self.element.id() {
-                    window.element_id_stack.push(element_id);
-                    debug_assert_eq!(&*global_id.as_ref().unwrap().0, &*window.element_id_stack);
-                }
+                let _element_id_scope = if let Some(global_id) = global_id.as_ref() {
+                    let scope = window.push_resolved_element_id(global_id);
+                    debug_assert_eq!(&*global_id.0, &*window.element_id_stack);
+                    Some(scope)
+                } else {
+                    None
+                };
 
                 window.next_frame.dispatch_tree.set_active_node(node_id);
                 let mut element_cx = PaintCx::new(
@@ -815,10 +845,6 @@ impl<E: Element> Drawable<E> {
                 );
                 self.element
                     .paint(&mut element_cx, &mut request_layout, &mut prepaint);
-
-                if global_id.is_some() {
-                    window.element_id_stack.pop();
-                }
 
                 self.phase = ElementDrawPhase::Painted;
                 (request_layout, prepaint)
@@ -1005,6 +1031,7 @@ impl AnyElement {
     }
 
     pub(crate) fn paint_with_window(&mut self, window: &mut Window, cx: &mut App) {
+        window.element_id_stack.begin_pass();
         let mut cx = PaintCx::new(window, cx, None, None, Bounds::default());
         self.paint(&mut cx);
     }
@@ -1025,7 +1052,10 @@ impl AnyElement {
         cx: &mut App,
     ) -> Size<Pixels> {
         let mut cx = LayoutCx::new(window, cx, None, None);
-        self.layout_as_root(available_space, &mut cx)
+        let element_id_stack = cx.window.element_id_stack.clone();
+        let size = self.layout_as_root(available_space, &mut cx);
+        cx.window.element_id_stack.clone_from(&element_id_stack);
+        size
     }
 
     /// Prepaints this element at the given absolute origin.
@@ -1082,8 +1112,10 @@ impl AnyElement {
         window: &mut Window,
         cx: &mut App,
     ) -> Option<FocusHandle> {
+        window.element_id_stack.begin_pass();
         let mut layout_cx = LayoutCx::new(window, cx, None, None);
         self.layout_as_root(available_space, &mut layout_cx);
+        window.element_id_stack.begin_pass();
         let mut prepaint_cx = PrepaintCx::new(window, cx, None, None, Bounds::default());
         self.prepaint_at(origin, &mut prepaint_cx)
     }
@@ -1123,10 +1155,12 @@ impl Element for AnyElement {
 impl IntoElement for AnyElement {
     type Element = Self;
 
+    #[track_caller]
     fn into_element(self) -> Self::Element {
         self
     }
 
+    #[track_caller]
     fn into_any_element(self) -> AnyElement {
         self
     }
@@ -1138,6 +1172,7 @@ pub struct Empty;
 impl IntoElement for Empty {
     type Element = Self;
 
+    #[track_caller]
     fn into_element(self) -> Self::Element {
         self
     }
@@ -1185,7 +1220,11 @@ impl Element for Empty {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{DrawPhase, ElementArenaScope, TestAppContext, point, px, size};
+    use crate::{
+        DrawPhase, ElementArenaScope, EntityId, ParentElement, Render, TestAppContext, div, point,
+        px, size,
+    };
+    use smallvec::smallvec;
     use std::{cell::RefCell, rc::Rc};
 
     #[derive(Default)]
@@ -1302,6 +1341,156 @@ mod tests {
         assert!(record.painted);
     }
 
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum IdentityPanicPhase {
+        Layout,
+        Prepaint,
+        Paint,
+    }
+
+    struct IdentityPanicElement {
+        phase: IdentityPanicPhase,
+    }
+
+    impl IntoElement for IdentityPanicElement {
+        type Element = Self;
+
+        fn into_element(self) -> Self::Element {
+            self
+        }
+    }
+
+    impl Element for IdentityPanicElement {
+        type RequestLayoutState = ();
+        type PrepaintState = ();
+
+        fn id(&self) -> Option<ElementId> {
+            Some("identity-panic-probe".into())
+        }
+
+        fn source_location(&self) -> Option<&'static panic::Location<'static>> {
+            None
+        }
+
+        fn request_layout(
+            &mut self,
+            cx: &mut LayoutCx<'_>,
+        ) -> (LayoutId, Self::RequestLayoutState) {
+            if self.phase == IdentityPanicPhase::Layout {
+                panic!("identity layout panic");
+            }
+
+            cx.with_window_app(|window, cx| {
+                let mut style = Style::default();
+                style.size = size(px(1.).into(), px(1.).into());
+                (window.request_layout(style, [], cx), ())
+            })
+        }
+
+        fn prepaint(
+            &mut self,
+            _cx: &mut PrepaintCx<'_>,
+            _request_layout: &mut Self::RequestLayoutState,
+        ) -> Self::PrepaintState {
+            if self.phase == IdentityPanicPhase::Prepaint {
+                panic!("identity prepaint panic");
+            }
+        }
+
+        fn paint(
+            &mut self,
+            _cx: &mut PaintCx<'_>,
+            _request_layout: &mut Self::RequestLayoutState,
+            _prepaint: &mut Self::PrepaintState,
+        ) {
+            if self.phase == IdentityPanicPhase::Paint {
+                panic!("identity paint panic");
+            }
+        }
+    }
+
+    fn assert_identity_stack_restored_after_drawable_panic(
+        cx: &mut TestAppContext,
+        phase: IdentityPanicPhase,
+    ) {
+        let cx = cx.add_empty_window();
+        cx.update(|window, cx| {
+            let _arena_scope = ElementArenaScope::enter(&cx.element_arena);
+            let mut element = Drawable::new(IdentityPanicElement { phase });
+
+            window.invalidator.set_phase(DrawPhase::Prepaint);
+            let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+                window.element_id_stack.begin_pass();
+                {
+                    let mut layout_cx = LayoutCx::new(window, cx, None, None);
+                    element.layout_as_root(
+                        size(
+                            AvailableSpace::Definite(px(10.)),
+                            AvailableSpace::Definite(px(10.)),
+                        ),
+                        &mut layout_cx,
+                    );
+                }
+
+                window.element_id_stack.begin_pass();
+                {
+                    let mut prepaint_cx =
+                        PrepaintCx::new(window, cx, None, None, Bounds::default());
+                    element.prepaint(&mut prepaint_cx);
+                }
+
+                window.invalidator.set_phase(DrawPhase::Paint);
+                window.element_id_stack.begin_pass();
+                {
+                    let mut paint_cx = PaintCx::new(window, cx, None, None, Bounds::default());
+                    let _ = element.paint(&mut paint_cx);
+                }
+            }));
+            window.invalidator.set_phase(DrawPhase::None);
+
+            assert!(result.is_err());
+            assert_eq!(window.element_id_stack.len(), 0);
+
+            drop(element);
+            cx.element_arena.borrow_mut().clear();
+        });
+    }
+
+    #[crate::test]
+    fn drawable_identity_scope_is_restored_after_layout_panic(cx: &mut TestAppContext) {
+        assert_identity_stack_restored_after_drawable_panic(cx, IdentityPanicPhase::Layout);
+    }
+
+    #[crate::test]
+    fn drawable_identity_scope_is_restored_after_prepaint_panic(cx: &mut TestAppContext) {
+        assert_identity_stack_restored_after_drawable_panic(cx, IdentityPanicPhase::Prepaint);
+    }
+
+    #[crate::test]
+    fn drawable_identity_scope_is_restored_after_paint_panic(cx: &mut TestAppContext) {
+        assert_identity_stack_restored_after_drawable_panic(cx, IdentityPanicPhase::Paint);
+    }
+
+    #[crate::test]
+    fn window_identity_scope_helpers_restore_after_panic(cx: &mut TestAppContext) {
+        let cx = cx.add_empty_window();
+        cx.update(|window, _| {
+            let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+                window.with_id("panic-id", |_| panic!("with_id panic"));
+            }));
+            assert!(result.is_err());
+            assert_eq!(window.element_id_stack.len(), 0);
+
+            let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+                window.with_element_namespace("panic-namespace", |_| {
+                    panic!("with_element_namespace panic")
+                });
+            }));
+            assert!(result.is_err());
+            assert_eq!(window.element_id_stack.len(), 0);
+        });
+    }
+
     #[crate::test]
     fn any_element_lifecycle_metadata_reflects_layout_phase(cx: &mut TestAppContext) {
         let cx = cx.add_empty_window();
@@ -1416,5 +1605,391 @@ mod tests {
             drop(element);
             cx.element_arena.borrow_mut().clear();
         });
+    }
+
+    #[derive(Clone, Copy)]
+    struct EmptyComponent;
+
+    impl RenderOnce for EmptyComponent {
+        fn render(self, _window: &mut Window, _cx: &mut crate::App) -> impl IntoElement {
+            Empty
+        }
+    }
+
+    #[crate::test]
+    fn repeated_components_from_same_callsite_get_local_identity(cx: &mut TestAppContext) {
+        let cx = cx.add_empty_window();
+
+        cx.draw(
+            point(px(0.), px(0.)),
+            size(
+                AvailableSpace::Definite(px(10.)),
+                AvailableSpace::Definite(px(10.)),
+            ),
+            move |_, _| {
+                let children = (0..2).map(|_| Component::new(EmptyComponent).into_any_element());
+                div().children(children)
+            },
+        );
+    }
+
+    #[crate::test]
+    fn dynamic_prepaint_order_reuses_layout_identity(cx: &mut TestAppContext) {
+        let cx = cx.add_empty_window();
+
+        cx.draw(
+            point(px(0.), px(0.)),
+            size(
+                AvailableSpace::Definite(px(10.)),
+                AvailableSpace::Definite(px(10.)),
+            ),
+            move |_, _| {
+                let children = (0..2).map(|_| Component::new(EmptyComponent).into_any_element());
+                div()
+                    .with_dynamic_prepaint_order(|_, _| smallvec![1, 0])
+                    .children(children)
+            },
+        );
+    }
+
+    #[derive(Clone)]
+    struct CallsiteComponent {
+        label: usize,
+        record: Rc<RefCell<Vec<(usize, GlobalElementId)>>>,
+    }
+
+    impl IntoElement for CallsiteComponent {
+        type Element = Component<Self>;
+
+        #[track_caller]
+        fn into_element(self) -> Self::Element {
+            Component::new(self)
+        }
+    }
+
+    impl RenderOnce for CallsiteComponent {
+        fn render(self, _window: &mut Window, _cx: &mut crate::App) -> impl IntoElement {
+            CallsiteProbe {
+                label: self.label,
+                record: self.record,
+            }
+        }
+    }
+
+    struct CallsiteProbe {
+        label: usize,
+        record: Rc<RefCell<Vec<(usize, GlobalElementId)>>>,
+    }
+
+    impl IntoElement for CallsiteProbe {
+        type Element = Self;
+
+        fn into_element(self) -> Self::Element {
+            self
+        }
+    }
+
+    impl Element for CallsiteProbe {
+        type RequestLayoutState = ();
+        type PrepaintState = ();
+
+        fn id(&self) -> Option<ElementId> {
+            Some(ElementId::Name(SharedString::new_static("callsite-probe")))
+        }
+
+        fn source_location(&self) -> Option<&'static panic::Location<'static>> {
+            None
+        }
+
+        fn request_layout(
+            &mut self,
+            cx: &mut LayoutCx<'_>,
+        ) -> (LayoutId, Self::RequestLayoutState) {
+            cx.with_window_app(|window, cx| {
+                let mut style = Style::default();
+                style.size = size(px(1.).into(), px(1.).into());
+                (window.request_layout(style, [], cx), ())
+            })
+        }
+
+        fn prepaint(
+            &mut self,
+            cx: &mut PrepaintCx<'_>,
+            _request_layout: &mut Self::RequestLayoutState,
+        ) -> Self::PrepaintState {
+            let global_id = cx
+                .global_id()
+                .cloned()
+                .expect("component child should inherit component global id");
+            self.record.borrow_mut().push((self.label, global_id));
+        }
+
+        fn paint(
+            &mut self,
+            _cx: &mut PaintCx<'_>,
+            _request_layout: &mut Self::RequestLayoutState,
+            _prepaint: &mut Self::PrepaintState,
+        ) {
+        }
+    }
+
+    fn first_local_source_line(global_id: &GlobalElementId) -> u32 {
+        global_id
+            .iter()
+            .find_map(|segment| match segment {
+                ElementId::Local(local) => Some(local.source_location().line()),
+                _ => None,
+            })
+            .expect("component global id should contain a local source segment")
+    }
+
+    #[crate::test]
+    fn parent_child_preserves_component_callsite_identity(cx: &mut TestAppContext) {
+        let record = Rc::new(RefCell::new(Vec::new()));
+        let record_for_draw = record.clone();
+        let cx = cx.add_empty_window();
+
+        cx.draw(
+            point(px(0.), px(0.)),
+            size(
+                AvailableSpace::Definite(px(10.)),
+                AvailableSpace::Definite(px(10.)),
+            ),
+            move |_, _| {
+                div()
+                    .child(CallsiteComponent {
+                        label: 1,
+                        record: record_for_draw.clone(),
+                    })
+                    .child(CallsiteComponent {
+                        label: 2,
+                        record: record_for_draw,
+                    })
+            },
+        );
+
+        let record = record.borrow();
+        let first = record
+            .iter()
+            .find_map(|(label, global_id)| (*label == 1).then_some(global_id))
+            .expect("first component should record its global id");
+        let second = record
+            .iter()
+            .find_map(|(label, global_id)| (*label == 2).then_some(global_id))
+            .expect("second component should record its global id");
+
+        assert_ne!(
+            first_local_source_line(first),
+            first_local_source_line(second),
+            "ParentElement::child must preserve the user's component callsite"
+        );
+    }
+
+    #[derive(Clone)]
+    struct StateProbe {
+        label: usize,
+        keyed: bool,
+        record: Rc<RefCell<Vec<(usize, EntityId)>>>,
+    }
+
+    struct StateProbeState;
+
+    impl IntoElement for StateProbe {
+        type Element = Self;
+
+        fn into_element(self) -> Self::Element {
+            self
+        }
+    }
+
+    impl Element for StateProbe {
+        type RequestLayoutState = ();
+        type PrepaintState = ();
+
+        fn id(&self) -> Option<ElementId> {
+            None
+        }
+
+        fn source_location(&self) -> Option<&'static panic::Location<'static>> {
+            None
+        }
+
+        fn request_layout(
+            &mut self,
+            cx: &mut LayoutCx<'_>,
+        ) -> (LayoutId, Self::RequestLayoutState) {
+            cx.with_window_app(|window, cx| {
+                let mut style = Style::default();
+                style.size = size(px(1.).into(), px(1.).into());
+                (window.request_layout(style, [], cx), ())
+            })
+        }
+
+        fn prepaint(
+            &mut self,
+            cx: &mut PrepaintCx<'_>,
+            _request_layout: &mut Self::RequestLayoutState,
+        ) -> Self::PrepaintState {
+            let label = self.label;
+            let state = cx.with_window_app(|window, cx| {
+                if self.keyed {
+                    window.use_keyed_state(("state-probe", label), cx, |_, _| StateProbeState)
+                } else {
+                    window.use_state(cx, |_, _| StateProbeState)
+                }
+            });
+            self.record.borrow_mut().push((label, state.entity_id()));
+        }
+
+        fn paint(
+            &mut self,
+            _cx: &mut PaintCx<'_>,
+            _request_layout: &mut Self::RequestLayoutState,
+            _prepaint: &mut Self::PrepaintState,
+        ) {
+        }
+    }
+
+    struct StateProbeRoot {
+        keyed: bool,
+        reversed: bool,
+        record: Rc<RefCell<Vec<(usize, EntityId)>>>,
+    }
+
+    impl Render for StateProbeRoot {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            let order = if self.reversed { [2, 1] } else { [1, 2] };
+            let children = order.into_iter().map(|label| {
+                StateProbe {
+                    label,
+                    keyed: self.keyed,
+                    record: self.record.clone(),
+                }
+                .into_any_element()
+            });
+
+            div().children(children)
+        }
+    }
+
+    struct StateProbeComponent {
+        label: usize,
+        record: Rc<RefCell<Vec<(usize, EntityId)>>>,
+    }
+
+    impl RenderOnce for StateProbeComponent {
+        fn render(self, _window: &mut Window, _cx: &mut crate::App) -> impl IntoElement {
+            StateProbe {
+                label: self.label,
+                keyed: false,
+                record: self.record,
+            }
+        }
+    }
+
+    struct ComponentStateProbeRoot {
+        reversed: bool,
+        record: Rc<RefCell<Vec<(usize, EntityId)>>>,
+    }
+
+    impl Render for ComponentStateProbeRoot {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            let order = if self.reversed { [2, 1] } else { [1, 2] };
+            let children = order.into_iter().map(|label| {
+                Component::new(StateProbeComponent {
+                    label,
+                    record: self.record.clone(),
+                })
+                .key(("state-probe-component", label))
+                .into_any_element()
+            });
+
+            div().children(children)
+        }
+    }
+
+    fn draw_window(cx: &mut crate::VisualTestContext) {
+        cx.update(|window, cx| {
+            window.draw(cx).clear();
+        });
+    }
+
+    fn recorded_id(record: &Rc<RefCell<Vec<(usize, EntityId)>>>, label: usize) -> EntityId {
+        record
+            .borrow()
+            .iter()
+            .find_map(|(recorded_label, entity_id)| {
+                (*recorded_label == label).then_some(*entity_id)
+            })
+            .expect("state probe label should have been recorded")
+    }
+
+    #[crate::test]
+    fn local_use_state_occurrences_are_stable_for_same_order(cx: &mut TestAppContext) {
+        let record = Rc::new(RefCell::new(Vec::new()));
+        let record_for_root = record.clone();
+        let (_root, cx) = cx.add_window_view(move |_window, _cx| StateProbeRoot {
+            keyed: false,
+            reversed: false,
+            record: record_for_root,
+        });
+
+        draw_window(cx);
+        let first_1 = recorded_id(&record, 1);
+        let first_2 = recorded_id(&record, 2);
+
+        record.borrow_mut().clear();
+        draw_window(cx);
+        assert_eq!(first_1, recorded_id(&record, 1));
+        assert_eq!(first_2, recorded_id(&record, 2));
+    }
+
+    #[crate::test]
+    fn keyed_state_follows_value_keys_across_reorder(cx: &mut TestAppContext) {
+        let record = Rc::new(RefCell::new(Vec::new()));
+        let record_for_root = record.clone();
+        let (root, cx) = cx.add_window_view(move |_window, _cx| StateProbeRoot {
+            keyed: true,
+            reversed: false,
+            record: record_for_root,
+        });
+
+        draw_window(cx);
+        let first_1 = recorded_id(&record, 1);
+        let first_2 = recorded_id(&record, 2);
+
+        record.borrow_mut().clear();
+        root.update(cx, |root, cx| {
+            root.reversed = true;
+            cx.notify();
+        });
+        draw_window(cx);
+
+        assert_eq!(first_1, recorded_id(&record, 1));
+        assert_eq!(first_2, recorded_id(&record, 2));
+    }
+
+    #[crate::test]
+    fn keyed_component_boundary_preserves_inner_state_across_reorder(cx: &mut TestAppContext) {
+        let record = Rc::new(RefCell::new(Vec::new()));
+        let record_for_root = record.clone();
+        let (root, cx) = cx.add_window_view(move |_window, _cx| ComponentStateProbeRoot {
+            reversed: false,
+            record: record_for_root,
+        });
+
+        draw_window(cx);
+        let first_1 = recorded_id(&record, 1);
+        let first_2 = recorded_id(&record, 2);
+
+        record.borrow_mut().clear();
+        root.update(cx, |root, cx| {
+            root.reversed = true;
+            cx.notify();
+        });
+        draw_window(cx);
+
+        assert_eq!(first_1, recorded_id(&record, 1));
+        assert_eq!(first_2, recorded_id(&record, 2));
     }
 }
