@@ -1,16 +1,18 @@
 # Research
 
-Updated: 2026-05-10
+Updated: 2026-05-11
 Status: active
 
 **K15 (2026-05-09)** — Re-entrancy contract published at `crates/flui-core/src/reentrancy.rs` (second spec in the Phase 0-K critical chain after K99). `ReentryError` (`#[non_exhaustive]`) names every same-target re-entry case; `ReentryMode { Strict, Loose }` selects log level (Strict = `error!`, Loose = `warn!`); test default is Strict. Behavior: same-window `update_window` returns `Err(anyhow{ ReentryError::NestedWindowUpdate })`; same-entity `update_entity` panics with `ReentryError::NestedEntityUpdate(_)` Display (trait signature `R` cannot widen); multi-entity cycles `A → B → A` ALSO use the unified Display via the rewritten `EntityMap::double_lease_panic`; `with_element_state` recursive panic uses `ReentryError::ElementStateInUse { global_element_id, type_id }`; `Window::prompt` widens to `Result<Receiver, ReentryError>` and `AsyncWindowContext::prompt` widens to `anyhow::Result<Receiver>` (was: silently swallowed errors via dead receivers). `cx.defer` / `Window::defer` are the documented queue escape hatches — no new `Effect` variant introduced. `PanicLikeUpstream` mode and `legacy-reentry-panics` feature DEFERRED to K07 per adversarial-review consensus (the hatch could not faithfully reproduce upstream entity-side panic, and the runtime field for compile-time-gated variant is dead weight). Four Known Limitations documented in design spec: 10+ remaining `AsyncApp::borrow_mut()` sites unstructured (K07), `AsyncApp::as_mut` panic out of class, `web` platform unverified, `AppBorrowed` carries no source location (nightly-only API). Tests: 344 lib tests (333 baseline + 11 new — 6 type-level + 5 behavioral via `TestApp`). Spec: `docs/superpowers/specs/2026-05-09-K15-reentrancy-contract-design.md`.
 
 **K07 (2026-05-10)** — AppCell removal landed as Candidate B: `flui_core::app::cell::AppCell` is now a hand-rolled `UnsafeCell<App>` + `BorrowState` primitive that returns `ReentryError` directly, while preserving the public doc-hidden `AppCell` / `AppRef` / `AppRefMut` spelling for compatibility. The 103 narrow AppCell-derived borrow callsites migrate onto the new cell; `impl From<std::cell::BorrowMutError> for ReentryError` and the `TRACK_THREAD_BORROWS` shim are gone; `AppCell` stays `#[doc(hidden)]` and `!Send + !Sync`. K15 Known Limitations discharged: #1 AsyncApp result paths now propagate `ReentryError` / panic paths use typed `panic_any`, #2 async/test/headless/visual `as_mut` panics use `ReentryError::AsyncContextAsMut`, and #6 panic-leak fields (`currently_updating_entity`, `window_update_stack`, `pending_updates`) are restored with raw-pointer field guards. Validation added: AppCell proptests, direct AppBorrowed replacement test, scoped Miri Stacked Borrows + non-blocking Tree Borrows, CI Miri jobs, hot-path audit, and acquire/release bench (`5 ns/op`, budget `1000 ns`). Spec: `docs/superpowers/specs/2026-05-09-K07-appcell-removal-design.md`.
 
+**K05 (2026-05-11)** — Element lifecycle context objects landed for the low-level engine `Element` API. `Element::request_layout`, `prepaint`, and `paint` now receive `LayoutCx<'_>`, `PrepaintCx<'_>`, and `PaintCx<'_>` instead of raw global-id / inspector-id / bounds / `Window` / `App` argument bundles. `AnyElement` traversal, `Drawable`, `Interactivity`, built-in elements, `ProviderElement`, root/deferred/inspector `Window` paths, test harness drawing, key-dispatch tests, and the legacy input example were migrated. The contexts expose documented identity/bounds/runtime accessors plus explicit nested-context helpers for adjusted id/bounds delegation. K05 deliberately does not introduce Framework `BuildCx`, Provider rewrite, panic recovery for lifecycle panics, or ownership sharding. Spec: `docs/superpowers/specs/2026-05-11-K05-element-context-object-design.md`. Migration guide: `docs/superpowers/migrations/K05-element-context-object.md`.
+
 ## Active Summary (input for /aif-plan)
 <!-- aif:active-summary:start -->
 
-**K07 status (2026-05-10):** AppCell removal is complete. `AppCell = RefCell<App>` has been replaced by `flui_core::app::cell::AppCell` (Candidate B: hand-rolled `UnsafeCell<App>` + `BorrowState` returning `ReentryError`), with the doc-hidden compatibility API preserved. The 103 narrow AppCell-derived callsites now use the new primitive; K15 limitations #1, #2, and #6 are discharged; `BorrowMutError` conversion and `TRACK_THREAD_BORROWS` are removed. Next critical-chain item is K05 (Element trait -> context object).
+**K05 status (2026-05-11):** Element trait context-object migration is complete in `flui-core`. `LayoutCx`, `PrepaintCx`, and `PaintCx` are the public lifecycle context objects for low-level custom Elements; built-in elements, `AnyElement` traversal, `Window` lifecycle entry points, provider stack preservation, tests, spec, and migration guide are updated. Next critical-chain item is K01 (Provider rewrite).
 
 **Topic:** Strategic alignment of flui-v2 toward "Flutter ecosystem on Rust" — reconciling vision with current architecture and prior abandoned attempts.
 
@@ -151,20 +153,20 @@ This is the success metric for the "Phase II + Framework + Ecosystem" track.
 
 The previous SF01-first plan is REVERSED. Audit (see "Phase 0-K Kernel Cleanup audit" session below) identified 24+ structural issues in `flui-core` that block Framework tier work. Kernel Cleanup must precede Framework.
 
-1. **Run `/aif-plan full K99-msrv-bump-1.95`** — first K-track spec. MSRV bump is mechanical, single PR, prerequisite for AFIT/RPITIT/edition-2024 lifetime captures used in subsequent K-specs.
-2. **Then `/aif-plan full K15-reentrancy-contract`** — document and enforce re-entrancy semantics. First architectural spec.
-3. **Then K07 → K05 → K01 → K02 → K03 → K04** in sequence (the Phase 0-K critical chain).
+1. **K99, K15, K07, and K05 are complete.**
+2. **Next run `/aif-plan full K01-provider-rewrite`** — replace the thread-local Provider stack with a per-Window registry before Framework `BuildCx` wraps it.
+3. **Then K02 → K03 → K04** in sequence to finish the Phase 0-K critical chain.
 4. **Hygiene K90-K98 in parallel slots** — small independent PRs, can land any time.
-5. **Internal-org K06, K08, K10, K11 after K05** — unblocked once Element ctx-object lands.
-6. **SF01 only AFTER K01-K05 lands** — Framework tier sits on cleaned kernel.
+5. **Internal-org K06, K08, K10, K11 are now unblocked by K05** — schedule them alongside the remaining critical-chain work only when they do not slow K01-K04.
+6. **SF01 only AFTER K01-K04 lands** — Framework tier sits on the cleaned kernel.
 
 **Phase 0-K Kernel Cleanup spec slate (replaces premature SF01 path):**
 
 Critical chain (sequential):
-- **K99** — MSRV bump to Rust 1.95+ (workspace-mechanical, prerequisite for all K-specs)
-- **K15** — Re-entrancy contract (document + enforce, queue-not-panic for nested updates)
-- **K07** — AppCell removal (token-based borrow model, replaces `RefCell<App>`)
-- **K05** — Element trait → context object (`PaintCx` / `LayoutCx` / `PrepaintCx`)
+- **K99 (done)** — MSRV bump to Rust 1.95+ (workspace-mechanical, prerequisite for all K-specs)
+- **K15 (done)** — Re-entrancy contract (document + enforce, queue-not-panic for nested updates)
+- **K07 (done)** — AppCell removal (token-based borrow model, replaces `RefCell<App>`)
+- **K05 (done)** — Element trait → context object (`PaintCx` / `LayoutCx` / `PrepaintCx`)
 - **K01** — Provider rewrite (per-Window InheritedRegistry, reactive subscriptions)
 - **K02** — Element identity & Key (Local/Value/Global)
 - **K03** — Render → Build separation (`Widget::build(&self)` for Framework tier)

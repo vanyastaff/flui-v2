@@ -2,8 +2,8 @@ use std::ops::Range;
 
 use flui_core::{
     App, Application, Bounds, ClipboardItem, Context, CursorStyle, ElementId, ElementInputHandler,
-    Entity, EntityInputHandler, FocusHandle, Focusable, GlobalElementId, KeyBinding, Keystroke,
-    LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad, Pixels, Point,
+    Entity, EntityInputHandler, FocusHandle, Focusable, KeyBinding, Keystroke, LayoutId,
+    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad, Pixels, Point,
     ShapedLine, SharedString, Style, TextRun, UTF16Selection, UnderlineStyle, Window, WindowBounds,
     WindowOptions, actions, black, div, fill, hsla, opaque_grey, point, prelude::*, px, relative,
     rgb, rgba, size, white, yellow,
@@ -417,154 +417,151 @@ impl Element for TextElement {
 
     fn request_layout(
         &mut self,
-        _id: Option<&GlobalElementId>,
-        _inspector_id: Option<&flui_core::InspectorElementId>,
-        window: &mut Window,
-        cx: &mut App,
+        cx: &mut flui_core::LayoutCx<'_>,
     ) -> (LayoutId, Self::RequestLayoutState) {
-        let mut style = Style::default();
-        style.size.width = relative(1.).into();
-        style.size.height = window.line_height().into();
-        (window.request_layout(style, [], cx), ())
+        cx.with_window_app(|window, cx| {
+            let mut style = Style::default();
+            style.size.width = relative(1.).into();
+            style.size.height = window.line_height().into();
+            (window.request_layout(style, [], cx), ())
+        })
     }
 
     fn prepaint(
         &mut self,
-        _id: Option<&GlobalElementId>,
-        _inspector_id: Option<&flui_core::InspectorElementId>,
-        bounds: Bounds<Pixels>,
+        cx: &mut flui_core::PrepaintCx<'_>,
         _request_layout: &mut Self::RequestLayoutState,
-        window: &mut Window,
-        cx: &mut App,
     ) -> Self::PrepaintState {
-        let input = self.input.read(cx);
-        let content = input.content.clone();
-        let selected_range = input.selected_range.clone();
-        let cursor = input.cursor_offset();
-        let style = window.text_style();
+        let bounds = cx.bounds();
+        cx.with_window_app(|window, cx| {
+            let input = self.input.read(cx);
+            let content = input.content.clone();
+            let selected_range = input.selected_range.clone();
+            let cursor = input.cursor_offset();
+            let style = window.text_style();
 
-        let (display_text, text_color) = if content.is_empty() {
-            (input.placeholder.clone(), hsla(0., 0., 0., 0.2))
-        } else {
-            (content, style.color)
-        };
+            let (display_text, text_color) = if content.is_empty() {
+                (input.placeholder.clone(), hsla(0., 0., 0., 0.2))
+            } else {
+                (content, style.color)
+            };
 
-        let run = TextRun {
-            len: display_text.len(),
-            font: style.font(),
-            color: text_color,
-            background_color: None,
-            underline: None,
-            strikethrough: None,
-        };
-        let runs = if let Some(marked_range) = input.marked_range.as_ref() {
-            vec![
-                TextRun {
-                    len: marked_range.start,
-                    ..run.clone()
-                },
-                TextRun {
-                    len: marked_range.end - marked_range.start,
-                    underline: Some(UnderlineStyle {
-                        color: Some(run.color),
-                        thickness: px(1.0),
-                        wavy: false,
-                    }),
-                    ..run.clone()
-                },
-                TextRun {
-                    len: display_text.len() - marked_range.end,
-                    ..run
-                },
-            ]
-            .into_iter()
-            .filter(|run| run.len > 0)
-            .collect()
-        } else {
-            vec![run]
-        };
+            let run = TextRun {
+                len: display_text.len(),
+                font: style.font(),
+                color: text_color,
+                background_color: None,
+                underline: None,
+                strikethrough: None,
+            };
+            let runs = if let Some(marked_range) = input.marked_range.as_ref() {
+                vec![
+                    TextRun {
+                        len: marked_range.start,
+                        ..run.clone()
+                    },
+                    TextRun {
+                        len: marked_range.end - marked_range.start,
+                        underline: Some(UnderlineStyle {
+                            color: Some(run.color),
+                            thickness: px(1.0),
+                            wavy: false,
+                        }),
+                        ..run.clone()
+                    },
+                    TextRun {
+                        len: display_text.len() - marked_range.end,
+                        ..run
+                    },
+                ]
+                .into_iter()
+                .filter(|run| run.len > 0)
+                .collect()
+            } else {
+                vec![run]
+            };
 
-        let font_size = style.font_size.to_pixels(window.rem_size());
-        let line = window
-            .text_system()
-            .shape_line(display_text, font_size, &runs, None);
+            let font_size = style.font_size.to_pixels(window.rem_size());
+            let line = window
+                .text_system()
+                .shape_line(display_text, font_size, &runs, None);
 
-        let cursor_pos = line.x_for_index(cursor);
-        let (selection, cursor) = if selected_range.is_empty() {
-            (
-                None,
-                Some(fill(
-                    Bounds::new(
-                        point(bounds.left() + cursor_pos, bounds.top()),
-                        size(px(2.), bounds.bottom() - bounds.top()),
-                    ),
-                    flui_core::blue(),
-                )),
-            )
-        } else {
-            (
-                Some(fill(
-                    Bounds::from_corners(
-                        point(
-                            bounds.left() + line.x_for_index(selected_range.start),
-                            bounds.top(),
+            let cursor_pos = line.x_for_index(cursor);
+            let (selection, cursor) = if selected_range.is_empty() {
+                (
+                    None,
+                    Some(fill(
+                        Bounds::new(
+                            point(bounds.left() + cursor_pos, bounds.top()),
+                            size(px(2.), bounds.bottom() - bounds.top()),
                         ),
-                        point(
-                            bounds.left() + line.x_for_index(selected_range.end),
-                            bounds.bottom(),
+                        flui_core::blue(),
+                    )),
+                )
+            } else {
+                (
+                    Some(fill(
+                        Bounds::from_corners(
+                            point(
+                                bounds.left() + line.x_for_index(selected_range.start),
+                                bounds.top(),
+                            ),
+                            point(
+                                bounds.left() + line.x_for_index(selected_range.end),
+                                bounds.bottom(),
+                            ),
                         ),
-                    ),
-                    rgba(0x3311ff30),
-                )),
-                None,
-            )
-        };
-        PrepaintState {
-            line: Some(line),
-            cursor,
-            selection,
-        }
+                        rgba(0x3311ff30),
+                    )),
+                    None,
+                )
+            };
+            PrepaintState {
+                line: Some(line),
+                cursor,
+                selection,
+            }
+        })
     }
 
     fn paint(
         &mut self,
-        _id: Option<&GlobalElementId>,
-        _inspector_id: Option<&flui_core::InspectorElementId>,
-        bounds: Bounds<Pixels>,
+        cx: &mut flui_core::PaintCx<'_>,
         _request_layout: &mut Self::RequestLayoutState,
         prepaint: &mut Self::PrepaintState,
-        window: &mut Window,
-        cx: &mut App,
     ) {
-        let focus_handle = self.input.read(cx).focus_handle.clone();
-        window.handle_input(
-            &focus_handle,
-            ElementInputHandler::new(bounds, self.input.clone()),
-            cx,
-        );
-        if let Some(selection) = prepaint.selection.take() {
-            window.paint_quad(selection)
-        }
-        let line = prepaint.line.take().unwrap();
-        line.paint(
-            bounds.origin,
-            window.line_height(),
-            flui_core::TextAlign::Left,
-            None,
-            window,
-            cx,
-        )
-        .unwrap();
+        let bounds = cx.bounds();
+        cx.with_window_app(|window, cx| {
+            let focus_handle = self.input.read(cx).focus_handle.clone();
+            window.handle_input(
+                &focus_handle,
+                ElementInputHandler::new(bounds, self.input.clone()),
+                cx,
+            );
+            if let Some(selection) = prepaint.selection.take() {
+                window.paint_quad(selection)
+            }
+            let line = prepaint.line.take().unwrap();
+            line.paint(
+                bounds.origin,
+                window.line_height(),
+                flui_core::TextAlign::Left,
+                None,
+                window,
+                cx,
+            )
+            .unwrap();
 
-        if focus_handle.is_focused(window)
-            && let Some(cursor) = prepaint.cursor.take()
-        {
-            window.paint_quad(cursor);
-        }
+            if focus_handle.is_focused(window)
+                && let Some(cursor) = prepaint.cursor.take()
+            {
+                window.paint_quad(cursor);
+            }
 
-        self.input.update(cx, |input, _cx| {
-            input.last_layout = Some(line);
-            input.last_bounds = Some(bounds);
+            self.input.update(cx, |input, _cx| {
+                input.last_layout = Some(line);
+                input.last_bounds = Some(bounds);
+            });
         });
     }
 }

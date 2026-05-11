@@ -8,6 +8,44 @@ intent — every breaking change ships with a migration note even though we
 have not yet published a numbered release. Cross-references point to the
 plan and design docs in `.ai-factory/plans/` and `docs/superpowers/specs/`.
 
+## [Unreleased] — K05 Element lifecycle context objects
+
+K05 replaces the low-level `flui_core::Element` lifecycle argument bundles with
+phase-specific context objects: `LayoutCx<'_>`, `PrepaintCx<'_>`, and
+`PaintCx<'_>`. Built-in elements, `AnyElement` traversal, `Interactivity`,
+provider wrapping, `Window` root/deferred/inspector paths, test harness drawing,
+and internal custom-element tests/examples have been migrated.
+
+Plan: `.ai-factory/plans/feature-K05-element-context-object.md`.
+Design spec:
+`docs/superpowers/specs/2026-05-11-K05-element-context-object-design.md`.
+Migration guide:
+`docs/superpowers/migrations/K05-element-context-object.md`.
+
+### Breaking — custom `Element` impls use lifecycle contexts
+
+- `Element::request_layout` now receives `&mut LayoutCx<'_>`.
+- `Element::prepaint` now receives `&mut PrepaintCx<'_>` plus the mutable
+  request-layout state.
+- `Element::paint` now receives `&mut PaintCx<'_>` plus mutable
+  request-layout and prepaint states.
+- External custom elements should read identity via `cx.global_id()` /
+  `cx.inspector_id()`, read bounds via `cx.bounds()` in prepaint/paint, and use
+  `cx.with_window_app(...)` when an existing API still needs both runtime
+  handles.
+
+### Changed — `AnyElement` traversal
+
+- Child traversal helpers now take the current lifecycle context directly:
+  `child.request_layout(cx)`, `child.prepaint(cx)`, and `child.paint(cx)`.
+- Root/window lifecycle boundaries construct contexts internally; custom element
+  authors should normally forward the context they received.
+
+### Notes
+
+- K05 does not introduce Framework `BuildCx`, `Widget`, `Key`, Provider rewrite,
+  ownership sharding, or new panic-recovery semantics for lifecycle panics.
+
 ## [Unreleased] — K07 AppCell removal (token-based borrow model)
 
 K07 replaces the inherited `AppCell = RefCell<App>` runtime primitive with

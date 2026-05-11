@@ -1,7 +1,7 @@
 use crate::{
     AnyElement, AnyEntity, AnyWeakEntity, App, Bounds, ContentMask, Context, Element, ElementId,
-    Entity, EntityId, GlobalElementId, InspectorElementId, IntoElement, LayoutId, PaintIndex,
-    Pixels, PrepaintStateIndex, Render, Style, StyleRefinement, TextStyle, WeakEntity,
+    Entity, EntityId, IntoElement, LayoutId, PaintIndex, Pixels, PrepaintStateIndex, Render, Style,
+    StyleRefinement, TextStyle, WeakEntity,
 };
 use crate::{Empty, Window};
 use anyhow::Result;
@@ -106,136 +106,156 @@ impl Element for AnyView {
 
     fn request_layout(
         &mut self,
-        _id: Option<&GlobalElementId>,
-        _inspector_id: Option<&InspectorElementId>,
-        window: &mut Window,
-        cx: &mut App,
+        cx: &mut crate::LayoutCx<'_>,
     ) -> (LayoutId, Self::RequestLayoutState) {
-        window.with_rendered_view(self.entity_id(), |window| {
-            // Disable caching when inspecting so that mouse_hit_test has all hitboxes.
-            let caching_disabled = window.is_inspector_picking(cx);
-            match self.cached_style.as_ref() {
-                Some(style) if !caching_disabled => {
-                    let mut root_style = Style::default();
-                    root_style.refine(style);
-                    let layout_id = window.request_layout(root_style, None, cx);
-                    (layout_id, None)
+        cx.with_window_app(|window, cx| {
+            window.with_rendered_view(self.entity_id(), |window| {
+                // Disable caching when inspecting so that mouse_hit_test has all hitboxes.
+                let caching_disabled = window.is_inspector_picking(cx);
+                match self.cached_style.as_ref() {
+                    Some(style) if !caching_disabled => {
+                        let mut root_style = Style::default();
+                        root_style.refine(style);
+                        let layout_id = window.request_layout(root_style, None, cx);
+                        (layout_id, None)
+                    }
+                    _ => {
+                        let mut element = (self.render)(self, window, cx);
+                        let mut element_cx = crate::LayoutCx::new(window, cx, None, None);
+                        let layout_id = element.request_layout(&mut element_cx);
+                        (layout_id, Some(element))
+                    }
                 }
-                _ => {
-                    let mut element = (self.render)(self, window, cx);
-                    let layout_id = element.request_layout(window, cx);
-                    (layout_id, Some(element))
-                }
-            }
+            })
         })
     }
 
     fn prepaint(
         &mut self,
-        global_id: Option<&GlobalElementId>,
-        _inspector_id: Option<&InspectorElementId>,
-        bounds: Bounds<Pixels>,
+        cx: &mut crate::PrepaintCx<'_>,
         element: &mut Self::RequestLayoutState,
-        window: &mut Window,
-        cx: &mut App,
     ) -> Option<AnyElement> {
-        window.set_view_id(self.entity_id());
-        window.with_rendered_view(self.entity_id(), |window| {
-            if let Some(mut element) = element.take() {
-                element.prepaint(window, cx);
-                return Some(element);
-            }
+        let global_id = cx.global_id().cloned();
+        let bounds = cx.bounds();
+        cx.with_window_app(|window, cx| {
+            window.set_view_id(self.entity_id());
+            window.with_rendered_view(self.entity_id(), |window| {
+                if let Some(mut element) = element.take() {
+                    let mut element_cx =
+                        crate::PrepaintCx::new(window, cx, global_id.as_ref(), None, bounds);
+                    element.prepaint(&mut element_cx);
+                    return Some(element);
+                }
 
-            window.with_element_state::<AnyViewState, _>(
-                global_id.unwrap(),
-                |element_state, window| {
-                    let content_mask = window.content_mask();
-                    let text_style = window.text_style();
+                window.with_element_state::<AnyViewState, _>(
+                    global_id.as_ref().unwrap(),
+                    |element_state, window| {
+                        let content_mask = window.content_mask();
+                        let text_style = window.text_style();
 
-                    if let Some(mut element_state) = element_state
-                        && element_state.cache_key.bounds == bounds
-                        && element_state.cache_key.content_mask == content_mask
-                        && element_state.cache_key.text_style == text_style
-                        && !window.dirty_views.contains(&self.entity_id())
-                        && !window.refreshing
-                    {
+                        if let Some(mut element_state) = element_state
+                            && element_state.cache_key.bounds == bounds
+                            && element_state.cache_key.content_mask == content_mask
+                            && element_state.cache_key.text_style == text_style
+                            && !window.dirty_views.contains(&self.entity_id())
+                            && !window.refreshing
+                        {
+                            let prepaint_start = window.prepaint_index();
+                            window.reuse_prepaint(element_state.prepaint_range.clone());
+                            cx.entities
+                                .extend_accessed(&element_state.accessed_entities);
+                            let prepaint_end = window.prepaint_index();
+                            element_state.prepaint_range = prepaint_start..prepaint_end;
+
+                            return (None, element_state);
+                        }
+
+                        let refreshing = mem::replace(&mut window.refreshing, true);
                         let prepaint_start = window.prepaint_index();
-                        window.reuse_prepaint(element_state.prepaint_range.clone());
-                        cx.entities
-                            .extend_accessed(&element_state.accessed_entities);
-                        let prepaint_end = window.prepaint_index();
-                        element_state.prepaint_range = prepaint_start..prepaint_end;
-
-                        return (None, element_state);
-                    }
-
-                    let refreshing = mem::replace(&mut window.refreshing, true);
-                    let prepaint_start = window.prepaint_index();
-                    let (mut element, accessed_entities) = cx.detect_accessed_entities(|cx| {
-                        let mut element = (self.render)(self, window, cx);
-                        element.layout_as_root(bounds.size.into(), window, cx);
-                        element.prepaint_at(bounds.origin, window, cx);
-                        element
-                    });
-
-                    let prepaint_end = window.prepaint_index();
-                    window.refreshing = refreshing;
-
-                    (
-                        Some(element),
-                        AnyViewState {
-                            accessed_entities,
-                            prepaint_range: prepaint_start..prepaint_end,
-                            paint_range: PaintIndex::default()..PaintIndex::default(),
-                            cache_key: ViewCacheKey {
+                        let (mut element, accessed_entities) = cx.detect_accessed_entities(|cx| {
+                            let mut element = (self.render)(self, window, cx);
+                            let mut layout_cx =
+                                crate::LayoutCx::new(window, cx, global_id.as_ref(), None);
+                            element.layout_as_root(bounds.size.into(), &mut layout_cx);
+                            let mut prepaint_cx = crate::PrepaintCx::new(
+                                window,
+                                cx,
+                                global_id.as_ref(),
+                                None,
                                 bounds,
-                                content_mask,
-                                text_style,
+                            );
+                            element.prepaint_at(bounds.origin, &mut prepaint_cx);
+                            element
+                        });
+
+                        let prepaint_end = window.prepaint_index();
+                        window.refreshing = refreshing;
+
+                        (
+                            Some(element),
+                            AnyViewState {
+                                accessed_entities,
+                                prepaint_range: prepaint_start..prepaint_end,
+                                paint_range: PaintIndex::default()..PaintIndex::default(),
+                                cache_key: ViewCacheKey {
+                                    bounds,
+                                    content_mask,
+                                    text_style,
+                                },
                             },
-                        },
-                    )
-                },
-            )
+                        )
+                    },
+                )
+            })
         })
     }
 
     fn paint(
         &mut self,
-        global_id: Option<&GlobalElementId>,
-        _inspector_id: Option<&InspectorElementId>,
-        _bounds: Bounds<Pixels>,
+        cx: &mut crate::PaintCx<'_>,
         _: &mut Self::RequestLayoutState,
         element: &mut Self::PrepaintState,
-        window: &mut Window,
-        cx: &mut App,
     ) {
-        window.with_rendered_view(self.entity_id(), |window| {
-            let caching_disabled = window.is_inspector_picking(cx);
-            if self.cached_style.is_some() && !caching_disabled {
-                window.with_element_state::<AnyViewState, _>(
-                    global_id.unwrap(),
-                    |element_state, window| {
-                        let mut element_state = element_state.unwrap();
+        let global_id = cx.global_id().cloned();
+        let bounds = cx.bounds();
+        cx.with_window_app(|window, cx| {
+            window.with_rendered_view(self.entity_id(), |window| {
+                let caching_disabled = window.is_inspector_picking(cx);
+                if self.cached_style.is_some() && !caching_disabled {
+                    window.with_element_state::<AnyViewState, _>(
+                        global_id.as_ref().unwrap(),
+                        |element_state, window| {
+                            let mut element_state = element_state.unwrap();
 
-                        let paint_start = window.paint_index();
+                            let paint_start = window.paint_index();
 
-                        if let Some(element) = element {
-                            let refreshing = mem::replace(&mut window.refreshing, true);
-                            element.paint(window, cx);
-                            window.refreshing = refreshing;
-                        } else {
-                            window.reuse_paint(element_state.paint_range.clone());
-                        }
+                            if let Some(element) = element {
+                                let refreshing = mem::replace(&mut window.refreshing, true);
+                                let mut element_cx = crate::PaintCx::new(
+                                    window,
+                                    cx,
+                                    global_id.as_ref(),
+                                    None,
+                                    bounds,
+                                );
+                                element.paint(&mut element_cx);
+                                window.refreshing = refreshing;
+                            } else {
+                                window.reuse_paint(element_state.paint_range.clone());
+                            }
 
-                        let paint_end = window.paint_index();
-                        element_state.paint_range = paint_start..paint_end;
+                            let paint_end = window.paint_index();
+                            element_state.paint_range = paint_start..paint_end;
 
-                        ((), element_state)
-                    },
-                )
-            } else {
-                element.as_mut().unwrap().paint(window, cx);
-            }
+                            ((), element_state)
+                        },
+                    )
+                } else {
+                    let mut element_cx =
+                        crate::PaintCx::new(window, cx, global_id.as_ref(), None, bounds);
+                    element.as_mut().unwrap().paint(&mut element_cx);
+                }
+            });
         });
     }
 }

@@ -1,9 +1,9 @@
 use std::{fs, path::Path, sync::Arc};
 
 use crate::{
-    App, Asset, Bounds, Element, GlobalElementId, Hitbox, InspectorElementId, InteractiveElement,
-    Interactivity, IntoElement, LayoutId, Pixels, Point, Radians, SharedString, Size,
-    StyleRefinement, Styled, TransformationMatrix, Window, point, px, radians, size,
+    App, Asset, Element, Hitbox, InteractiveElement, Interactivity, IntoElement, LayoutId, Pixels,
+    Point, Radians, SharedString, Size, StyleRefinement, Styled, TransformationMatrix, point, px,
+    radians, size,
 };
 use util::ResultExt;
 
@@ -61,104 +61,111 @@ impl Element for Svg {
 
     fn request_layout(
         &mut self,
-        global_id: Option<&GlobalElementId>,
-        inspector_id: Option<&InspectorElementId>,
-        window: &mut Window,
-        cx: &mut App,
+        cx: &mut crate::LayoutCx<'_>,
     ) -> (LayoutId, Self::RequestLayoutState) {
-        let layout_id = self.interactivity.request_layout(
-            global_id,
-            inspector_id,
-            window,
-            cx,
-            |style, window, cx| window.request_layout(style, None, cx),
-        );
+        let global_id = cx.global_id().cloned();
+        let inspector_id = cx.inspector_id().cloned();
+        let layout_id = cx.with_window_app(|window, cx| {
+            let mut interactivity_cx =
+                crate::LayoutCx::new(window, cx, global_id.as_ref(), inspector_id.as_ref());
+            self.interactivity
+                .request_layout(&mut interactivity_cx, |style, window, cx| {
+                    window.request_layout(style, None, cx)
+                })
+        });
         (layout_id, ())
     }
 
     fn prepaint(
         &mut self,
-        global_id: Option<&GlobalElementId>,
-        inspector_id: Option<&InspectorElementId>,
-        bounds: Bounds<Pixels>,
+        cx: &mut crate::PrepaintCx<'_>,
         _request_layout: &mut Self::RequestLayoutState,
-        window: &mut Window,
-        cx: &mut App,
     ) -> Option<Hitbox> {
-        self.interactivity.prepaint(
-            global_id,
-            inspector_id,
-            bounds,
-            bounds.size,
-            window,
-            cx,
-            |_, _, hitbox, _, _| hitbox,
-        )
+        let global_id = cx.global_id().cloned();
+        let inspector_id = cx.inspector_id().cloned();
+        let bounds = cx.bounds();
+        cx.with_window_app(|window, cx| {
+            let mut interactivity_cx = crate::PrepaintCx::new(
+                window,
+                cx,
+                global_id.as_ref(),
+                inspector_id.as_ref(),
+                bounds,
+            );
+            self.interactivity
+                .prepaint(&mut interactivity_cx, bounds.size, |_, _, hitbox, _, _| {
+                    hitbox
+                })
+        })
     }
 
     fn paint(
         &mut self,
-        global_id: Option<&GlobalElementId>,
-        inspector_id: Option<&InspectorElementId>,
-        bounds: Bounds<Pixels>,
+        cx: &mut crate::PaintCx<'_>,
         _request_layout: &mut Self::RequestLayoutState,
         hitbox: &mut Option<Hitbox>,
-        window: &mut Window,
-        cx: &mut App,
     ) where
         Self: Sized,
     {
-        self.interactivity.paint(
-            global_id,
-            inspector_id,
-            bounds,
-            hitbox.as_ref(),
-            window,
-            cx,
-            |style, window, cx| {
-                if let Some((path, color)) = self.path.as_ref().zip(style.text.color) {
-                    let transformation = self
-                        .transformation
-                        .as_ref()
-                        .map(|transformation| {
-                            transformation.into_matrix(bounds.center(), window.scale_factor())
-                        })
-                        .unwrap_or_default();
+        let global_id = cx.global_id().cloned();
+        let inspector_id = cx.inspector_id().cloned();
+        let bounds = cx.bounds();
+        cx.with_window_app(|window, cx| {
+            let mut interactivity_cx = crate::PaintCx::new(
+                window,
+                cx,
+                global_id.as_ref(),
+                inspector_id.as_ref(),
+                bounds,
+            );
+            self.interactivity.paint(
+                &mut interactivity_cx,
+                hitbox.as_ref(),
+                |style, window, cx| {
+                    if let Some((path, color)) = self.path.as_ref().zip(style.text.color) {
+                        let transformation = self
+                            .transformation
+                            .as_ref()
+                            .map(|transformation| {
+                                transformation.into_matrix(bounds.center(), window.scale_factor())
+                            })
+                            .unwrap_or_default();
 
-                    window
-                        .paint_svg(bounds, path.clone(), None, transformation, color, cx)
-                        .log_err();
-                } else if let Some((path, color)) =
-                    self.external_path.as_ref().zip(style.text.color)
-                {
-                    let Some(bytes) = window
-                        .use_asset::<SvgAsset>(path, cx)
-                        .and_then(|asset| asset.log_err())
-                    else {
-                        return;
-                    };
+                        window
+                            .paint_svg(bounds, path.clone(), None, transformation, color, cx)
+                            .log_err();
+                    } else if let Some((path, color)) =
+                        self.external_path.as_ref().zip(style.text.color)
+                    {
+                        let Some(bytes) = window
+                            .use_asset::<SvgAsset>(path, cx)
+                            .and_then(|asset| asset.log_err())
+                        else {
+                            return;
+                        };
 
-                    let transformation = self
-                        .transformation
-                        .as_ref()
-                        .map(|transformation| {
-                            transformation.into_matrix(bounds.center(), window.scale_factor())
-                        })
-                        .unwrap_or_default();
+                        let transformation = self
+                            .transformation
+                            .as_ref()
+                            .map(|transformation| {
+                                transformation.into_matrix(bounds.center(), window.scale_factor())
+                            })
+                            .unwrap_or_default();
 
-                    window
-                        .paint_svg(
-                            bounds,
-                            path.clone(),
-                            Some(&bytes),
-                            transformation,
-                            color,
-                            cx,
-                        )
-                        .log_err();
-                }
-            },
-        )
+                        window
+                            .paint_svg(
+                                bounds,
+                                path.clone(),
+                                Some(&bytes),
+                                transformation,
+                                color,
+                                cx,
+                            )
+                            .log_err();
+                    }
+                },
+            )
+        })
     }
 }
 

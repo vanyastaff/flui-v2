@@ -1,8 +1,7 @@
 use crate::{
-    AnyElement, AnyEntity, App, AppContext, Asset, AssetLogger, Bounds, Element, ElementId, Entity,
-    GlobalElementId, ImageAssetLoader, ImageCacheError, InspectorElementId, IntoElement, LayoutId,
-    ParentElement, Pixels, RenderImage, Resource, Style, StyleRefinement, Styled, Task, Window,
-    hash,
+    AnyElement, AnyEntity, App, AppContext, Asset, AssetLogger, Element, ElementId, Entity,
+    ImageAssetLoader, ImageCacheError, IntoElement, LayoutId, ParentElement, RenderImage, Resource,
+    Style, StyleRefinement, Styled, Task, Window, hash,
 };
 
 use futures::{FutureExt, future::Shared};
@@ -109,54 +108,52 @@ impl Element for ImageCacheElement {
 
     fn request_layout(
         &mut self,
-        _id: Option<&GlobalElementId>,
-        _inspector_id: Option<&InspectorElementId>,
-        window: &mut Window,
-        cx: &mut App,
+        cx: &mut crate::LayoutCx<'_>,
     ) -> (LayoutId, Self::RequestLayoutState) {
-        let image_cache = self.image_cache_provider.provide(window, cx);
-        window.with_image_cache(Some(image_cache), |window| {
-            let child_layout_ids = self
-                .children
-                .iter_mut()
-                .map(|child| child.request_layout(window, cx))
-                .collect::<SmallVec<_>>();
-            let mut style = Style::default();
-            style.refine(&self.style);
-            let layout_id = window.request_layout(style, child_layout_ids.iter().copied(), cx);
-            (layout_id, child_layout_ids)
+        cx.with_window_app(|window, cx| {
+            let image_cache = self.image_cache_provider.provide(window, cx);
+            window.with_image_cache(Some(image_cache), |window| {
+                let child_layout_ids = self
+                    .children
+                    .iter_mut()
+                    .map(|child| {
+                        let mut child_cx = crate::LayoutCx::new(window, cx, None, None);
+                        child.request_layout(&mut child_cx)
+                    })
+                    .collect::<SmallVec<_>>();
+                let mut style = Style::default();
+                style.refine(&self.style);
+                let layout_id = window.request_layout(style, child_layout_ids.iter().copied(), cx);
+                (layout_id, child_layout_ids)
+            })
         })
     }
 
     fn prepaint(
         &mut self,
-        _id: Option<&GlobalElementId>,
-        _inspector_id: Option<&InspectorElementId>,
-        _bounds: Bounds<Pixels>,
+        cx: &mut crate::PrepaintCx<'_>,
         _request_layout: &mut Self::RequestLayoutState,
-        window: &mut Window,
-        cx: &mut App,
     ) -> Self::PrepaintState {
         for child in &mut self.children {
-            child.prepaint(window, cx);
+            child.prepaint(cx);
         }
     }
 
     fn paint(
         &mut self,
-        _id: Option<&GlobalElementId>,
-        _inspector_id: Option<&InspectorElementId>,
-        _bounds: Bounds<Pixels>,
+        cx: &mut crate::PaintCx<'_>,
         _request_layout: &mut Self::RequestLayoutState,
         _prepaint: &mut Self::PrepaintState,
-        window: &mut Window,
-        cx: &mut App,
     ) {
-        let image_cache = self.image_cache_provider.provide(window, cx);
-        window.with_image_cache(Some(image_cache), |window| {
-            for child in &mut self.children {
-                child.paint(window, cx);
-            }
+        let bounds = cx.bounds();
+        cx.with_window_app(|window, cx| {
+            let image_cache = self.image_cache_provider.provide(window, cx);
+            window.with_image_cache(Some(image_cache), |window| {
+                for child in &mut self.children {
+                    let mut child_cx = crate::PaintCx::new(window, cx, None, None, bounds);
+                    child.paint(&mut child_cx);
+                }
+            })
         })
     }
 }

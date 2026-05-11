@@ -1,9 +1,7 @@
 use crate::scheduler::Instant;
 use std::{rc::Rc, time::Duration};
 
-use crate::{
-    AnyElement, App, Element, ElementId, GlobalElementId, InspectorElementId, IntoElement, Window,
-};
+use crate::{AnyElement, Element, ElementId, IntoElement};
 
 pub use easing::*;
 use smallvec::SmallVec;
@@ -151,95 +149,88 @@ impl<E: IntoElement + 'static> Element for ElementAnimationElement<E> {
 
     fn request_layout(
         &mut self,
-        global_id: Option<&GlobalElementId>,
-        _inspector_id: Option<&InspectorElementId>,
-        window: &mut Window,
-        cx: &mut App,
+        cx: &mut crate::LayoutCx<'_>,
     ) -> (crate::LayoutId, Self::RequestLayoutState) {
-        // S21 phase 0.9: pull the current time from the active scheduler's
-        // `Clock` instead of `Instant::now()` so element-level animations
-        // become deterministic under `TestClock` (matches `AnimationController`'s
-        // Ticker-driven elapsed-time path). Pre-compute once so the
-        // `with_element_state` closure (which mutably borrows the App via
-        // the inner `element.request_layout`) doesn't conflict with the
-        // clock fetch.
-        let now = cx
-            .background_executor()
-            .scheduler_executor()
-            .scheduler()
-            .clock()
-            .now();
-        let elapsed_since = |t: Instant| now.saturating_duration_since(t).as_secs_f32();
+        let global_id = cx.global_id().cloned();
+        cx.with_window_app(|window, cx| {
+            // S21 phase 0.9: pull the current time from the active scheduler's
+            // `Clock` instead of `Instant::now()` so element-level animations
+            // become deterministic under `TestClock` (matches `AnimationController`'s
+            // Ticker-driven elapsed-time path). Pre-compute once so the
+            // `with_element_state` closure (which mutably borrows the App via
+            // the inner `element.request_layout`) doesn't conflict with the
+            // clock fetch.
+            let now = cx
+                .background_executor()
+                .scheduler_executor()
+                .scheduler()
+                .clock()
+                .now();
+            let elapsed_since = |t: Instant| now.saturating_duration_since(t).as_secs_f32();
 
-        window.with_element_state(global_id.unwrap(), |state, window| {
-            let mut state = state.unwrap_or_else(|| AnimationState {
-                start: now,
-                animation_ix: 0,
-            });
-            let animation_ix = state.animation_ix;
+            window.with_element_state(global_id.as_ref().unwrap(), |state, window| {
+                let mut state = state.unwrap_or_else(|| AnimationState {
+                    start: now,
+                    animation_ix: 0,
+                });
+                let animation_ix = state.animation_ix;
 
-            let mut delta =
-                elapsed_since(state.start) / self.animations[animation_ix].duration.as_secs_f32();
+                let mut delta = elapsed_since(state.start)
+                    / self.animations[animation_ix].duration.as_secs_f32();
 
-            let mut done = false;
-            if delta > 1.0 {
-                if self.animations[animation_ix].oneshot {
-                    if animation_ix >= self.animations.len() - 1 {
-                        done = true;
+                let mut done = false;
+                if delta > 1.0 {
+                    if self.animations[animation_ix].oneshot {
+                        if animation_ix >= self.animations.len() - 1 {
+                            done = true;
+                        } else {
+                            state.start = now;
+                            state.animation_ix += 1;
+                        }
+                        delta = 1.0;
                     } else {
-                        state.start = now;
-                        state.animation_ix += 1;
+                        delta %= 1.0;
                     }
-                    delta = 1.0;
-                } else {
-                    delta %= 1.0;
                 }
-            }
-            let delta = if let Some(ref curve) = self.animations[animation_ix].curve {
-                curve.transform(delta)
-            } else {
-                (self.animations[animation_ix].easing)(delta)
-            };
+                let delta = if let Some(ref curve) = self.animations[animation_ix].curve {
+                    curve.transform(delta)
+                } else {
+                    (self.animations[animation_ix].easing)(delta)
+                };
 
-            debug_assert!(
-                (0.0..=1.0).contains(&delta),
-                "delta should always be between 0 and 1"
-            );
+                debug_assert!(
+                    (0.0..=1.0).contains(&delta),
+                    "delta should always be between 0 and 1"
+                );
 
-            let element = self.element.take().expect("should only be called once");
-            let mut element = (self.animator)(element, animation_ix, delta).into_any_element();
+                let element = self.element.take().expect("should only be called once");
+                let mut element = (self.animator)(element, animation_ix, delta).into_any_element();
 
-            if !done {
-                window.request_animation_frame();
-            }
+                if !done {
+                    window.request_animation_frame();
+                }
 
-            ((element.request_layout(window, cx), element), state)
+                let mut element_cx = crate::LayoutCx::new(window, cx, None, None);
+                ((element.request_layout(&mut element_cx), element), state)
+            })
         })
     }
 
     fn prepaint(
         &mut self,
-        _id: Option<&GlobalElementId>,
-        _inspector_id: Option<&InspectorElementId>,
-        _bounds: crate::Bounds<crate::Pixels>,
+        cx: &mut crate::PrepaintCx<'_>,
         element: &mut Self::RequestLayoutState,
-        window: &mut Window,
-        cx: &mut App,
     ) -> Self::PrepaintState {
-        element.prepaint(window, cx);
+        element.prepaint(cx);
     }
 
     fn paint(
         &mut self,
-        _id: Option<&GlobalElementId>,
-        _inspector_id: Option<&InspectorElementId>,
-        _bounds: crate::Bounds<crate::Pixels>,
+        cx: &mut crate::PaintCx<'_>,
         element: &mut Self::RequestLayoutState,
         _: &mut Self::PrepaintState,
-        window: &mut Window,
-        cx: &mut App,
     ) {
-        element.paint(window, cx);
+        element.paint(cx);
     }
 }
 

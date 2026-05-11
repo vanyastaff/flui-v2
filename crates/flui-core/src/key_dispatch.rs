@@ -621,8 +621,8 @@ impl DispatchTree {
 #[cfg(test)]
 mod tests {
     use crate::{
-        self as flui_core, AppContext, DispatchResult, Element, ElementId, GlobalElementId,
-        InspectorElementId, Keystroke, LayoutId, Style,
+        self as flui_core, AppContext, DispatchResult, Element, ElementId, Keystroke, LayoutId,
+        Style,
     };
     use core::panic;
     use smallvec::SmallVec;
@@ -796,41 +796,39 @@ mod tests {
 
             fn request_layout(
                 &mut self,
-                _: Option<&GlobalElementId>,
-                _: Option<&InspectorElementId>,
-                window: &mut Window,
-                cx: &mut App,
+                cx: &mut crate::LayoutCx<'_>,
             ) -> (LayoutId, Self::RequestLayoutState) {
-                (window.request_layout(Style::default(), [], cx), ())
+                (
+                    cx.with_window_app(|window, cx| {
+                        window.request_layout(Style::default(), [], cx)
+                    }),
+                    (),
+                )
             }
 
             fn prepaint(
                 &mut self,
-                _: Option<&GlobalElementId>,
-                _: Option<&InspectorElementId>,
-                _: Bounds<Pixels>,
+                cx: &mut crate::PrepaintCx<'_>,
                 _: &mut Self::RequestLayoutState,
-                window: &mut Window,
-                cx: &mut App,
             ) -> Self::PrepaintState {
-                window.set_focus_handle(&self.focus_handle, cx);
+                cx.with_window_app(|window, cx| {
+                    window.set_focus_handle(&self.focus_handle, cx);
+                });
             }
 
             fn paint(
                 &mut self,
-                _: Option<&GlobalElementId>,
-                _: Option<&InspectorElementId>,
-                _: Bounds<Pixels>,
+                cx: &mut crate::PaintCx<'_>,
                 _: &mut Self::RequestLayoutState,
                 _: &mut Self::PrepaintState,
-                window: &mut Window,
-                cx: &mut App,
             ) {
-                let mut key_context = KeyContext::default();
-                key_context.add("Terminal");
-                window.set_key_context(key_context);
-                window.handle_input(&self.focus_handle, self.clone(), cx);
-                window.on_action(std::any::TypeId::of::<TestAction>(), |_, _, _, _| {});
+                cx.with_window_app(|window, cx| {
+                    let mut key_context = KeyContext::default();
+                    key_context.add("Terminal");
+                    window.set_key_context(key_context);
+                    window.handle_input(&self.focus_handle, self.clone(), cx);
+                    window.on_action(std::any::TypeId::of::<TestAction>(), |_, _, _, _| {});
+                });
             }
         }
 
@@ -999,39 +997,37 @@ mod tests {
             }
             fn request_layout(
                 &mut self,
-                _: Option<&GlobalElementId>,
-                _: Option<&InspectorElementId>,
-                window: &mut Window,
-                cx: &mut App,
+                cx: &mut crate::LayoutCx<'_>,
             ) -> (LayoutId, Self::RequestLayoutState) {
-                (window.request_layout(Style::default(), [], cx), ())
+                (
+                    cx.with_window_app(|window, cx| {
+                        window.request_layout(Style::default(), [], cx)
+                    }),
+                    (),
+                )
             }
             fn prepaint(
                 &mut self,
-                _: Option<&GlobalElementId>,
-                _: Option<&InspectorElementId>,
-                _: Bounds<Pixels>,
+                cx: &mut crate::PrepaintCx<'_>,
                 _: &mut Self::RequestLayoutState,
-                window: &mut Window,
-                cx: &mut App,
             ) -> Self::PrepaintState {
-                window.set_focus_handle(&self.focus_handle, cx);
+                cx.with_window_app(|window, cx| {
+                    window.set_focus_handle(&self.focus_handle, cx);
+                });
             }
             fn paint(
                 &mut self,
-                _: Option<&GlobalElementId>,
-                _: Option<&InspectorElementId>,
-                _: Bounds<Pixels>,
+                cx: &mut crate::PaintCx<'_>,
                 _: &mut Self::RequestLayoutState,
                 _: &mut Self::PrepaintState,
-                window: &mut Window,
-                cx: &mut App,
             ) {
-                let mut key_context = KeyContext::default();
-                key_context.add("Terminal");
-                window.set_key_context(key_context);
-                window.handle_input(&self.focus_handle, self.clone(), cx);
-                window.on_action(std::any::TypeId::of::<TestAction>(), |_, _, _, _| {});
+                cx.with_window_app(|window, cx| {
+                    let mut key_context = KeyContext::default();
+                    key_context.add("Terminal");
+                    window.set_key_context(key_context);
+                    window.handle_input(&self.focus_handle, self.clone(), cx);
+                    window.on_action(std::any::TypeId::of::<TestAction>(), |_, _, _, _| {});
+                });
             }
         }
         impl IntoElement for CustomElement {

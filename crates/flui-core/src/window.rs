@@ -2471,7 +2471,7 @@ impl Window {
 
         // Layout all root elements.
         let mut root_element = self.root.as_ref().unwrap().clone().into_any();
-        root_element.prepaint_as_root(Point::default(), root_size.into(), self, cx);
+        root_element.prepaint_as_root_with_window(Point::default(), root_size.into(), self, cx);
 
         #[cfg(any(feature = "inspector", debug_assertions))]
         let inspector_element = self.prepaint_inspector(_inspector_width, cx);
@@ -2483,13 +2483,13 @@ impl Window {
         let mut tooltip_element = None;
         if let Some(prompt) = self.prompt.take() {
             let mut element = prompt.view.any_view().into_any();
-            element.prepaint_as_root(Point::default(), root_size.into(), self, cx);
+            element.prepaint_as_root_with_window(Point::default(), root_size.into(), self, cx);
             prompt_element = Some(element);
             self.prompt = Some(prompt);
         } else if let Some(active_drag) = cx.active_drag.take() {
             let mut element = active_drag.view.clone().into_any();
             let offset = self.mouse_position() - active_drag.cursor_offset;
-            element.prepaint_as_root(offset, AvailableSpace::min_size(), self, cx);
+            element.prepaint_as_root_with_window(offset, AvailableSpace::min_size(), self, cx);
             active_drag_element = Some(element);
             cx.active_drag = Some(active_drag);
         } else {
@@ -2500,7 +2500,7 @@ impl Window {
 
         // Now actually paint the elements.
         self.invalidator.set_phase(DrawPhase::Paint);
-        root_element.paint(self, cx);
+        root_element.paint_with_window(self, cx);
 
         #[cfg(any(feature = "inspector", debug_assertions))]
         self.paint_inspector(inspector_element, cx);
@@ -2508,11 +2508,11 @@ impl Window {
         self.paint_deferred_draws(cx);
 
         if let Some(mut prompt_element) = prompt_element {
-            prompt_element.paint(self, cx);
+            prompt_element.paint_with_window(self, cx);
         } else if let Some(mut drag_element) = active_drag_element {
-            drag_element.paint(self, cx);
+            drag_element.paint_with_window(self, cx);
         } else if let Some(mut tooltip_element) = tooltip_element {
-            tooltip_element.paint(self, cx);
+            tooltip_element.paint_with_window(self, cx);
         }
 
         #[cfg(any(feature = "inspector", debug_assertions))]
@@ -2533,7 +2533,8 @@ impl Window {
             };
             let mut element = tooltip_request.tooltip.view.clone().into_any();
             let mouse_position = tooltip_request.tooltip.mouse_position;
-            let tooltip_size = element.layout_as_root(AvailableSpace::min_size(), self, cx);
+            let tooltip_size =
+                element.layout_as_root_with_window(AvailableSpace::min_size(), self, cx);
 
             let mut tooltip_bounds =
                 Bounds::new(mouse_position + point(px(1.), px(1.)), tooltip_size);
@@ -2575,9 +2576,7 @@ impl Window {
                 continue;
             }
 
-            self.with_absolute_element_offset(tooltip_bounds.origin, |window| {
-                element.prepaint(window, cx)
-            });
+            element.prepaint_at_with_window(tooltip_bounds.origin, self, cx);
 
             self.tooltip_bounds = Some(TooltipBounds {
                 id: tooltip_request.id,
@@ -2626,7 +2625,14 @@ impl Window {
                             window.with_absolute_element_offset(
                                 deferred_draw.absolute_offset,
                                 |window| {
-                                    element.prepaint(window, cx);
+                                    let mut element_cx = crate::PrepaintCx::new(
+                                        window,
+                                        cx,
+                                        None,
+                                        None,
+                                        Bounds::default(),
+                                    );
+                                    element.prepaint(&mut element_cx);
                                 },
                             );
                         });
@@ -2674,7 +2680,9 @@ impl Window {
                 self.with_rendered_view(deferred_draw.current_view, |window| {
                     window.with_content_mask(content_mask, |window| {
                         window.with_rem_size(Some(deferred_draw.rem_size), |window| {
-                            element.paint(window, cx);
+                            let mut element_cx =
+                                crate::PaintCx::new(window, cx, None, None, Bounds::default());
+                            element.paint(&mut element_cx);
                         });
                     })
                 })
@@ -5529,7 +5537,7 @@ impl Window {
     fn prepaint_inspector(&mut self, inspector_width: Pixels, cx: &mut App) -> Option<AnyElement> {
         if let Some(inspector) = self.inspector.take() {
             let mut inspector_element = AnyView::from(inspector.clone()).into_any_element();
-            inspector_element.prepaint_as_root(
+            inspector_element.prepaint_as_root_with_window(
                 point(self.viewport_size.width - inspector_width, px(0.0)),
                 size(inspector_width, self.viewport_size.height).into(),
                 self,
@@ -5545,7 +5553,7 @@ impl Window {
     #[cfg(any(feature = "inspector", debug_assertions))]
     fn paint_inspector(&mut self, mut inspector_element: Option<AnyElement>, cx: &mut App) {
         if let Some(mut inspector_element) = inspector_element {
-            inspector_element.paint(self, cx);
+            inspector_element.paint_with_window(self, cx);
         };
     }
 
