@@ -2241,9 +2241,31 @@ impl Interactivity {
         let inspector_id = cx.inspector_id().cloned();
         let bounds = cx.bounds();
         cx.with_window_app(|window, cx| {
+            self.paint_with_window_app(
+                global_id.as_ref(),
+                inspector_id.as_ref(),
+                bounds,
+                hitbox,
+                window,
+                cx,
+                f,
+            );
+        });
+    }
+
+    fn paint_with_window_app(
+        &mut self,
+        global_id: Option<&GlobalElementId>,
+        inspector_id: Option<&crate::InspectorElementId>,
+        bounds: Bounds<Pixels>,
+        hitbox: Option<&Hitbox>,
+        window: &mut Window,
+        cx: &mut App,
+        f: impl FnOnce(&Style, &mut Window, &mut App),
+    ) {
         self.hovered = hitbox.map(|hitbox| hitbox.is_hovered(window));
         window.with_optional_element_state::<InteractiveElementState, _>(
-            global_id.as_ref(),
+            global_id,
             |element_state, window| {
                 let mut element_state =
                     element_state.map(|element_state| element_state.unwrap_or_default());
@@ -2323,7 +2345,7 @@ impl Interactivity {
 
                                             #[cfg(debug_assertions)]
                                             self.paint_debug_info(
-                                                global_id.as_ref(),
+                                                global_id,
                                                 hitbox,
                                                 &style,
                                                 window,
@@ -2367,7 +2389,7 @@ impl Interactivity {
                                             #[cfg(any(feature = "inspector", debug_assertions))]
                                             window.insert_inspector_hitbox(
                                                 _hitbox.id,
-                                                inspector_id.as_ref(),
+                                                inspector_id,
                                                 cx,
                                             );
 
@@ -2385,7 +2407,6 @@ impl Interactivity {
                 ((), element_state)
             },
         );
-        });
     }
 
     #[cfg(debug_assertions)]

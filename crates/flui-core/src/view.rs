@@ -108,6 +108,8 @@ impl Element for AnyView {
         &mut self,
         cx: &mut crate::LayoutCx<'_>,
     ) -> (LayoutId, Self::RequestLayoutState) {
+        let global_id = cx.global_id().cloned();
+        let inspector_id = cx.inspector_id().cloned();
         cx.with_window_app(|window, cx| {
             window.with_rendered_view(self.entity_id(), |window| {
                 // Disable caching when inspecting so that mouse_hit_test has all hitboxes.
@@ -121,7 +123,12 @@ impl Element for AnyView {
                     }
                     _ => {
                         let mut element = (self.render)(self, window, cx);
-                        let mut element_cx = crate::LayoutCx::new(window, cx, None, None);
+                        let mut element_cx = crate::LayoutCx::new(
+                            window,
+                            cx,
+                            global_id.as_ref(),
+                            inspector_id.as_ref(),
+                        );
                         let layout_id = element.request_layout(&mut element_cx);
                         (layout_id, Some(element))
                     }
@@ -136,13 +143,19 @@ impl Element for AnyView {
         element: &mut Self::RequestLayoutState,
     ) -> Option<AnyElement> {
         let global_id = cx.global_id().cloned();
+        let inspector_id = cx.inspector_id().cloned();
         let bounds = cx.bounds();
         cx.with_window_app(|window, cx| {
             window.set_view_id(self.entity_id());
             window.with_rendered_view(self.entity_id(), |window| {
                 if let Some(mut element) = element.take() {
-                    let mut element_cx =
-                        crate::PrepaintCx::new(window, cx, global_id.as_ref(), None, bounds);
+                    let mut element_cx = crate::PrepaintCx::new(
+                        window,
+                        cx,
+                        global_id.as_ref(),
+                        inspector_id.as_ref(),
+                        bounds,
+                    );
                     element.prepaint(&mut element_cx);
                     return Some(element);
                 }
@@ -174,14 +187,18 @@ impl Element for AnyView {
                         let prepaint_start = window.prepaint_index();
                         let (mut element, accessed_entities) = cx.detect_accessed_entities(|cx| {
                             let mut element = (self.render)(self, window, cx);
-                            let mut layout_cx =
-                                crate::LayoutCx::new(window, cx, global_id.as_ref(), None);
+                            let mut layout_cx = crate::LayoutCx::new(
+                                window,
+                                cx,
+                                global_id.as_ref(),
+                                inspector_id.as_ref(),
+                            );
                             element.layout_as_root(bounds.size.into(), &mut layout_cx);
                             let mut prepaint_cx = crate::PrepaintCx::new(
                                 window,
                                 cx,
                                 global_id.as_ref(),
-                                None,
+                                inspector_id.as_ref(),
                                 bounds,
                             );
                             element.prepaint_at(bounds.origin, &mut prepaint_cx);
@@ -217,6 +234,7 @@ impl Element for AnyView {
         element: &mut Self::PrepaintState,
     ) {
         let global_id = cx.global_id().cloned();
+        let inspector_id = cx.inspector_id().cloned();
         let bounds = cx.bounds();
         cx.with_window_app(|window, cx| {
             window.with_rendered_view(self.entity_id(), |window| {
@@ -235,7 +253,7 @@ impl Element for AnyView {
                                     window,
                                     cx,
                                     global_id.as_ref(),
-                                    None,
+                                    inspector_id.as_ref(),
                                     bounds,
                                 );
                                 element.paint(&mut element_cx);
@@ -251,8 +269,13 @@ impl Element for AnyView {
                         },
                     )
                 } else {
-                    let mut element_cx =
-                        crate::PaintCx::new(window, cx, global_id.as_ref(), None, bounds);
+                    let mut element_cx = crate::PaintCx::new(
+                        window,
+                        cx,
+                        global_id.as_ref(),
+                        inspector_id.as_ref(),
+                        bounds,
+                    );
                     element.as_mut().unwrap().paint(&mut element_cx);
                 }
             });

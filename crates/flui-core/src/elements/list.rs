@@ -144,7 +144,6 @@ pub enum ListHorizontalSizingBehavior {
 }
 
 struct LayoutItemsResponse {
-    max_item_width: Pixels,
     scroll_top: ListOffset,
     item_layouts: VecDeque<ItemLayout>,
 }
@@ -631,19 +630,31 @@ impl StateInner {
             }
         }
 
+        self.measure_all_items(Some(available_width), render_item, window, cx);
+    }
+
+    fn measure_all_items(
+        &mut self,
+        available_width: Option<Pixels>,
+        render_item: &mut RenderItemFn,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Pixels {
         let mut cursor = self.items.cursor::<Count>(());
         let available_item_space = size(
-            AvailableSpace::Definite(available_width),
+            available_width.map_or(AvailableSpace::MinContent, AvailableSpace::Definite),
             AvailableSpace::MinContent,
         );
 
         let mut measured_items = Vec::default();
+        let mut max_item_width = px(0.);
 
         for (ix, item) in cursor.enumerate() {
             let size = item.size().unwrap_or_else(|| {
                 let mut element = render_item(ix, window, cx);
                 element.layout_as_root_with_window(available_item_space, window, cx)
             });
+            max_item_width = max_item_width.max(size.width);
 
             measured_items.push(ListItem::Measured {
                 size,
@@ -652,6 +663,7 @@ impl StateInner {
         }
 
         self.items = SumTree::from_iter(measured_items, ());
+        max_item_width
     }
 
     fn layout_items(
@@ -667,7 +679,6 @@ impl StateInner {
         let mut measured_items = VecDeque::new();
         let mut item_layouts = VecDeque::new();
         let mut rendered_height = padding.top;
-        let mut max_item_width = px(0.);
         let mut scroll_top = self.logical_scroll_top();
         let mut rendered_focused_item = false;
 
@@ -726,7 +737,6 @@ impl StateInner {
 
             let size = size.unwrap();
             rendered_height += size.height;
-            max_item_width = max_item_width.max(size.width);
             measured_items.push_back(ListItem::Measured {
                 size,
                 focus_handle: item.focus_handle(),
@@ -841,7 +851,6 @@ impl StateInner {
         }
 
         LayoutItemsResponse {
-            max_item_width,
             scroll_top,
             item_layouts,
         }
@@ -1005,69 +1014,49 @@ impl Element for List {
         &mut self,
         cx: &mut crate::LayoutCx<'_>,
     ) -> (crate::LayoutId, Self::RequestLayoutState) {
-        let layout_id = cx.with_window_app(|window, cx| {
-            match self.sizing_behavior {
-                ListSizingBehavior::Infer => {
-                    let mut style = Style::default();
-                    style.overflow.y = Overflow::Scroll;
-                    style.refine(&self.style);
-                    window.with_text_style(style.text_style().cloned(), |window| {
-                        let state = &mut *self.state.0.borrow_mut();
+        let layout_id = cx.with_window_app(|window, cx| match self.sizing_behavior {
+            ListSizingBehavior::Infer => {
+                let mut style = Style::default();
+                style.overflow.y = Overflow::Scroll;
+                style.refine(&self.style);
+                window.with_text_style(style.text_style().cloned(), |window| {
+                    let state = &mut *self.state.0.borrow_mut();
 
-                        let available_height = if let Some(last_bounds) = state.last_layout_bounds {
-                            last_bounds.size.height
-                        } else {
-                            // If we don't have the last layout bounds (first render),
-                            // we might just use the overdraw value as the available height to layout enough items.
-                            state.overdraw
-                        };
-                        let padding = style.padding.to_pixels(
-                            state.last_layout_bounds.unwrap_or_default().size.into(),
-                            window.rem_size(),
-                        );
+                    let max_element_width =
+                        state.measure_all_items(None, &mut self.render_item, window, cx);
 
-                        let layout_response = state.layout_items(
-                            None,
-                            available_height,
-                            &padding,
-                            &mut self.render_item,
-                            window,
-                            cx,
-                        );
-                        let max_element_width = layout_response.max_item_width;
+                    let summary = state.items.summary();
+                    let total_height = summary.height;
 
-                        let summary = state.items.summary();
-                        let total_height = summary.height;
-
-                        window.request_measured_layout(
-                            style,
-                            move |known_dimensions, available_space, _window, _cx| {
-                                let width = known_dimensions.width.unwrap_or(match available_space
+                    window.request_measured_layout(
+                        style,
+                        move |known_dimensions, available_space, _window, _cx| {
+                            let width =
+                                known_dimensions
                                     .width
-                                {
-                                    AvailableSpace::Definite(x) => x,
-                                    AvailableSpace::MinContent | AvailableSpace::MaxContent => {
-                                        max_element_width
-                                    }
-                                });
-                                let height = match available_space.height {
-                                    AvailableSpace::Definite(height) => total_height.min(height),
-                                    AvailableSpace::MinContent | AvailableSpace::MaxContent => {
-                                        total_height
-                                    }
-                                };
-                                size(width, height)
-                            },
-                        )
-                    })
-                }
-                ListSizingBehavior::Auto => {
-                    let mut style = Style::default();
-                    style.refine(&self.style);
-                    window.with_text_style(style.text_style().cloned(), |window| {
-                        window.request_layout(style, None, cx)
-                    })
-                }
+                                    .unwrap_or(match available_space.width {
+                                        AvailableSpace::Definite(x) => x,
+                                        AvailableSpace::MinContent | AvailableSpace::MaxContent => {
+                                            max_element_width
+                                        }
+                                    });
+                            let height = match available_space.height {
+                                AvailableSpace::Definite(height) => total_height.min(height),
+                                AvailableSpace::MinContent | AvailableSpace::MaxContent => {
+                                    total_height
+                                }
+                            };
+                            size(width, height)
+                        },
+                    )
+                })
+            }
+            ListSizingBehavior::Auto => {
+                let mut style = Style::default();
+                style.refine(&self.style);
+                window.with_text_style(style.text_style().cloned(), |window| {
+                    window.request_layout(style, None, cx)
+                })
             }
         });
         (layout_id, ())
@@ -1387,6 +1376,37 @@ mod test {
             view.into_any_element()
         });
         assert_eq!(state.max_offset_for_scrollbar().y, px(300.));
+    }
+
+    #[flui_core::test]
+    fn infer_sizing_measures_all_items_on_first_layout(cx: &mut TestAppContext) {
+        let cx = cx.add_empty_window();
+        let state = ListState::new(4, crate::ListAlignment::Top, px(0.));
+
+        struct TestView(ListState);
+        impl Render for TestView {
+            fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+                list(self.0.clone(), |_, _, _| {
+                    div().h(px(25.)).w(px(40.)).into_any()
+                })
+                .with_sizing_behavior(crate::ListSizingBehavior::Infer)
+            }
+        }
+
+        let view = cx.update(|_, cx| cx.new(|_| TestView(state.clone())));
+        cx.draw(
+            point(px(0.), px(0.)),
+            size(
+                crate::AvailableSpace::Definite(px(100.)),
+                crate::AvailableSpace::MaxContent,
+            ),
+            |_, _| view.into_any_element(),
+        );
+
+        let state = state.0.borrow();
+        let summary = state.items.summary();
+        assert_eq!(summary.rendered_count, 4);
+        assert_eq!(summary.height, px(100.));
     }
 
     #[flui_core::test]

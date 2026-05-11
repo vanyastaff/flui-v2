@@ -745,6 +745,9 @@ pub(crate) struct DeferredDraw {
     current_view: EntityId,
     priority: usize,
     parent_node: DispatchNodeId,
+    global_id: Option<GlobalElementId>,
+    inspector_id: Option<crate::InspectorElementId>,
+    bounds: Bounds<Pixels>,
     element_id_stack: SmallVec<[ElementId; 32]>,
     text_style_stack: Vec<TextStyleRefinement>,
     content_mask: Option<ContentMask<Pixels>>,
@@ -2628,9 +2631,9 @@ impl Window {
                                     let mut element_cx = crate::PrepaintCx::new(
                                         window,
                                         cx,
-                                        None,
-                                        None,
-                                        Bounds::default(),
+                                        deferred_draw.global_id.as_ref(),
+                                        deferred_draw.inspector_id.as_ref(),
+                                        deferred_draw.bounds,
                                     );
                                     element.prepaint(&mut element_cx);
                                 },
@@ -2680,8 +2683,13 @@ impl Window {
                 self.with_rendered_view(deferred_draw.current_view, |window| {
                     window.with_content_mask(content_mask, |window| {
                         window.with_rem_size(Some(deferred_draw.rem_size), |window| {
-                            let mut element_cx =
-                                crate::PaintCx::new(window, cx, None, None, Bounds::default());
+                            let mut element_cx = crate::PaintCx::new(
+                                window,
+                                cx,
+                                deferred_draw.global_id.as_ref(),
+                                deferred_draw.inspector_id.as_ref(),
+                                deferred_draw.bounds,
+                            );
                             element.paint(&mut element_cx);
                         });
                     })
@@ -2752,6 +2760,9 @@ impl Window {
                 .map(|deferred_draw| DeferredDraw {
                     current_view: deferred_draw.current_view,
                     parent_node: reused_subtree.refresh_node_id(deferred_draw.parent_node),
+                    global_id: deferred_draw.global_id.clone(),
+                    inspector_id: deferred_draw.inspector_id.clone(),
+                    bounds: deferred_draw.bounds,
                     element_id_stack: deferred_draw.element_id_stack.clone(),
                     text_style_stack: deferred_draw.text_style_stack.clone(),
                     content_mask: deferred_draw.content_mask.clone(),
@@ -3266,9 +3277,13 @@ impl Window {
     ) {
         self.invalidator.debug_assert_prepaint();
         let parent_node = self.next_frame.dispatch_tree.active_node_id().unwrap();
+        let lifecycle_metadata = element.lifecycle_metadata(self);
         self.next_frame.deferred_draws.push(DeferredDraw {
             current_view: self.current_view(),
             parent_node,
+            global_id: lifecycle_metadata.global_id,
+            inspector_id: lifecycle_metadata.inspector_id,
+            bounds: lifecycle_metadata.bounds,
             element_id_stack: self.element_id_stack.clone(),
             text_style_stack: self.text_style_stack.clone(),
             content_mask,

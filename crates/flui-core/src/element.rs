@@ -543,6 +543,13 @@ impl Display for GlobalElementId {
     }
 }
 
+#[derive(Clone, Default)]
+pub(crate) struct ElementLifecycleMetadata {
+    pub(crate) global_id: Option<GlobalElementId>,
+    pub(crate) inspector_id: Option<InspectorElementId>,
+    pub(crate) bounds: Bounds<Pixels>,
+}
+
 trait ElementObject {
     fn inner_element(&mut self) -> &mut dyn Any;
 
@@ -557,6 +564,8 @@ trait ElementObject {
         available_space: Size<AvailableSpace>,
         cx: &mut LayoutCx<'_>,
     ) -> Size<Pixels>;
+
+    fn lifecycle_metadata(&self, window: &mut Window) -> ElementLifecycleMetadata;
 }
 
 /// A wrapper around an implementer of [`Element`] that allows it to be drawn in a window.
@@ -823,6 +832,40 @@ where
     ) -> Size<Pixels> {
         Drawable::layout_as_root(self, available_space, cx)
     }
+
+    fn lifecycle_metadata(&self, window: &mut Window) -> ElementLifecycleMetadata {
+        match &self.phase {
+            ElementDrawPhase::RequestLayout {
+                layout_id,
+                global_id,
+                inspector_id,
+                ..
+            }
+            | ElementDrawPhase::LayoutComputed {
+                layout_id,
+                global_id,
+                inspector_id,
+                ..
+            } => ElementLifecycleMetadata {
+                global_id: global_id.clone(),
+                inspector_id: inspector_id.clone(),
+                bounds: window.layout_bounds(*layout_id),
+            },
+            ElementDrawPhase::Prepaint {
+                global_id,
+                inspector_id,
+                bounds,
+                ..
+            } => ElementLifecycleMetadata {
+                global_id: global_id.clone(),
+                inspector_id: inspector_id.clone(),
+                bounds: *bounds,
+            },
+            ElementDrawPhase::Start | ElementDrawPhase::Painted => {
+                ElementLifecycleMetadata::default()
+            }
+        }
+    }
 }
 
 /// A dynamically typed element that can be used to store any element type.
@@ -857,14 +900,15 @@ impl AnyElement {
 
         self.0.prepaint(cx);
 
-        let focused = cx.with_window_app(|window, cx| {
-            window
-                .next_frame
-                .focus
-                .map(|id| (id, cx.focus_handles.clone()))
-        });
-        if !focus_assigned && let Some((focus_id, focus_handles)) = focused {
-            return FocusHandle::for_id(focus_id, &focus_handles);
+        if !focus_assigned
+            && let Some(focus_handle) = cx.with_window_app(|window, cx| {
+                window
+                    .next_frame
+                    .focus
+                    .and_then(|id| FocusHandle::for_id(id, &cx.focus_handles))
+            })
+        {
+            return Some(focus_handle);
         }
 
         None
@@ -873,6 +917,10 @@ impl AnyElement {
     /// Paints the element stored in this `AnyElement`.
     pub fn paint(&mut self, cx: &mut PaintCx<'_>) {
         self.0.paint(cx);
+    }
+
+    pub(crate) fn lifecycle_metadata(&self, window: &mut Window) -> ElementLifecycleMetadata {
+        self.0.lifecycle_metadata(window)
     }
 
     pub(crate) fn paint_with_window(&mut self, window: &mut Window, cx: &mut App) {
@@ -1062,9 +1110,13 @@ mod tests {
     #[derive(Default)]
     struct ProbeRecord {
         saw_layout_global_id: bool,
+        saw_layout_inspector_id: bool,
         saw_prepaint_global_id: bool,
+        saw_prepaint_inspector_id: bool,
         saw_paint_global_id: bool,
+        saw_paint_inspector_id: bool,
         prepaint_bounds: Option<Bounds<Pixels>>,
+        paint_bounds: Option<Bounds<Pixels>>,
         painted: bool,
     }
 
@@ -1090,14 +1142,18 @@ mod tests {
         }
 
         fn source_location(&self) -> Option<&'static panic::Location<'static>> {
-            None
+            Some(panic::Location::caller())
         }
 
         fn request_layout(
             &mut self,
             cx: &mut LayoutCx<'_>,
         ) -> (LayoutId, Self::RequestLayoutState) {
-            self.record.borrow_mut().saw_layout_global_id = cx.global_id().is_some();
+            let mut record = self.record.borrow_mut();
+            record.saw_layout_global_id = cx.global_id().is_some();
+            record.saw_layout_inspector_id = cx.inspector_id().is_some();
+            drop(record);
+
             cx.with_window_app(|window, cx| {
                 let mut style = Style::default();
                 style.size = size(px(123.).into(), px(45.).into());
@@ -1112,6 +1168,7 @@ mod tests {
         ) -> Self::PrepaintState {
             let mut record = self.record.borrow_mut();
             record.saw_prepaint_global_id = cx.global_id().is_some();
+            record.saw_prepaint_inspector_id = cx.inspector_id().is_some();
             record.prepaint_bounds = Some(cx.bounds());
         }
 
@@ -1123,6 +1180,8 @@ mod tests {
         ) {
             let mut record = self.record.borrow_mut();
             record.saw_paint_global_id = cx.global_id().is_some();
+            record.saw_paint_inspector_id = cx.inspector_id().is_some();
+            record.paint_bounds = Some(cx.bounds());
             record.painted = true;
         }
     }
@@ -1148,11 +1207,50 @@ mod tests {
         assert!(record.saw_layout_global_id);
         assert!(record.saw_prepaint_global_id);
         assert!(record.saw_paint_global_id);
+        #[cfg(any(feature = "inspector", debug_assertions))]
+        {
+            assert!(record.saw_layout_inspector_id);
+            assert!(record.saw_prepaint_inspector_id);
+            assert!(record.saw_paint_inspector_id);
+        }
         assert_eq!(
             record.prepaint_bounds.unwrap().size,
             size(px(123.), px(45.))
         );
+        assert_eq!(record.paint_bounds.unwrap().size, size(px(123.), px(45.)));
         assert!(record.painted);
+    }
+
+    #[crate::test]
+    fn any_element_lifecycle_metadata_reflects_layout_phase(cx: &mut TestAppContext) {
+        let cx = cx.add_empty_window();
+        cx.update(|window, cx| {
+            let _arena_scope = ElementArenaScope::enter(&cx.element_arena);
+            let mut element = ProbeElement {
+                record: Rc::new(RefCell::new(ProbeRecord::default())),
+            }
+            .into_any_element();
+
+            window.invalidator.set_phase(DrawPhase::Prepaint);
+            element.layout_as_root_with_window(
+                size(
+                    AvailableSpace::Definite(px(123.)),
+                    AvailableSpace::Definite(px(45.)),
+                ),
+                window,
+                cx,
+            );
+            let metadata = element.lifecycle_metadata(window);
+            window.invalidator.set_phase(DrawPhase::None);
+
+            assert!(metadata.global_id.is_some());
+            #[cfg(any(feature = "inspector", debug_assertions))]
+            assert!(metadata.inspector_id.is_some());
+            assert_eq!(metadata.bounds.size, size(px(123.), px(45.)));
+
+            drop(element);
+            cx.element_arena.borrow_mut().clear();
+        });
     }
 
     struct FocusElement {
