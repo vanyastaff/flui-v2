@@ -3,9 +3,9 @@
 //! application to avoid having to import each trait individually.
 
 pub use crate::{
-    AppContext as _, BorrowAppContext, Context, Element, InteractiveElement, IntoElement, LayoutCx,
-    PaintCx, ParentElement, PrepaintCx, Refineable, Render, RenderOnce, StatefulInteractiveElement,
-    Styled, StyledImage, VisualContext,
+    AppContext as _, BorrowAppContext, Context, Element, GlobalKey, InteractiveElement,
+    IntoElement, Key, LayoutCx, PaintCx, ParentElement, PrepaintCx, Refineable, Render, RenderOnce,
+    StatefulInteractiveElement, Styled, StyledImage, ValueKey, VisualContext,
     local_util::FluentBuilder,
     reentrancy::{ReentryError, ReentryMode},
 };

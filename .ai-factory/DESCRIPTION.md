@@ -4,7 +4,7 @@
 
 flui-v2 is a Flutter-inspired, GPU-accelerated UI framework for Rust, built on the foundation of [gpui-ce](https://github.com/gpui-ce/gpui-ce) (the community edition of Zed's GPUI runtime). It evolves the proven GPUI rendering pipeline toward a Flutter-like developer experience: composable widgets, declarative routing, animations, and accessibility, while keeping native desktop performance via Metal, DirectX, and wgpu backends.
 
-Phase I platform extraction is frozen after S01 + S02a; S02b-S06 are deferred until a concrete Phase III platform driver appears. Active strategic work is Phase 0-K Kernel Cleanup plus Phase II engine completeness. K99, K15, K07, K05, and K01 are complete; K02 Element identity and Key is the next critical-chain item before K03 and K04. Higher-level Framework and widget crates stay gated until the K-track substrate is healthy.
+Phase I platform extraction is frozen after S01 + S02a; S02b-S06 are deferred until a concrete Phase III platform driver appears. Active strategic work is Phase 0-K Kernel Cleanup plus Phase II engine completeness. K99, K15, K07, K05, K01, and K02 are complete; K03 Render to Build separation is the next critical-chain item before K04. Higher-level Framework and widget crates stay gated until the K-track substrate is healthy.
 
 ## Core Features
 

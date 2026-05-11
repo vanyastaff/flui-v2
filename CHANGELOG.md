@@ -8,6 +8,46 @@ intent — every breaking change ships with a migration note even though we
 have not yet published a numbered release. Cross-references point to the
 plan and design docs in `.ai-factory/plans/` and `docs/superpowers/specs/`.
 
+## [Unreleased] - K02 Element identity and Key
+
+K02 adds a normalized engine identity substrate for `flui-core`. `ElementId`
+remains the low-level global-id path segment, while the new `Key` API models
+Local, Value, and Global identity intent for current keyed APIs and future
+Framework reconciliation.
+
+Plan: `.ai-factory/plans/feature-K02-element-identity-key.md`.
+Design spec:
+`docs/superpowers/specs/2026-05-11-K02-element-identity-key-design.md`.
+Migration guide:
+`docs/superpowers/migrations/K02-element-identity-key.md`.
+
+### Added - identity substrate
+
+- Added `Key::{local, value, global}`, `ValueKey`, and `GlobalKey`.
+- Moved `ElementId` into an Element-owned identity module while preserving
+  `flui_core::*` re-exports.
+- Added normalized `ElementId::Local(LocalElementId)` segments.
+- Added an internal `ElementIdStack` that tracks parent-scoped Local occurrence
+  counters and debug duplicate sibling-key diagnostics.
+- `DeferredDraw` now snapshots the full identity stack resolver state.
+
+### Changed - state and provider identity
+
+- `Window::use_state` now uses caller location plus parent-scoped sibling
+  occurrence.
+- `Window::use_keyed_state`, `with_id`, `with_element_namespace`, and
+  `Provider::new_keyed` accept `Key` through `Into<ElementId>`.
+- `Component<C: RenderOnce>` has `Component::key(...)` for repeated/reordered component boundaries.
+- Cached view rerenders reset nested layout/prepaint identity passes so normal
+  lifecycle replay is not mistaken for duplicate sibling keys.
+
+### Deferred - Framework cache and reconciliation
+
+- `AnyView::cached` behavior is preserved and still replays K01 inherited
+  provider dependencies.
+- A public stateless element cache wrapper and cross-tree GlobalKey moves are
+  deferred to SF02/SF05 with the Framework reconciliation design.
+
 ## [Unreleased] — K01 Provider rewrite
 
 K01 replaces the old thread-local provider stack with a per-`Window`
@@ -37,8 +77,8 @@ Migration guide:
 
 - `Window` owns the inherited registry.
 - `Provider::new` uses a source-location fallback scope id.
-- `Provider::new_keyed` handles repeated same-type providers until K02 Key
-  semantics land.
+- `Provider::new_keyed` handles repeated same-type providers and now accepts
+  K02 `Key` values through `Into<ElementId>`.
 - Cached `AnyView` state stores and replays inherited dependency snapshots.
 - Provider removal invalidates previous dependents once and prunes stale
   dependent records.

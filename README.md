@@ -121,7 +121,7 @@ cargo run -p flui-core --example hello_world  # hello world
 
 ## Project status
 
-- **Phase 0-K (Kernel Cleanup) — active.** Architectural debt repayment in `flui-core` before Framework tier (Phase II-F) work begins. Tracked in [`.ai-factory/ROADMAP.md`](.ai-factory/ROADMAP.md). Done so far: [K99 MSRV bump](docs/superpowers/specs/2026-05-08-K99-msrv-bump-1.95-design.md), [K15 re-entrancy contract](docs/superpowers/specs/2026-05-09-K15-reentrancy-contract-design.md).
+- **Phase 0-K (Kernel Cleanup) — active.** Architectural debt repayment in `flui-core` before Framework tier (Phase II-F) work begins. Tracked in [`.ai-factory/ROADMAP.md`](.ai-factory/ROADMAP.md). Done so far: [K99 MSRV bump](docs/superpowers/specs/2026-05-08-K99-msrv-bump-1.95-design.md), [K15 re-entrancy contract](docs/superpowers/specs/2026-05-09-K15-reentrancy-contract-design.md), [K01 Provider rewrite](docs/superpowers/specs/2026-05-11-K01-provider-rewrite-design.md), and [K02 Element identity and Key](docs/superpowers/specs/2026-05-11-K02-element-identity-key-design.md). Next critical-chain item: K03 Render to Build separation.
 - **Phase II — engine completeness.** Gesture arena (S07), animation parity (S21) done; semantics (S08), canvas facade (S09), media query (S14) pending.
 - **Phase II-F — Framework tier (Widget / State / setState).** Not started; gated on Phase 0-K critical chain completion.
 

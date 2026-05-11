@@ -9,14 +9,14 @@ use crate::{
     Action, AnyDrag, AnyElement, AnyImageCache, AnyTooltip, AnyView, App, AppContext, Arena, Asset,
     AsyncWindowContext, AvailableSpace, Background, BorderStyle, Bounds, BoxShadow, Capslock,
     Context, Corners, CursorStyle, Decorations, DevicePixels, DispatchActionListener,
-    DispatchNodeId, DispatchTree, DisplayId, Edges, Effect, Entity, EntityId, EventEmitter,
-    FileDropEvent, FontId, Global, GlobalElementId, GlyphId, GpuSpecs, Hsla, InputHandler, IsZero,
-    KeyBinding, KeyContext, KeyDownEvent, KeyEvent, Keystroke, KeystrokeEvent, LayoutId,
-    LineLayoutIndex, MediaQueryData, Modifiers, ModifiersChangedEvent, MonochromeSprite,
-    MouseButton, MouseEvent, MouseMoveEvent, MouseUpEvent, Path, Pixels, PlatformAtlas,
-    PlatformDisplay, PlatformInput, PlatformInputHandler, PlatformWindow, Point, PolychromeSprite,
-    Priority, PromptButton, PromptLevel, Quad, Render, RenderGlyphParams, RenderImage,
-    RenderImageParams, RenderSvgParams, Replay, ResizeEdge, SMOOTH_SVG_SCALE_FACTOR,
+    DispatchNodeId, DispatchTree, DisplayId, Edges, Effect, ElementId, ElementIdStack, Entity,
+    EntityId, EventEmitter, FileDropEvent, FontId, Global, GlobalElementId, GlyphId, GpuSpecs,
+    Hsla, InputHandler, IsZero, KeyBinding, KeyContext, KeyDownEvent, KeyEvent, Keystroke,
+    KeystrokeEvent, LayoutId, LineLayoutIndex, MediaQueryData, Modifiers, ModifiersChangedEvent,
+    MonochromeSprite, MouseButton, MouseEvent, MouseMoveEvent, MouseUpEvent, Path, Pixels,
+    PlatformAtlas, PlatformDisplay, PlatformInput, PlatformInputHandler, PlatformWindow, Point,
+    PolychromeSprite, Priority, PromptButton, PromptLevel, Quad, Render, RenderGlyphParams,
+    RenderImage, RenderImageParams, RenderSvgParams, Replay, ResizeEdge, SMOOTH_SVG_SCALE_FACTOR,
     SUBPIXEL_VARIANTS_X, SUBPIXEL_VARIANTS_Y, ScaledPixels, Scene, Shadow, SharedString, Size,
     StrikethroughStyle, Style, SubpixelSprite, SubscriberSet, Subscription, SystemWindowTab,
     SystemWindowTabController, TabStopMap, TaffyLayoutEngine, Task, TextRenderingMode, TextStyle,
@@ -44,7 +44,7 @@ use std::{
     borrow::Cow,
     cell::{Cell, RefCell},
     cmp,
-    fmt::{Debug, Display},
+    fmt::Debug,
     hash::{Hash, Hasher},
     marker::PhantomData,
     mem,
@@ -59,7 +59,6 @@ use std::{
 };
 use util::post_inc;
 use util::{ResultExt, measure};
-use uuid::Uuid;
 
 mod prompts;
 
@@ -753,7 +752,7 @@ pub(crate) struct DeferredDraw {
     global_id: Option<GlobalElementId>,
     inspector_id: Option<crate::InspectorElementId>,
     bounds: Bounds<Pixels>,
-    element_id_stack: SmallVec<[ElementId; 32]>,
+    element_id_stack: ElementIdStack,
     text_style_stack: Vec<TextStyleRefinement>,
     content_mask: Option<ContentMask<Pixels>>,
     rem_size: Pixels,
@@ -944,7 +943,7 @@ pub struct Window {
     pub(crate) viewport_size: Size<Pixels>,
     layout_engine: Option<TaffyLayoutEngine>,
     pub(crate) root: Option<AnyView>,
-    pub(crate) element_id_stack: SmallVec<[ElementId; 32]>,
+    pub(crate) element_id_stack: ElementIdStack,
     pub(crate) text_style_stack: Vec<TextStyleRefinement>,
     pub(crate) rendered_entity_stack: Vec<EntityId>,
     pub(crate) element_offset_stack: Vec<Point<Pixels>>,
@@ -1467,7 +1466,7 @@ impl Window {
             viewport_size: content_size,
             layout_engine: Some(TaffyLayoutEngine::new()),
             root: None,
-            element_id_stack: SmallVec::default(),
+            element_id_stack: ElementIdStack::default(),
             text_style_stack: Vec::new(),
             rendered_entity_stack: Vec::new(),
             element_offset_stack: Vec::new(),
@@ -2149,14 +2148,51 @@ impl Window {
     /// Only valid for the duration of the provided closure.
     pub fn with_global_id<R>(
         &mut self,
-        element_id: ElementId,
+        element_id: impl Into<ElementId>,
         f: impl FnOnce(&GlobalElementId, &mut Self) -> R,
     ) -> R {
-        self.with_id(element_id, |this| {
-            let global_id = GlobalElementId(Arc::from(&*this.element_id_stack));
+        self.with_pushed_element_id(element_id, f)
+    }
 
-            f(&global_id, this)
-        })
+    pub(crate) fn with_pushed_element_id<R>(
+        &mut self,
+        element_id: impl Into<ElementId>,
+        f: impl FnOnce(&GlobalElementId, &mut Self) -> R,
+    ) -> R {
+        self.element_id_stack.push(element_id.into());
+        let global_id = GlobalElementId(Arc::from(&*self.element_id_stack));
+        self.with_current_element_id_scope(|this| f(&global_id, this))
+    }
+
+    pub(crate) fn with_resolved_element_id<R>(
+        &mut self,
+        global_id: &GlobalElementId,
+        f: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        let parent_len = self.element_id_stack.len();
+        assert!(
+            global_id.len() > parent_len && &global_id[..parent_len] == &*self.element_id_stack,
+            "stored global id must extend the current element path"
+        );
+        let element_id = global_id
+            .get(parent_len)
+            .expect("stored global id must contain the current element segment")
+            .clone();
+        self.element_id_stack.push_resolved(element_id);
+        self.with_current_element_id_scope(f)
+    }
+
+    fn with_current_element_id_scope<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
+        let result = panic::catch_unwind(AssertUnwindSafe(|| f(self)));
+        let popped = self.element_id_stack.pop();
+        assert!(
+            popped.is_some(),
+            "element identity scope ended with an empty stack"
+        );
+        match result {
+            Ok(result) => result,
+            Err(payload) => panic::resume_unwind(payload),
+        }
     }
 
     /// Calls the provided closure with the element ID pushed on the stack.
@@ -2166,10 +2202,7 @@ impl Window {
         element_id: impl Into<ElementId>,
         f: impl FnOnce(&mut Self) -> R,
     ) -> R {
-        self.element_id_stack.push(element_id.into());
-        let result = f(self);
-        self.element_id_stack.pop();
-        result
+        self.with_pushed_element_id(element_id, |_, this| f(this))
     }
 
     /// Executes the provided function with the specified rem size.
@@ -3082,13 +3115,14 @@ impl Window {
         element_id: impl Into<ElementId>,
         f: impl FnOnce(&mut Self) -> R,
     ) -> R {
-        self.element_id_stack.push(element_id.into());
-        let result = f(self);
-        self.element_id_stack.pop();
-        result
+        self.with_pushed_element_id(element_id, |_, this| f(this))
     }
 
     /// Use a piece of state that exists as long this element is being rendered in consecutive frames.
+    ///
+    /// The key may be any existing [`ElementId`] conversion or a [`crate::Key`]. Use explicit value
+    /// keys for reordered lists and repeated children whose state must follow data rather than
+    /// sibling position.
     pub fn use_keyed_state<S: 'static>(
         &mut self,
         key: impl Into<ElementId>,
@@ -3112,11 +3146,11 @@ impl Window {
         })
     }
 
-    /// Use a piece of state that exists as long this element is being rendered in consecutive frames, without needing to specify a key
+    /// Use a piece of state that exists as long this element is being rendered in consecutive frames, without needing to specify a key.
     ///
-    /// NOTE: This method uses the location of the caller to generate an ID for this state.
-    ///       If this is not sufficient to identify your state (e.g. you're rendering a list item),
-    ///       you can provide a custom ElementID using the `use_keyed_state` method.
+    /// This method uses the caller location plus the sibling occurrence in the current parent
+    /// namespace. That is deterministic for a fixed tree shape, but it is not reorder-stable. If
+    /// the state belongs to a list item or movable child, use [`Window::use_keyed_state`].
     #[track_caller]
     pub fn use_state<S: 'static>(
         &mut self,
@@ -6046,165 +6080,6 @@ impl HasDisplayHandle for Window {
         &self,
     ) -> std::result::Result<raw_window_handle::DisplayHandle<'_>, HandleError> {
         self.platform_window.display_handle()
-    }
-}
-
-/// An identifier for an [`Element`].
-///
-/// Can be constructed with a string, a number, or both, as well
-/// as other internal representations.
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub enum ElementId {
-    /// The ID of a View element
-    View(EntityId),
-    /// An integer ID.
-    Integer(u64),
-    /// A string based ID.
-    Name(SharedString),
-    /// A UUID.
-    Uuid(Uuid),
-    /// An ID that's equated with a focus handle.
-    FocusHandle(FocusId),
-    /// A combination of a name and an integer.
-    NamedInteger(SharedString, u64),
-    /// A path.
-    Path(Arc<std::path::Path>),
-    /// A code location.
-    CodeLocation(core::panic::Location<'static>),
-    /// A labeled child of an element.
-    NamedChild(Arc<ElementId>, SharedString),
-}
-
-impl ElementId {
-    /// Constructs an `ElementId::NamedInteger` from a name and `usize`.
-    pub fn named_usize(name: impl Into<SharedString>, integer: usize) -> ElementId {
-        Self::NamedInteger(name.into(), integer as u64)
-    }
-}
-
-impl Display for ElementId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ElementId::View(entity_id) => write!(f, "view-{}", entity_id)?,
-            ElementId::Integer(ix) => write!(f, "{}", ix)?,
-            ElementId::Name(name) => write!(f, "{}", name)?,
-            ElementId::FocusHandle(_) => write!(f, "FocusHandle")?,
-            ElementId::NamedInteger(s, i) => write!(f, "{}-{}", s, i)?,
-            ElementId::Uuid(uuid) => write!(f, "{}", uuid)?,
-            ElementId::Path(path) => write!(f, "{}", path.display())?,
-            ElementId::CodeLocation(location) => write!(f, "{}", location)?,
-            ElementId::NamedChild(id, name) => write!(f, "{}-{}", id, name)?,
-        }
-
-        Ok(())
-    }
-}
-
-impl TryInto<SharedString> for ElementId {
-    type Error = anyhow::Error;
-
-    fn try_into(self) -> anyhow::Result<SharedString> {
-        if let ElementId::Name(name) = self {
-            Ok(name)
-        } else {
-            anyhow::bail!("element id is not string")
-        }
-    }
-}
-
-impl From<usize> for ElementId {
-    fn from(id: usize) -> Self {
-        ElementId::Integer(id as u64)
-    }
-}
-
-impl From<i32> for ElementId {
-    fn from(id: i32) -> Self {
-        Self::Integer(id as u64)
-    }
-}
-
-impl From<SharedString> for ElementId {
-    fn from(name: SharedString) -> Self {
-        ElementId::Name(name)
-    }
-}
-
-impl From<String> for ElementId {
-    fn from(name: String) -> Self {
-        ElementId::Name(name.into())
-    }
-}
-
-impl From<Arc<str>> for ElementId {
-    fn from(name: Arc<str>) -> Self {
-        ElementId::Name(name.into())
-    }
-}
-
-impl From<Arc<std::path::Path>> for ElementId {
-    fn from(path: Arc<std::path::Path>) -> Self {
-        ElementId::Path(path)
-    }
-}
-
-impl From<&'static str> for ElementId {
-    fn from(name: &'static str) -> Self {
-        ElementId::Name(name.into())
-    }
-}
-
-impl<'a> From<&'a FocusHandle> for ElementId {
-    fn from(handle: &'a FocusHandle) -> Self {
-        ElementId::FocusHandle(handle.id)
-    }
-}
-
-impl From<(&'static str, EntityId)> for ElementId {
-    fn from((name, id): (&'static str, EntityId)) -> Self {
-        ElementId::NamedInteger(name.into(), id.as_u64())
-    }
-}
-
-impl From<(&'static str, usize)> for ElementId {
-    fn from((name, id): (&'static str, usize)) -> Self {
-        ElementId::NamedInteger(name.into(), id as u64)
-    }
-}
-
-impl From<(SharedString, usize)> for ElementId {
-    fn from((name, id): (SharedString, usize)) -> Self {
-        ElementId::NamedInteger(name, id as u64)
-    }
-}
-
-impl From<(&'static str, u64)> for ElementId {
-    fn from((name, id): (&'static str, u64)) -> Self {
-        ElementId::NamedInteger(name.into(), id)
-    }
-}
-
-impl From<Uuid> for ElementId {
-    fn from(value: Uuid) -> Self {
-        Self::Uuid(value)
-    }
-}
-
-impl From<(&'static str, u32)> for ElementId {
-    fn from((name, id): (&'static str, u32)) -> Self {
-        ElementId::NamedInteger(name.into(), id.into())
-    }
-}
-
-impl<T: Into<SharedString>> From<(ElementId, T)> for ElementId {
-    fn from((id, name): (ElementId, T)) -> Self {
-        ElementId::NamedChild(Arc::new(id), name.into())
-    }
-}
-
-impl From<&'static core::panic::Location<'static>> for ElementId {
-    fn from(location: &'static core::panic::Location<'static>) -> Self {
-        ElementId::CodeLocation(*location)
     }
 }
 
