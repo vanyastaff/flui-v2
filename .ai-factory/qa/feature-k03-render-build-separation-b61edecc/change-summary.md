@@ -6,38 +6,57 @@
 - Compared against: `main`
 - Date: 2026-05-11
 - Pipeline mode: full QA package
-- Implementation status: pre-implementation
-- Commits ahead of `main`: 0
-- Committed files changed versus `main`: 0
-- Relevant working-tree artifact: `.ai-factory/plans/feature-k03-render-build-separation.md`
+- Implementation status: implemented in PR #14
+- Initial implementation commit: `aa5e48bd76`
+- Committed files changed versus `main`: 22 K03 files in the implementation PR
+- Relevant artifacts: `.ai-factory/plans/feature-k03-render-build-separation.md`,
+  `docs/superpowers/specs/2026-05-11-K03-render-build-separation-design.md`,
+  and `docs/superpowers/migrations/K03-render-build-separation.md`
 
-This branch currently has no committed runtime, macro, documentation, or test changes relative to `main`. The QA scope is therefore a pre-implementation gate for the K03 implementation plan, not a verification of completed code.
+This QA package now corresponds to the implemented K03 PR. It covers the committed
+runtime substrate, macro compatibility test, documentation, migration guide,
+roadmap/context updates, and validation evidence for the K03 render/build
+separation work.
 
 Unrelated local working-tree changes and AI context files are out of scope unless they are intentionally staged into the K03 work later.
 
 ## What Changed
 
-The relevant K03 artifact is an implementation plan for separating engine-level `Render` behavior from future framework-level pure build semantics. The plan was refined after a second pass to include 29 tasks and explicit coverage for Tier C consumer crates, object-safety and RPITIT decisions, workspace dependency boundaries, macro compatibility, identity propagation, provider semantics, and documentation/migration updates.
+K03 separates engine-level `Render` behavior from future framework-level pure
+build semantics. The implementation adds `ElementBuilder`, `ElementBuildCx`,
+`BuildElement`, and `build_element` as a deliberately narrow `flui-core`
+substrate for immutable engine recipes while preserving existing `Render`,
+`RenderOnce`, `IntoElement`, `Component<C>`, root mounting, provider, cache,
+deferred-draw, macro, and Tier C behavior.
+
+The supporting plan contains 29 completed tasks and explicit coverage for Tier C
+consumer crates, object-safety and RPITIT decisions, workspace dependency
+boundaries, macro compatibility, identity propagation, provider semantics, and
+documentation/migration updates.
 
 ## Affected Areas
 
 | Area | Current change | Expected K03 impact |
 |---|---:|---|
-| `.ai-factory/plans/feature-k03-render-build-separation.md` | Added/refined | Drives implementation order and acceptance gates |
-| `crates/flui-core/src/element.rs` | Planned | Defines or preserves `Render`, `RenderOnce`, `IntoElement`, `Component`, and build boundary behavior |
-| `crates/flui-core/src/view.rs` | Planned | Keeps `AnyView` render, cache, and provider replay behavior correct |
-| `crates/flui-core/src/window.rs` | Planned | Keeps root mounting and draw traversal compatible |
-| `crates/flui-macros` | Planned | Keeps derive-generated render and element code source-compatible |
-| `crates/flui-widgets`, `crates/flui-material`, `crates/flui-navigator` | Planned | Ensures Tier C consumers either compile unchanged or have an intentional migration path |
-| `docs/superpowers/*` and `.ai-factory/*` | Planned | Captures spec, migration, roadmap, and research updates |
+| `.ai-factory/plans/feature-k03-render-build-separation.md` | Added/refined | Records implementation order and completed acceptance gates |
+| `crates/flui-core/src/build.rs` | Added | Defines the K03 `ElementBuilder` substrate and regression coverage |
+| `crates/flui-core/src/element.rs` | Updated | Preserves `Render`, `RenderOnce`, `IntoElement`, `Component`, and build boundary behavior |
+| `crates/flui-core/src/lib.rs` / `prelude.rs` | Updated | Curates public exports for the new K03 API |
+| `crates/flui-macros` | Updated tests | Proves derive-generated render and element code remains source-compatible |
+| `crates/flui-widgets`, `crates/flui-material`, `crates/flui-navigator` | Audited/docs updated | Confirms Tier C consumers compile unchanged or have documented vocabulary |
+| `docs/superpowers/*` and `.ai-factory/*` | Updated | Captures spec, migration, roadmap, research, QA, and status updates |
 
 ## Risk Level
 
-Overall planned implementation risk: High.
+Overall implementation risk: High before validation.
 
-Current plan-only branch risk: Low for runtime behavior, because no implementation has landed yet.
+Implemented PR risk: Medium after validation. The public API boundary is new, but
+the implementation keeps final Framework-tier behavior deferred and preserves the
+existing Engine compatibility paths.
 
-The future K03 implementation is high risk because it touches public trait semantics at the engine/framework boundary. It is also the critical-chain item before K04, so hidden coupling here can leak into the next cleanup step.
+K03 remains a high-attention area because it touches public trait semantics at
+the engine/framework boundary. It is also the critical-chain item before K04, so
+hidden coupling here can leak into the next cleanup step.
 
 ## Primary Risks
 

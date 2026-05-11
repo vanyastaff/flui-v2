@@ -2,8 +2,20 @@
 
 **Date:** 2026-05-11
 **Phase:** 0-K Kernel Cleanup
-**Status:** Draft implementation contract
+**Status:** Implemented
 **Plan:** `.ai-factory/plans/feature-k03-render-build-separation.md`
+**Implementation:** PR #14, initial commit `aa5e48bd76`
+
+## Implementation Note
+
+K03 landed the narrow `flui-core` substrate described in this spec:
+`ElementBuilder`, `ElementBuildCx`, `BuildElement`, and `build_element`.
+The implementation preserves `Render`, `RenderOnce`, `Component<C>`, root
+mounting, provider/cache/deferred behavior, macro compatibility, and Tier C
+compile compatibility. Validation covered `cargo fmt --check`,
+`cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`,
+Tier C `cargo check` runs, the `creating_components` example, and local GUI
+smoke tests for `nav_demo`, `material_demo`, and `animation_demo`.
 
 ## Summary
 

@@ -4,7 +4,8 @@
 
 - Current branch is `feature/k03-render-build-separation`.
 - The K03 implementation plan exists at `.ai-factory/plans/feature-k03-render-build-separation.md`.
-- No implementation diff is currently committed versus `main`; implementation-specific cases should be executed again after code lands.
+- The K03 implementation is committed in PR #14, with initial implementation commit `aa5e48bd76`.
+- Implementation-specific cases should be executed against the committed diff and any follow-up PR updates.
 - Unrelated local files are excluded from this QA scope unless explicitly added to K03.
 
 ## Cases

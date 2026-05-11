@@ -4,11 +4,15 @@
 
 - Branch: `feature/k03-render-build-separation`
 - Date: 2026-05-11
-- Status: pre-implementation QA plan
+- Status: post-implementation QA package
 - Target: K03 Render to Build separation
 - Source artifact: `.ai-factory/plans/feature-k03-render-build-separation.md`
 
-This plan defines the QA contract for K03 before code lands. The current branch has no committed implementation diff versus `main`, so execution should begin with plan/spec validation and then be repeated once code changes are present.
+This plan defines the QA contract for the implemented K03 PR. The branch includes
+the K03 implementation, docs, tests, and QA artifacts, with initial implementation
+commit `aa5e48bd76` in PR #14. Execution should validate the committed API shape,
+compatibility coverage, docs, migration guide, and validation evidence against
+the final K03 scope.
 
 ## Goals
 
@@ -42,7 +46,7 @@ This plan defines the QA contract for K03 before code lands. The current branch 
 
 ## Test Data
 
-Use representative cases that cover both current APIs and the planned boundary:
+Use representative cases that cover both existing APIs and the implemented K03 boundary:
 
 - A mutable root view implementing `Render` directly.
 - A presentational component implementing or deriving `RenderOnce`.
@@ -70,7 +74,7 @@ Use representative cases that cover both current APIs and the planned boundary:
 
 | Area | Priority | Coverage expectation |
 |---|---:|---|
-| Spec and plan completeness | High | Reviewed before implementation begins |
+| Spec and plan completeness | High | Reviewed against the implemented K03 scope |
 | Public API boundary | High | Reviewed against code and docs |
 | Existing render compatibility | High | Verified with representative root and component cases |
 | Identity and provider behavior | High | Verified across nested, keyed, and cached paths |
@@ -82,7 +86,7 @@ Use representative cases that cover both current APIs and the planned boundary:
 
 ## Execution Checklist
 
-- Validate the plan and spec before implementation begins.
+- Validate the plan and spec against the implemented K03 diff.
 - Inspect any implementation diff for public API shape and dependency direction.
 - Review representative `Render` and `RenderOnce` consumers.
 - Review identity propagation through `IntoElement` and `ParentElement`.
