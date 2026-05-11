@@ -127,7 +127,7 @@ flui-v2/
 │   │       ├── state.rs                # State<W> + StateMap (flat, keyed by ElementId)
 │   │       ├── build_cx.rs             # BuildCx: read/inherit/setState/depend
 │   │       ├── reconcile.rs            # Sibling reconciliation by (TypeId, Key)
-│   │       ├── provider.rs             # InheritedRegistry per Window
+│   │       ├── provider.rs             # Framework Provider API over flui-core inherited registry
 │   │       └── adapter.rs              # Widget → Element compilation (replaces Component<RenderOnce> path)
 │   │
 │   │   ╔══ Ecosystem tier (C) ═════════════════════════════════════════╗
@@ -192,7 +192,7 @@ Cargo enforces these rules mechanically: a forbidden dependency would form a cyc
 - **Cross-tier types:** primitive geometry / styling types live in `flui-core` and are re-exported through `flui-framework`. Do not duplicate them in the Ecosystem tier.
 - **Public surface discipline:** `flui-core` re-exports are explicit (per S01a3). Framework and Ecosystem crates follow the same convention. No blanket `pub use crate::*`.
 - **Macros:** procedural macros from `flui-macros` are consumed by Tier A+; macros must not reach into a specific user crate's types. New macro for `derive(Widget)` lives in `flui-macros` (or a sibling proc-macro crate) but operates on `flui-framework::Widget`.
-- **Provider / inherited values:** the Framework tier owns `InheritedRegistry` (per-Window). Ecosystem crates (Theme, MediaQuery, Localizations) register inherited values; widgets read via `BuildCx::inherit<T>()`. Engine never sees inherited values.
+- **Provider / inherited values:** `flui-core` owns the low-level per-Window inherited-value registry and dependency invalidation substrate. The Framework tier owns the ergonomic Widget/BuildCx/Provider API that builds on that substrate. Ecosystem crates (Theme, MediaQuery, Localizations) should consume the Framework API once Phase II-F lands rather than depending directly on Engine internals.
 
 ## Framework Tier Internals
 
@@ -234,7 +234,7 @@ The reconciliation pass is **O(siblings)** at each level, not O(tree). With `(Ty
 
 ### Provider (InheritedRegistry)
 
-Replaces the current `provider/stack.rs` thread-local global.
+K01 moved the low-level inherited-value substrate into `flui-core`, replacing the old `provider/stack.rs` thread-local global. This is intentionally an Engine substrate: it owns per-Window value storage, provider scope identity, dependency recording, and dirty-view invalidation. The planned Framework tier will wrap it with Flutter-style `Provider` / `BuildCx::inherit<T>()` ergonomics.
 
 ```
    Per-Window registry:

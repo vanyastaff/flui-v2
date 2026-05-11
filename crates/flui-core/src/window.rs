@@ -1,5 +1,9 @@
 #[cfg(any(feature = "inspector", debug_assertions))]
 use crate::Inspector;
+use crate::provider::{
+    InheritedValue,
+    registry::{InheritedDependency, InheritedRegistry, ProviderScopeKey},
+};
 use crate::scheduler::Instant;
 use crate::{
     Action, AnyDrag, AnyElement, AnyImageCache, AnyTooltip, AnyView, App, AppContext, Arena, Asset,
@@ -45,6 +49,7 @@ use std::{
     marker::PhantomData,
     mem,
     ops::{DerefMut, Range},
+    panic::{self, AssertUnwindSafe},
     rc::Rc,
     sync::{
         Arc, Weak,
@@ -947,6 +952,7 @@ pub struct Window {
     pub(crate) content_mask_stack: Vec<ContentMask<Pixels>>,
     pub(crate) requested_autoscroll: Option<Bounds<Pixels>>,
     pub(crate) image_cache_stack: Vec<AnyImageCache>,
+    pub(crate) inherited_registry: InheritedRegistry,
     pub(crate) rendered_frame: Frame,
     pub(crate) next_frame: Frame,
     next_hitbox_id: HitboxId,
@@ -1468,6 +1474,7 @@ impl Window {
             content_mask_stack: Vec::new(),
             element_opacity: 1.0,
             requested_autoscroll: None,
+            inherited_registry: InheritedRegistry::default(),
             rendered_frame: Frame::new(DispatchTree::new(cx.keymap.clone(), cx.actions.clone())),
             next_frame: Frame::new(DispatchTree::new(cx.keymap.clone(), cx.actions.clone())),
             next_frame_callbacks,
@@ -2362,7 +2369,10 @@ impl Window {
             self.rendered_frame.input_handlers.push(Some(input_handler));
         }
         if !cx.mode.skip_drawing() {
+            self.inherited_registry.begin_frame();
             self.draw_roots(cx);
+            let dirty_views = self.inherited_registry.remove_unaccessed_providers();
+            self.invalidate_inherited_dependents(dirty_views, cx);
         }
         self.dirty_views.clear();
         self.next_frame.window_active = self.active.get();
@@ -4011,6 +4021,92 @@ impl Window {
     pub fn current_view(&self) -> EntityId {
         self.invalidator.debug_assert_paint_or_prepaint();
         self.rendered_entity_stack.last().copied().unwrap()
+    }
+
+    pub(crate) fn try_current_view(&self) -> Option<EntityId> {
+        self.rendered_entity_stack.last().copied()
+    }
+
+    /// Reads the nearest inherited value of type `T` without registering a
+    /// dependency on the current element or view.
+    pub fn read_inherited<T: InheritedValue>(&self) -> Option<T> {
+        self.inherited_registry.read::<T>()
+    }
+
+    pub(crate) fn inherit_inherited<T: InheritedValue>(
+        &mut self,
+        dependent_element: &GlobalElementId,
+        dependent_view: EntityId,
+    ) -> Option<T> {
+        self.inherited_registry
+            .inherit::<T>(dependent_element, dependent_view)
+    }
+
+    pub(crate) fn inherited_dependency_index(&self) -> usize {
+        self.inherited_registry.accessed_dependency_index()
+    }
+
+    pub(crate) fn inherited_dependencies_since(&self, index: usize) -> Vec<InheritedDependency> {
+        self.inherited_registry.accessed_dependencies_since(index)
+    }
+
+    pub(crate) fn inherited_provider_access_index(&self) -> usize {
+        self.inherited_registry.accessed_provider_index()
+    }
+
+    pub(crate) fn inherited_provider_accesses_since(&self, index: usize) -> Vec<ProviderScopeKey> {
+        self.inherited_registry.accessed_providers_since(index)
+    }
+
+    pub(crate) fn replay_inherited_provider_accesses(&mut self, providers: &[ProviderScopeKey]) {
+        for provider in providers {
+            self.inherited_registry
+                .replay_provider_access(provider.clone());
+        }
+    }
+
+    pub(crate) fn replay_inherited_dependencies(
+        &mut self,
+        dependencies: &[InheritedDependency],
+        cx: &mut App,
+    ) {
+        for dependency in dependencies {
+            let dirty_views = self
+                .inherited_registry
+                .replay_dependency(dependency.clone());
+            self.invalidate_inherited_dependents(dirty_views, cx);
+        }
+    }
+
+    pub(crate) fn with_inherited_provider<T: InheritedValue, R>(
+        &mut self,
+        scope_id: &GlobalElementId,
+        value: &T,
+        cx: &mut App,
+        f: impl FnOnce(&mut Self, &mut App) -> R,
+    ) -> R {
+        let dirty_views = self.inherited_registry.provide::<T>(scope_id, value);
+        self.invalidate_inherited_dependents(dirty_views, cx);
+        self.inherited_registry.push_active::<T>(scope_id);
+
+        let result = panic::catch_unwind(AssertUnwindSafe(|| f(self, cx)));
+
+        self.inherited_registry.pop_active::<T>(scope_id);
+
+        match result {
+            Ok(result) => result,
+            Err(payload) => panic::resume_unwind(payload),
+        }
+    }
+
+    fn invalidate_inherited_dependents<const N: usize>(
+        &mut self,
+        dirty_views: SmallVec<[EntityId; N]>,
+        cx: &mut App,
+    ) {
+        for view_id in dirty_views {
+            self.invalidator.invalidate_view(view_id, cx);
+        }
     }
 
     #[inline]

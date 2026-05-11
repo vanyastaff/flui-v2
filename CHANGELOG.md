@@ -8,6 +8,43 @@ intent — every breaking change ships with a migration note even though we
 have not yet published a numbered release. Cross-references point to the
 plan and design docs in `.ai-factory/plans/` and `docs/superpowers/specs/`.
 
+## [Unreleased] — K01 Provider rewrite
+
+K01 replaces the old thread-local provider stack with a per-`Window`
+`InheritedRegistry`. Provider values now have K01 scope identity, inherited
+reads are scoped to `Window` / lifecycle contexts, subscribing reads record
+dependents for view invalidation, and cached views replay inherited
+dependencies when their output is reused.
+
+Plan: `.ai-factory/plans/feature-K01-provider-rewrite.md`.
+Design spec:
+`docs/superpowers/specs/2026-05-11-K01-provider-rewrite-design.md`.
+Migration guide:
+`docs/superpowers/migrations/K01-provider-rewrite.md`.
+
+### Breaking — global provider reads removed
+
+- Removed `flui_core::read::<T>()` and `flui_core::try_read::<T>()`.
+- Removed `flui_widgets::read::<T>()` and `flui_widgets::try_read::<T>()`
+  re-exports.
+- Use `cx.read_inherited::<T>()` for non-subscribing lifecycle lookups.
+- Use `cx.inherit::<T>()` when the current element/view should be invalidated
+  after the nearest provider changes.
+- `InheritedValue` now requires `PartialEq`; equality suppresses unchanged-value
+  provider invalidation.
+
+### Added — per-window provider substrate
+
+- `Window` owns the inherited registry.
+- `Provider::new` uses a source-location fallback scope id.
+- `Provider::new_keyed` handles repeated same-type providers until K02 Key
+  semantics land.
+- Cached `AnyView` state stores and replays inherited dependency snapshots.
+- Provider removal invalidates previous dependents once and prunes stale
+  dependent records.
+- Focused provider tests cover registry behavior, identity, lifecycle reads,
+  cached dependency replay, removal, panic cleanup, and per-registry isolation.
+
 ## [Unreleased] — K05 Element lifecycle context objects
 
 K05 replaces the low-level `flui_core::Element` lifecycle argument bundles with

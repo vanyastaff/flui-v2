@@ -33,7 +33,7 @@
 
 use crate::{
     App, ArenaBox, AvailableSpace, Bounds, Context, DispatchNodeId, ElementId, FocusHandle,
-    InspectorElementId, LayoutId, Pixels, Point, SharedString, Size, Style, Window,
+    InheritedValue, InspectorElementId, LayoutId, Pixels, Point, SharedString, Size, Style, Window,
     local_util::FluentBuilder, window::with_element_arena,
 };
 use derive_more::{Deref, DerefMut};
@@ -95,6 +95,25 @@ impl<'a> LayoutCx<'a> {
     /// Reborrow both window and app for existing APIs that need both handles.
     pub fn with_window_app<R>(&mut self, f: impl FnOnce(&mut Window, &mut App) -> R) -> R {
         f(&mut *self.window, &mut *self.app)
+    }
+
+    /// Reads the nearest inherited value of type `T` without subscribing the
+    /// current element to future provider changes.
+    pub fn read_inherited<T: InheritedValue>(&self) -> Option<T> {
+        self.window.read_inherited::<T>()
+    }
+
+    /// Reads the nearest inherited value of type `T` and subscribes the
+    /// current element's view to future provider changes.
+    pub fn inherit<T: InheritedValue>(&mut self) -> Option<T> {
+        let Some(global_id) = self.global_id.cloned() else {
+            return self.read_inherited::<T>();
+        };
+        let Some(view_id) = self.window.try_current_view() else {
+            return self.read_inherited::<T>();
+        };
+
+        self.window.inherit_inherited::<T>(&global_id, view_id)
     }
 
     /// Run a nested layout operation with a different element id.
@@ -170,6 +189,25 @@ impl<'a> PrepaintCx<'a> {
     /// Reborrow both window and app for existing APIs that need both handles.
     pub fn with_window_app<R>(&mut self, f: impl FnOnce(&mut Window, &mut App) -> R) -> R {
         f(&mut *self.window, &mut *self.app)
+    }
+
+    /// Reads the nearest inherited value of type `T` without subscribing the
+    /// current element to future provider changes.
+    pub fn read_inherited<T: InheritedValue>(&self) -> Option<T> {
+        self.window.read_inherited::<T>()
+    }
+
+    /// Reads the nearest inherited value of type `T` and subscribes the
+    /// current element's view to future provider changes.
+    pub fn inherit<T: InheritedValue>(&mut self) -> Option<T> {
+        let Some(global_id) = self.global_id.cloned() else {
+            return self.read_inherited::<T>();
+        };
+        let Some(view_id) = self.window.try_current_view() else {
+            return self.read_inherited::<T>();
+        };
+
+        self.window.inherit_inherited::<T>(&global_id, view_id)
     }
 
     /// Run a nested prepaint operation with a different element id.
@@ -263,6 +301,25 @@ impl<'a> PaintCx<'a> {
     /// Reborrow both window and app for existing APIs that need both handles.
     pub fn with_window_app<R>(&mut self, f: impl FnOnce(&mut Window, &mut App) -> R) -> R {
         f(&mut *self.window, &mut *self.app)
+    }
+
+    /// Reads the nearest inherited value of type `T` without subscribing the
+    /// current element to future provider changes.
+    pub fn read_inherited<T: InheritedValue>(&self) -> Option<T> {
+        self.window.read_inherited::<T>()
+    }
+
+    /// Reads the nearest inherited value of type `T` and subscribes the
+    /// current element's view to future provider changes.
+    pub fn inherit<T: InheritedValue>(&mut self) -> Option<T> {
+        let Some(global_id) = self.global_id.cloned() else {
+            return self.read_inherited::<T>();
+        };
+        let Some(view_id) = self.window.try_current_view() else {
+            return self.read_inherited::<T>();
+        };
+
+        self.window.inherit_inherited::<T>(&global_id, view_id)
     }
 
     /// Run a nested paint operation with a different element id.
