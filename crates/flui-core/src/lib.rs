@@ -18,6 +18,7 @@ mod asset_cache;
 mod assets;
 mod bounds_tree;
 mod brightness;
+mod build;
 mod color;
 /// The default colors used by GPUI.
 pub mod colors;
@@ -127,6 +128,7 @@ pub(crate) use arena::*;
 pub use asset_cache::*;
 pub use assets::*;
 pub use brightness::*;
+pub use build::{BuildElement, ElementBuildCx, ElementBuilder, build_element};
 pub use color::*;
 pub use ctor::ctor;
 pub use element::*;

@@ -4,7 +4,8 @@
 //!
 //! This crate provides behavioral logic (interaction states, keyboard handling,
 //! focus management) without any visual styling. Design systems like
-//! `flui-material` layer visual styling on top using the `build()` pattern.
+//! `flui-material` layer visual styling on top using flui-core engine recipes.
+//! The final Flutter-style `Widget` API is planned for `flui-framework`.
 //!
 //! ## Architecture Rules
 //!
@@ -23,7 +24,7 @@
 pub mod layout;
 pub mod primitives;
 pub mod state;
-/// Widget pattern documentation — maps Flutter concepts to flui equivalents.
+/// Engine component pattern documentation for current flui-core recipes.
 pub mod widget;
 
 // Re-export core provider construction types at crate root. Inherited reads are

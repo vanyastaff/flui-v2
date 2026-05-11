@@ -1,11 +1,12 @@
 //! Creating Components Example
 //!
-//! This example demonstrates three different approaches to creating interactive
-//! stateful components in GPUI:
+//! This example demonstrates four engine-level approaches to creating reusable
+//! UI pieces in flui:
 //!
 //! 1. `use_state` - Hook-like state scoped to an element's lifetime
 //! 2. `RenderOnce` - Stateless component that receives state from parent
-//! 3. `Render` - Entity-backed view with persistent internal state
+//! 3. `ElementBuilder` - Immutable recipe built from `&self`
+//! 4. `Render` - Entity-backed view with persistent internal state
 
 #[path = "../prelude.rs"]
 mod example_prelude;
@@ -229,7 +230,56 @@ impl RenderOnce for RenderOnceCounter {
 }
 
 // ============================================================================
-// Approach 3: Render (Entity-backed)
+// Approach 3: ElementBuilder
+// ============================================================================
+//
+// `ElementBuilder` is the K03 pure-build substrate in flui-core. It builds from
+// `&self`, so the recipe can be reused as immutable configuration. It is still
+// an engine-level API, not the final flui-framework `Widget` model.
+//
+// Pros:
+// - Immutable recipe object
+// - No Entity allocation
+// - Clear boundary from mutable `Render` views
+//
+// Cons:
+// - No Framework-tier reconciliation or State<T>
+// - Use `Render` or `use_state` for mutable runtime state today
+
+struct ElementBuilderCounter {
+    colors: Colors,
+    count: i32,
+}
+
+impl ElementBuilder for ElementBuilderCounter {
+    fn build(&self, _cx: &mut ElementBuildCx<'_>) -> impl IntoElement {
+        let colors = self.colors.clone();
+
+        div()
+            .id("element-builder-counter")
+            .flex()
+            .flex_col()
+            .gap_2()
+            .p_4()
+            .rounded_lg()
+            .bg(colors.container)
+            .child(
+                div()
+                    .text_sm()
+                    .text_color(colors.disabled)
+                    .child("ElementBuilder Counter"),
+            )
+            .child(
+                div()
+                    .text_2xl()
+                    .text_color(colors.text)
+                    .child(format!("{}", self.count)),
+            )
+    }
+}
+
+// ============================================================================
+// Approach 4: Render (Entity-backed)
 // ============================================================================
 //
 // `Render` components are backed by an `Entity<T>` and maintain their own
@@ -382,13 +432,14 @@ impl Render for CreatingComponentsExample {
                         div()
                             .text_sm()
                             .text_color(colors.disabled)
-                            .child("Three approaches to stateful components in GPUI"),
+                            .child("Four engine-level component patterns in flui"),
                     ),
             )
             .child(
                 div()
                     .flex()
                     .flex_row()
+                    .flex_wrap()
                     .gap_4()
                     .child(use_state_counter(&colors, window, cx))
                     .child(
@@ -412,6 +463,13 @@ impl Render for CreatingComponentsExample {
                                     })
                                     .ok();
                             }),
+                    )
+                    .child(
+                        build_element(ElementBuilderCounter {
+                            colors: colors.clone(),
+                            count: render_once_count,
+                        })
+                        .key(Key::value("element-builder-counter")),
                     )
                     .child(self.render_counter.clone()),
             )

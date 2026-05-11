@@ -13,10 +13,12 @@ Status: active
 
 **K02 (2026-05-11)** — Element identity and Key landed for the Tier-A engine substrate. `ElementId` moved into an Element-owned identity module and remains re-exported; opaque `Key::{local, value, global}`, `ValueKey`, and `GlobalKey` model identity intent; `ElementId::CodeLocation` is normalized into `ElementId::Local(LocalElementId)` by an internal `ElementIdStack`. The stack tracks parent-scoped Local occurrence counters, debug duplicate explicit sibling-key diagnostics, lifecycle-pass resets, and deferred-draw resolver snapshots. `Window::use_state` now uses Local occurrence; `use_keyed_state`, `with_id`, `with_element_namespace`, `Provider::new_keyed`, and `Component::key` accept key/value identity for stable boundaries. `AnyView::cached` behavior is preserved and cache rerenders restore nested identity state; public stateless element cache wrappers and cross-tree GlobalKey moves are deferred to SF02/SF05. Spec: `docs/superpowers/specs/2026-05-11-K02-element-identity-key-design.md`. Migration guide: `docs/superpowers/migrations/K02-element-identity-key.md`.
 
+**K03 (2026-05-11)** — Render to Build separation landed for the Tier-A engine/framework boundary. `Render` remains the mutable entity-backed view trait for roots and `AnyView`; `RenderOnce` and `Component<C>` remain source-compatible engine recipes; K03 adds the narrow immutable recipe substrate `ElementBuilder`, `ElementBuildCx`, `BuildElement`, and `build_element(...)` in `flui-core`. The design deliberately does not create `flui-framework`, final `Widget`, reconciliation, dirty-list scheduling, `setState`, object-safe heterogeneous widget storage, or pure-build roots. Provider reads through `ElementBuildCx`, keyed builder identity, cached-view provider replay, deferred-draw identity, macro compatibility, Tier C crates, and examples are covered. Validation run: `cargo fmt --check`, `cargo test -p flui-core`, `cargo test -p flui-macros`, `cargo check -p flui-widgets --all-targets`, `cargo check -p flui-material --all-targets`, `cargo check -p flui-navigator --all-targets`, example checks for `creating_components`, `nav_demo`, `material_demo`, `animation_demo`, and `cargo test --workspace`. Spec: `docs/superpowers/specs/2026-05-11-K03-render-build-separation-design.md`. Migration guide: `docs/superpowers/migrations/K03-render-build-separation.md`.
+
 ## Active Summary (input for /aif-plan)
 <!-- aif:active-summary:start -->
 
-**K02 status (2026-05-11):** Element identity and Key are complete in `flui-core`. `Key`, `ValueKey`, `GlobalKey`, normalized Local identity, and `ElementIdStack` provide the substrate for state/provider identity and future Framework reconciliation. Provider and cached-view K01 regressions pass focused tests. Next critical-chain item is K03 (Render to Build separation).
+**K03 status (2026-05-11):** Render to Build separation is complete in `flui-core`. `Render` stays the mutable entity-backed engine view trait; `RenderOnce` / `Component<C>` stay compatible; `ElementBuilder` / `ElementBuildCx` / `BuildElement` provide a narrow immutable engine recipe path built from `&self`. K03 deliberately leaves final `Widget`, `State`, `BuildCx`, reconciliation, dirty lists, `setState`, object-safe widget erasure, and pure-build roots to Phase II-F. Workspace validation passed. Next critical-chain item is K04 (Effect / Frame contract).
 
 **Topic:** Strategic alignment of flui-v2 toward "Flutter ecosystem on Rust" — reconciling vision with current architecture and prior abandoned attempts.
 
@@ -157,9 +159,9 @@ This is the success metric for the "Phase II + Framework + Ecosystem" track.
 
 The previous SF01-first plan is REVERSED. Audit (see "Phase 0-K Kernel Cleanup audit" session below) identified 24+ structural issues in `flui-core` that block Framework tier work. Kernel Cleanup must precede Framework.
 
-1. **K99, K15, K07, K05, K01, and K02 are complete.**
-2. **Next run `/aif-plan full K03-render-build-separation`** — separate low-level Engine rendering from Framework-tier pure build semantics.
-3. **Then K04** finishes the Phase 0-K critical chain.
+1. **K99, K15, K07, K05, K01, K02, and K03 are complete.**
+2. **Next run `/aif-plan full K04-effect-frame-contract`** — define structured frame phases, drain order, and deadline placement.
+3. **Then Phase II-F can begin planning once K04 lands** and the Phase 0-K critical chain is complete.
 4. **Hygiene K90-K98 in parallel slots** — small independent PRs, can land any time.
 5. **Internal-org K06, K08, K10, K11 are now unblocked by K05** — schedule them alongside the remaining critical-chain work only when they do not slow K01-K04.
 6. **SF01 only AFTER K01-K04 lands** — Framework tier sits on the cleaned kernel.
@@ -173,7 +175,7 @@ Critical chain (sequential):
 - **K05 (done)** — Element trait → context object (`PaintCx` / `LayoutCx` / `PrepaintCx`)
 - **K01** — Provider rewrite (per-Window InheritedRegistry, reactive subscriptions) — complete
 - **K02 (done)** — Element identity & Key (Local/Value/Global)
-- **K03** — Render → Build separation (`Widget::build(&self)` for Framework tier)
+- **K03 (done)** — Render → Build separation (`ElementBuilder` immutable engine recipe substrate; final `Widget` deferred to Framework)
 - **K04** — Effect / Frame contract (preFrame / postFrame phases, deadlines)
 
 Internal-org (parallel after K05):
@@ -276,9 +278,9 @@ Independent audit pass added 9 categories not in user's list:
 **Sequencing decision:**
 
 Phase 0-K (Kernel Cleanup) becomes the active phase. Critical chain is sequential:
-`K99 (MSRV 1.95) → K15 (re-entrancy contract) → K07 (AppCell removal) → K05 (Element ctx-object) → K01 (Provider rewrite) → K02 (Key + identity) → K03 (Widget::build separation) → K04 (Effect/Frame contract)`
+`K99 (MSRV 1.95) → K15 (re-entrancy contract) → K07 (AppCell removal) → K05 (Element ctx-object) → K01 (Provider rewrite) → K02 (Key + identity) → K03 (Render/build separation) → K04 (Effect/Frame contract)`
 
-As of 2026-05-11, K99, K15, K07, K05, K01, and K02 are complete; K03 is next.
+As of 2026-05-11, K99, K15, K07, K05, K01, K02, and K03 are complete; K04 is next.
 
 Internal-org (K06, K08, K10, K11) parallelizes after K05. Independent items (K12, K13, K14, K16, K17, K20, K21, K22) and hygiene (K90-K98) run in parallel slots throughout.
 

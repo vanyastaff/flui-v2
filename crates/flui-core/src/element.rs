@@ -26,10 +26,13 @@
 //! With great power, comes great responsibility.
 //!
 //! However, most of the time, you won't need to implement your own elements. GPUI provides a number of
-//! elements that should cover most common use cases out of the box and it's recommended that you use those
-//! to construct `components`, using the [`RenderOnce`] trait and the `#[derive(IntoElement)]` macro. Only implement
-//! elements when you need to take manual control of the layout and painting process, such as when using
-//! your own custom layout algorithm or rendering a code editor.
+//! elements that should cover most common use cases out of the box. Existing engine recipes can use
+//! [`RenderOnce`] plus `#[derive(IntoElement)]`, while immutable recipes that only need borrowed
+//! configuration can use [`ElementBuilder`](crate::ElementBuilder) through
+//! [`build_element`](crate::build_element). These are engine-level APIs, not the final
+//! Framework-tier `Widget` model. Only implement elements when you need to take manual control of
+//! the layout and painting process, such as when using your own custom layout algorithm or
+//! rendering a code editor.
 
 use crate::{
     App, ArenaBox, AvailableSpace, Bounds, Context, DispatchNodeId, FocusHandle, InheritedValue,
@@ -461,8 +464,12 @@ pub trait IntoElement: Sized {
 
 impl<T: IntoElement> FluentBuilder for T {}
 
-/// An object that can be drawn to the screen. This is the trait that distinguishes "views" from
-/// other entities. Views are `Entity`'s which `impl Render` and drawn to the screen.
+/// An object that can be drawn to the screen.
+///
+/// This is the mutable, entity-backed engine view trait. Views are `Entity`s
+/// that implement `Render` and may own runtime state through `Context<Self>`.
+/// This is intentionally distinct from immutable element recipes such as
+/// [`crate::ElementBuilder`] and from the future Framework-tier `Widget` API.
 pub trait Render: 'static + Sized {
     /// Render this view into an element tree.
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement;
@@ -474,13 +481,14 @@ impl Render for Empty {
     }
 }
 
+/// A consuming engine recipe for constructing reusable element patterns.
+///
 /// You can derive [`IntoElement`] on any type that implements this trait.
-/// It is used to construct reusable `components` out of plain data. Think of
-/// components as a recipe for a certain pattern of elements. RenderOnce allows
-/// you to invoke this pattern, without breaking the fluent builder pattern of
-/// the element APIs.
+/// `RenderOnce` remains the compatibility path for existing stateless engine
+/// recipes. For immutable borrowed recipes, prefer [`crate::ElementBuilder`].
+/// Neither trait is the final Framework-tier `Widget` API.
 pub trait RenderOnce: 'static {
-    /// Render this component into an element tree. Note that this method
+    /// Render this recipe into an element tree. Note that this method
     /// takes ownership of self, as compared to [`Render::render()`] method
     /// which takes a mutable reference.
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement;

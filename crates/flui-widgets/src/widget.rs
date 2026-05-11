@@ -1,17 +1,20 @@
-//! # Widget Patterns
+//! # Engine Component Patterns
 //!
-//! flui uses the same patterns as Flutter, mapped to Rust traits:
+//! `flui-widgets` currently builds on engine-level flui-core recipes. These
+//! are intentionally different from the future `flui-framework::Widget` API.
 //!
-//! | Flutter             | flui                                         |
-//! |---------------------|----------------------------------------------|
-//! | `StatelessWidget`   | `#[derive(IntoElement)]` + `impl RenderOnce` |
-//! | `StatefulWidget`    | `impl Render` + `Entity<T>`                  |
-//! | `Widget.build()`    | `RenderOnce::render()` / `Render::render()`  |
-//! | `BuildContext`      | `&mut Window` + `&mut App`                   |
-//! | `State<T>`          | `&mut Context<Self>` in `Render::render()`   |
-//! | `setState()`        | `cx.notify()`                                |
+//! | Current flui-core concept | Use for |
+//! |---------------------------|---------|
+//! | `RenderOnce` + `#[derive(IntoElement)]` | Consuming stateless engine recipes |
+//! | `ElementBuilder` + `build_element(...)` | Immutable recipes built from `&self` |
+//! | `Render` + `Entity<T>` | Mutable, entity-backed engine views and roots |
+//! | `Window::use_state` / `use_keyed_state` | Element-scoped state in current engine code |
+//! | `Context<Self>::notify()` | Invalidating mutable `Render` views |
 //!
-//! ## StatelessWidget (consumed on render, no persistent state)
+//! The final Flutter-style `Widget`, `State`, `BuildCx`, reconciliation, and
+//! `setState` surface belongs to the planned `flui-framework` crate.
+//!
+//! ## Consuming engine recipe
 //!
 //! ```ignore
 //! #[derive(IntoElement)]
@@ -24,7 +27,21 @@
 //! }
 //! ```
 //!
-//! ## StatefulWidget (persistent state across frames)
+//! ## Immutable engine recipe
+//!
+//! ```ignore
+//! struct Greeting { name: SharedString }
+//!
+//! impl ElementBuilder for Greeting {
+//!     fn build(&self, _cx: &mut ElementBuildCx<'_>) -> impl IntoElement {
+//!         div().child(format!("Hello, {}!", self.name))
+//!     }
+//! }
+//!
+//! let element = build_element(Greeting { name: "Ada".into() });
+//! ```
+//!
+//! ## Mutable engine view
 //!
 //! ```ignore
 //! struct Counter { count: i32 }
