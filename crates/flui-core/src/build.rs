@@ -77,7 +77,7 @@ impl<'a> ElementBuildCx<'a> {
             self.global_id.is_some(),
             "`inherit()` requires a stable build element id; use `read_inherited()` for non-subscribing lookups",
         );
-        let Some(global_id) = self.global_id.cloned() else {
+        let Some(global_id) = self.global_id else {
             return None;
         };
         debug_assert!(
@@ -88,7 +88,7 @@ impl<'a> ElementBuildCx<'a> {
             return None;
         };
 
-        self.window.inherit_inherited::<T>(&global_id, view_id)
+        self.window.inherit_inherited::<T>(global_id, view_id)
     }
 }
 

@@ -14,8 +14,8 @@ mod example_prelude;
 use example_prelude::init_example;
 use flui_core::colors::Colors;
 use flui_core::{
-    App, Application, Bounds, Context, Entity, IntoElement, Render, RenderOnce, Window,
-    WindowBounds, WindowOptions, div, prelude::*, px, rgb, size,
+    App, Application, Bounds, Context, Entity, IntoElement, Provider, Render, RenderOnce, Rgba,
+    Window, WindowBounds, WindowOptions, div, prelude::*, px, rgb, size,
 };
 
 // ============================================================================
@@ -252,8 +252,9 @@ struct ElementBuilderCounter {
 }
 
 impl ElementBuilder for ElementBuilderCounter {
-    fn build(&self, _cx: &mut ElementBuildCx<'_>) -> impl IntoElement {
+    fn build(&self, cx: &mut ElementBuildCx<'_>) -> impl IntoElement {
         let colors = self.colors.clone();
+        let accent = cx.inherit::<Rgba>().unwrap_or(colors.selected);
 
         div()
             .id("element-builder-counter")
@@ -274,6 +275,19 @@ impl ElementBuilder for ElementBuilderCounter {
                     .text_2xl()
                     .text_color(colors.text)
                     .child(format!("{}", self.count)),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .child(div().size_4().rounded_sm().bg(accent))
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(colors.disabled)
+                            .child("inherited accent"),
+                    ),
             )
     }
 }
@@ -464,13 +478,15 @@ impl Render for CreatingComponentsExample {
                                     .ok();
                             }),
                     )
-                    .child(
+                    .child(Provider::new_keyed(
+                        Key::value("element-builder-accent"),
+                        colors.selected,
                         build_element(ElementBuilderCounter {
                             colors: colors.clone(),
                             count: render_once_count,
                         })
                         .key(Key::value("element-builder-counter")),
-                    )
+                    ))
                     .child(self.render_counter.clone()),
             )
     }

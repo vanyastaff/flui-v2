@@ -43,7 +43,7 @@ Source: `.ai-factory/RESEARCH.md` Active Summary, `.ai-factory/ROADMAP.md`, `.ai
 
 | Area | Current shape | K03 concern |
 |---|---|---|
-| Root views | `Entity<V>` where `V: Render`; `AnyView` calls `view.update(cx, |view, cx| view.render(...))` | Mutable `Render` is the right engine-view API, but it is currently described as the whole widget model. |
+| Root views | `Entity<V>` where `V: Render`; `AnyView` calls `view.update(cx, \|view, cx\| view.render(...))` | Mutable `Render` is the right engine-view API, but it is currently described as the whole widget model. |
 | Stateless components | `RenderOnce` consumes `self`; `derive(IntoElement)` wraps `Component<Self>` | Useful compatibility path, but not equivalent to immutable `Widget::build(&self)`. |
 | Element tree | `IntoElement` and `Element` remain the runtime substrate | K03 should not create a second render tree or a Flutter-style RenderObject tree. |
 | Identity | `Component<C>` captures callsite and accepts explicit `Component::key(...)` | Any pure-build wrapper must preserve K02 Local/Value/Global key behavior and `#[track_caller]`. |

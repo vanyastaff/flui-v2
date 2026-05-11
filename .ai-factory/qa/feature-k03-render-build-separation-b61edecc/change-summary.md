@@ -75,6 +75,11 @@ hidden coupling here can leak into the next cleanup step.
 
 ## QA Recommendation
 
-Before implementation begins, treat the K03 plan as a blocking contract. The next quality gate should confirm that the spec states the `Render` versus build boundary, names any new public API precisely, explains object-safety tradeoffs, and lists migration expectations for Tier C consumers.
+For audit traceability, keep the K03 plan as the implementation contract and
+confirm that the spec states the `Render` versus build boundary, names new
+public APIs precisely, explains object-safety tradeoffs, and lists migration
+expectations for Tier C consumers.
 
-After implementation lands, rerun this QA package against the actual diff and expand the execution evidence to include workspace checks, Tier C compile coverage, macro coverage, example coverage, and docs/migration review.
+For future reruns, execute this QA package against the landed diff and expand the
+execution evidence to include workspace checks, Tier C compile coverage, macro
+coverage, example coverage, and docs/migration review.
