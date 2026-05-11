@@ -12,7 +12,7 @@ The architecture is organized into **three tiers**:
 - **Tier B — Framework:** `flui-framework` (PLANNED, Phase II-F) — Widget, Key, State, BuildCx, Provider, reconciliation. The Flutter-DX layer.
 - **Tier C — Ecosystem:** `flui-widgets`, `flui-material`, `flui-cupertino`, `flui-theme`, `flui-a11y`, `flui-navigator`, third-party widget crates.
 
-**Current status:** Phase I (platform extraction) is FROZEN after S01 + S02a — S02b–S06 are deferred to Phase III. **Active work is Phase 0-K Kernel Cleanup** (K-track) — repaying remaining architectural debt in `flui-core` (`Render::&mut self` semantics, action globals, leaky coordinate-space type-safety, no layout cache, etc.) that blocks a healthy Framework tier. K99, K15, K07, K05, K01, and K02 are complete; the next critical-chain item is K03. Remaining chain: `K03 → K04`. Phase II (Engine completeness — S08 Semantics, S09 Canvas, S10 Filters, S12 Focus, S13 Text, S14 MediaQuery, S15 Assets) runs in parallel with K-track since most specs are additive. Phase II-F (Framework tier — spec series SF##) is **gated on K-track critical chain completion**. Done: S07 Gesture, S07.5b PointerEvent surface, S21 Animation, K99 MSRV, K15 Re-entrancy, K07 app ownership primitive, K05 Element lifecycle context objects, K01 Provider rewrite, K02 Element identity and Key. See `.ai-factory/DESCRIPTION.md`, `.ai-factory/ROADMAP.md`, and `.ai-factory/RESEARCH.md` for full details.
+**Current status:** Phase I (platform extraction) is FROZEN after S01 + S02a — S02b–S06 are deferred to Phase III. **Active work is Phase 0-K Kernel Cleanup** (K-track) — repaying remaining architectural debt in `flui-core` (action globals, leaky coordinate-space type-safety, no layout cache, effect/frame ordering, etc.) that blocks a healthy Framework tier. K99, K15, K07, K05, K01, K02, and K03 are complete; the next critical-chain item is K04. Remaining chain: `K04`. Phase II (Engine completeness — S08 Semantics, S09 Canvas, S10 Filters, S12 Focus, S13 Text, S14 MediaQuery, S15 Assets) runs in parallel with K-track since most specs are additive. Phase II-F (Framework tier — spec series SF##) is **gated on K-track critical chain completion**. Done: S07 Gesture, S07.5b PointerEvent surface, S21 Animation, K99 MSRV, K15 Re-entrancy, K07 app ownership primitive, K05 Element lifecycle context objects, K01 Provider rewrite, K02 Element identity and Key, K03 Render to Build separation. See `.ai-factory/DESCRIPTION.md`, `.ai-factory/ROADMAP.md`, and `.ai-factory/RESEARCH.md` for full details.
 
 ## Tech Stack
 
@@ -52,11 +52,13 @@ flui-v2/
 │   ├── reports/          # Generated reports
 │   ├── fixtures/         # Test fixtures
 │   └── lock-coverage-gaps.md
+├── .agents/              # Project-scoped skills installed for this repository
 ├── .ai-factory/          # AI Factory project context (config, description, rules, etc.)
 ├── .claude/              # Claude Code skills + agents installed for this project
 ├── .codex/               # Codex skills installed for this project
 ├── .github/              # GitHub workflows
 ├── .cargo/               # Cargo config
+├── .mcp.json             # Project-level MCP server configuration
 ├── target/               # Build artifacts (ignored)
 ├── Cargo.toml            # Workspace manifest
 ├── Cargo.lock            # Locked dependency graph
@@ -86,6 +88,7 @@ flui-v2/
 |---|---|---|
 | README | `README.md` | Project overview, three-tier architecture, quick start, build instructions, project status |
 | LICENSE | `LICENSE.md` | Apache-2.0 license |
+| MCP config | `.mcp.json` | Project-local MCP server configuration for filesystem and GitHub access |
 | flui-core roadmap | `docs/superpowers/specs/2026-04-13-flui-core-roadmap.md` | Master roadmap for Phase I (platform extraction + Flutter-parity gaps) |
 | K99 — MSRV bump to Rust 1.95 | `docs/superpowers/specs/2026-05-08-K99-msrv-bump-1.95-design.md` | First Phase 0-K spec; workspace MSRV pinned to 1.95 + clippy.toml + CI gate |
 | K15 — Re-entrancy contract | `docs/superpowers/specs/2026-05-09-K15-reentrancy-contract-design.md` | Second Phase 0-K spec; `flui_core::reentrancy` module with `ReentryError` + `ReentryMode`; `cx.defer` / `Window::defer` named as escape hatches |
@@ -93,9 +96,11 @@ flui-v2/
 | K05 — Element lifecycle context objects | `docs/superpowers/specs/2026-05-11-K05-element-context-object-design.md` | Fourth Phase 0-K spec; `LayoutCx`, `PrepaintCx`, and `PaintCx` replace raw lifecycle argument bundles |
 | K01 — Provider rewrite | `docs/superpowers/specs/2026-05-11-K01-provider-rewrite-design.md` | Fifth Phase 0-K spec; per-`Window` inherited registry, scoped lifecycle reads, provider invalidation, cached dependency replay |
 | K02 — Element identity and Key | `docs/superpowers/specs/2026-05-11-K02-element-identity-key-design.md` | Sixth Phase 0-K spec; `Key`, normalized Local identity, value/global key substrate, identity stack manager |
+| K03 — Render to Build separation | `docs/superpowers/specs/2026-05-11-K03-render-build-separation-design.md` | Seventh Phase 0-K spec; `ElementBuilder`, `ElementBuildCx`, `BuildElement`, and `build_element` immutable engine recipe substrate |
 | K07 migration guide | `docs/superpowers/migrations/K07-appcell-removal.md` | Breaking-change guide for K07 callers |
 | K01 migration guide | `docs/superpowers/migrations/K01-provider-rewrite.md` | Breaking-change guide for migrating global provider reads to scoped inherited reads |
 | K02 migration guide | `docs/superpowers/migrations/K02-element-identity-key.md` | Breaking-change guide for Local/Value/Global key identity and state/provider migration |
+| K03 migration guide | `docs/superpowers/migrations/K03-render-build-separation.md` | Guide for `Render`, `RenderOnce`, `ElementBuilder`, keying build boundaries, and deferred Framework scope |
 | Design specs | `docs/superpowers/specs/` | Per-task design documents (date-stamped) |
 | Migration guides | `docs/superpowers/migrations/` | User-facing guides for breaking changes |
 | Implementation plans | `.ai-factory/plans/` | Per-task implementation plans paired with specs (resolved via `paths.plans`) |
@@ -106,10 +111,12 @@ flui-v2/
 | File | Purpose |
 |---|---|
 | `AGENTS.md` | This file — structural map for AI agents |
+| `.agents/skills/` | Project-scoped skills directory; includes AI Factory skills plus external `github-actions-docs` and `rust-testing` |
 | `.ai-factory/DESCRIPTION.md` | Full project description (overview, features, stack, architecture, NFRs) |
 | `.ai-factory/ARCHITECTURE.md` | Architecture guidelines (generated by `/aif-architecture`) |
 | `.ai-factory/config.yaml` | AI Factory configuration (language, paths, workflow, git, rules) |
 | `.ai-factory/rules/base.md` | Project base rules (naming, modules, error handling, async, testing, review subagents) |
+| `.mcp.json` | Project-local MCP server definitions (`filesystem`, `github`) |
 
 ## Specialized Review Subagents
 

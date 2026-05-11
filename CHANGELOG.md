@@ -8,6 +8,60 @@ intent — every breaking change ships with a migration note even though we
 have not yet published a numbered release. Cross-references point to the
 plan and design docs in `.ai-factory/plans/` and `docs/superpowers/specs/`.
 
+## [Unreleased] - K03 Render to Build separation
+
+K03 separates mutable engine views from immutable engine build recipes without
+starting the Framework tier. `Render` remains the entity-backed mutable view
+trait for roots and `AnyView`; `RenderOnce` and `Component<C>` remain
+source-compatible; the new `ElementBuilder` substrate gives flui-core a narrow
+`&self` recipe path that still builds the existing `Element` tree.
+
+Plan: `.ai-factory/plans/feature-k03-render-build-separation.md`.
+Design spec:
+`docs/superpowers/specs/2026-05-11-K03-render-build-separation-design.md`.
+Migration guide:
+`docs/superpowers/migrations/K03-render-build-separation.md`.
+
+### Added - immutable engine recipes
+
+- Added `ElementBuilder` for immutable recipes with
+  `fn build(&self, cx: &mut ElementBuildCx<'_>) -> impl IntoElement`.
+- Added `ElementBuildCx` with low-level `Window` / `App` reborrows and K01
+  inherited-value reads.
+- Added `BuildElement<B>` plus `build_element(builder)` as the explicit adapter
+  into the existing element tree.
+- Added `BuildElement::key(...)` for K02-compatible keyed build boundaries.
+
+### Changed - render/build vocabulary
+
+- Documented `Render` as the mutable entity-backed engine view trait, not final
+  Framework widget build.
+- Documented `RenderOnce` / `Component<C>` as the current consuming engine
+  recipe compatibility path.
+- Updated learn and Tier C docs to avoid equating `Render::render` or
+  `RenderOnce::render` with final Flutter-style `Widget.build`.
+
+### Deferred - Framework tier
+
+- No `flui-framework` crate is created by K03.
+- Final `Widget`, `State`, `BuildCx`, reconciliation, dirty-list scheduling,
+  `setState`, object-safe widget storage, and pure-build roots remain deferred
+  to Phase II-F.
+
+### Validation
+
+- `cargo fmt --check`
+- `cargo test -p flui-core`
+- `cargo test -p flui-macros`
+- `cargo check -p flui-widgets --all-targets`
+- `cargo check -p flui-material --all-targets`
+- `cargo check -p flui-navigator --all-targets`
+- `cargo check -p flui-core --example creating_components`
+- `cargo check -p nav_demo`
+- `cargo check -p material_demo`
+- `cargo check -p animation_demo`
+- `cargo test --workspace`
+
 ## [Unreleased] - K02 Element identity and Key
 
 K02 adds a normalized engine identity substrate for `flui-core`. `ElementId`

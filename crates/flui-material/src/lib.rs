@@ -4,6 +4,8 @@
 //!
 //! Provides `MaterialApp`, themed buttons, text fields, scaffold, cards,
 //! and other M3 components built on `flui-widgets` headless primitives.
+//! Current components use flui-core engine recipes; the final Framework-tier
+//! `Widget` API is deferred to `flui-framework`.
 //!
 //! ## Quick Start
 //!
