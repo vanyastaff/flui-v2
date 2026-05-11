@@ -9,10 +9,12 @@ Status: active
 
 **K05 (2026-05-11)** — Element lifecycle context objects landed for the low-level engine `Element` API. `Element::request_layout`, `prepaint`, and `paint` now receive `LayoutCx<'_>`, `PrepaintCx<'_>`, and `PaintCx<'_>` instead of raw global-id / inspector-id / bounds / `Window` / `App` argument bundles. `AnyElement` traversal, `Drawable`, `Interactivity`, built-in elements, `ProviderElement`, root/deferred/inspector `Window` paths, test harness drawing, key-dispatch tests, and the legacy input example were migrated. The contexts expose documented identity/bounds/runtime accessors plus explicit nested-context helpers for adjusted id/bounds delegation. K05 deliberately does not introduce Framework `BuildCx`, Provider rewrite, panic recovery for lifecycle panics, or ownership sharding. Spec: `docs/superpowers/specs/2026-05-11-K05-element-context-object-design.md`. Migration guide: `docs/superpowers/migrations/K05-element-context-object.md`.
 
+**K01 (2026-05-11)** — Provider rewrite landed for the low-level engine substrate. The old `provider/stack.rs` thread-local global is removed from production, and each `Window` now owns an `InheritedRegistry` with provider scope identity, phase-scoped activation, clone-returning scoped reads, subscribing `inherit<T>()`, `PartialEq`-based value-change invalidation, cached-view inherited dependency capture/replay, provider removal cleanup, and test-support inspection helpers. `Provider::new` uses source-location fallback identity; `Provider::new_keyed` covers repeated same-type providers until K02 provides proper `Key` semantics. Public global reads (`read::<T>()` / `try_read::<T>()`) are removed from `flui-core` and `flui-widgets`; low-level lifecycle contexts expose `read_inherited::<T>()` and `inherit::<T>()`. Spec: `docs/superpowers/specs/2026-05-11-K01-provider-rewrite-design.md`. Migration guide: `docs/superpowers/migrations/K01-provider-rewrite.md`.
+
 ## Active Summary (input for /aif-plan)
 <!-- aif:active-summary:start -->
 
-**K05 status (2026-05-11):** Element trait context-object migration is complete in `flui-core`. `LayoutCx`, `PrepaintCx`, and `PaintCx` are the public lifecycle context objects for low-level custom Elements; built-in elements, `AnyElement` traversal, `Window` lifecycle entry points, provider stack preservation, tests, spec, and migration guide are updated. Next critical-chain item is K01 (Provider rewrite).
+**K01 status (2026-05-11):** Provider rewrite is complete in `flui-core`. `Window` owns the inherited registry; `Provider<T>` has K01 scope identity; `LayoutCx`, `PrepaintCx`, and `PaintCx` expose scoped inherited reads; cached views replay inherited dependencies; removal and panic cleanup are covered by focused provider tests; migration docs are present. Next critical-chain item is K02 (Element identity and Key).
 
 **Topic:** Strategic alignment of flui-v2 toward "Flutter ecosystem on Rust" — reconciling vision with current architecture and prior abandoned attempts.
 
@@ -154,8 +156,8 @@ This is the success metric for the "Phase II + Framework + Ecosystem" track.
 The previous SF01-first plan is REVERSED. Audit (see "Phase 0-K Kernel Cleanup audit" session below) identified 24+ structural issues in `flui-core` that block Framework tier work. Kernel Cleanup must precede Framework.
 
 1. **K99, K15, K07, and K05 are complete.**
-2. **Next run `/aif-plan full K01-provider-rewrite`** — replace the thread-local Provider stack with a per-Window registry before Framework `BuildCx` wraps it.
-3. **Then K02 → K03 → K04** in sequence to finish the Phase 0-K critical chain.
+2. **Next run `/aif-plan full K02-element-identity-key`** — add stable Element identity / Key semantics on top of the K01 provider substrate.
+3. **Then K03 → K04** in sequence to finish the Phase 0-K critical chain.
 4. **Hygiene K90-K98 in parallel slots** — small independent PRs, can land any time.
 5. **Internal-org K06, K08, K10, K11 are now unblocked by K05** — schedule them alongside the remaining critical-chain work only when they do not slow K01-K04.
 6. **SF01 only AFTER K01-K04 lands** — Framework tier sits on the cleaned kernel.
@@ -167,7 +169,7 @@ Critical chain (sequential):
 - **K15 (done)** — Re-entrancy contract (document + enforce, queue-not-panic for nested updates)
 - **K07 (done)** — AppCell removal (token-based borrow model, replaces `RefCell<App>`)
 - **K05 (done)** — Element trait → context object (`PaintCx` / `LayoutCx` / `PrepaintCx`)
-- **K01** — Provider rewrite (per-Window InheritedRegistry, reactive subscriptions)
+- **K01** — Provider rewrite (per-Window InheritedRegistry, reactive subscriptions) — complete
 - **K02** — Element identity & Key (Local/Value/Global)
 - **K03** — Render → Build separation (`Widget::build(&self)` for Framework tier)
 - **K04** — Effect / Frame contract (preFrame / postFrame phases, deadlines)
@@ -273,6 +275,8 @@ Independent audit pass added 9 categories not in user's list:
 
 Phase 0-K (Kernel Cleanup) becomes the active phase. Critical chain is sequential:
 `K99 (MSRV 1.95) → K15 (re-entrancy contract) → K07 (AppCell removal) → K05 (Element ctx-object) → K01 (Provider rewrite) → K02 (Key + identity) → K03 (Widget::build separation) → K04 (Effect/Frame contract)`
+
+As of 2026-05-11, K99, K15, K07, K05, and K01 are complete; K02 is next.
 
 Internal-org (K06, K08, K10, K11) parallelizes after K05. Independent items (K12, K13, K14, K16, K17, K20, K21, K22) and hygiene (K90-K98) run in parallel slots throughout.
 

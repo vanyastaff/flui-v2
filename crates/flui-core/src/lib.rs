@@ -178,7 +178,7 @@ pub use local_util::{FutureExt, Timeout, command};
 pub use locale::*;
 pub use media_query::*;
 pub use path_builder::*;
-pub use provider::{InheritedValue, Provider, read, try_read};
+pub use provider::{InheritedValue, Provider};
 // Explicit re-exports from the `platform` module (replacing the former
 // `pub use platform::*;` glob). See spec S01a.3 for rationale. Any new
 // `pub` item in `platform.rs` must be explicitly routed through this

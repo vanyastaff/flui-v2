@@ -1,3 +1,4 @@
+use crate::provider::registry::{InheritedDependency, ProviderScopeKey};
 use crate::{
     AnyElement, AnyEntity, AnyWeakEntity, App, Bounds, ContentMask, Context, Element, ElementId,
     Entity, EntityId, IntoElement, LayoutId, PaintIndex, Pixels, PrepaintStateIndex, Render, Style,
@@ -16,6 +17,8 @@ struct AnyViewState {
     paint_range: Range<PaintIndex>,
     cache_key: ViewCacheKey,
     accessed_entities: FxHashSet<EntityId>,
+    inherited_provider_accesses: Vec<ProviderScopeKey>,
+    inherited_dependencies: Vec<InheritedDependency>,
 }
 
 #[derive(Default)]
@@ -173,18 +176,35 @@ impl Element for AnyView {
                             && !window.dirty_views.contains(&self.entity_id())
                             && !window.refreshing
                         {
-                            let prepaint_start = window.prepaint_index();
-                            window.reuse_prepaint(element_state.prepaint_range.clone());
-                            cx.entities
-                                .extend_accessed(&element_state.accessed_entities);
-                            let prepaint_end = window.prepaint_index();
-                            element_state.prepaint_range = prepaint_start..prepaint_end;
+                            if window.validate_inherited_cache(
+                                &element_state.inherited_provider_accesses,
+                                &element_state.inherited_dependencies,
+                                cx,
+                            ) {
+                                window.replay_inherited_provider_accesses(
+                                    &element_state.inherited_provider_accesses,
+                                );
+                                let dirty_views = window.replay_inherited_dependencies(
+                                    &element_state.inherited_dependencies,
+                                    cx,
+                                );
+                                if dirty_views.is_empty() {
+                                    let prepaint_start = window.prepaint_index();
+                                    window.reuse_prepaint(element_state.prepaint_range.clone());
+                                    cx.entities
+                                        .extend_accessed(&element_state.accessed_entities);
+                                    let prepaint_end = window.prepaint_index();
+                                    element_state.prepaint_range = prepaint_start..prepaint_end;
 
-                            return (None, element_state);
+                                    return (None, element_state);
+                                }
+                            }
                         }
 
                         let refreshing = mem::replace(&mut window.refreshing, true);
                         let prepaint_start = window.prepaint_index();
+                        let inherited_provider_start = window.inherited_provider_access_index();
+                        let inherited_dependency_start = window.inherited_dependency_index();
                         let (mut element, accessed_entities) = cx.detect_accessed_entities(|cx| {
                             let mut element = (self.render)(self, window, cx);
                             let mut layout_cx = crate::LayoutCx::new(
@@ -206,6 +226,10 @@ impl Element for AnyView {
                         });
 
                         let prepaint_end = window.prepaint_index();
+                        let inherited_provider_accesses =
+                            window.inherited_provider_accesses_since(inherited_provider_start);
+                        let inherited_dependencies =
+                            window.inherited_dependencies_since(inherited_dependency_start);
                         window.refreshing = refreshing;
 
                         (
@@ -219,6 +243,8 @@ impl Element for AnyView {
                                     content_mask,
                                     text_style,
                                 },
+                                inherited_provider_accesses,
+                                inherited_dependencies,
                             },
                         )
                     },
@@ -246,6 +272,9 @@ impl Element for AnyView {
                             let mut element_state = element_state.unwrap();
 
                             let paint_start = window.paint_index();
+                            let inherited_provider_start = window.inherited_provider_access_index();
+                            let inherited_dependency_start = window.inherited_dependency_index();
+                            let painted_element = element.is_some();
 
                             if let Some(element) = element {
                                 let refreshing = mem::replace(&mut window.refreshing, true);
@@ -263,6 +292,20 @@ impl Element for AnyView {
                             }
 
                             let paint_end = window.paint_index();
+                            if painted_element {
+                                let paint_provider_accesses = window
+                                    .inherited_provider_accesses_since(inherited_provider_start);
+                                let paint_dependencies =
+                                    window.inherited_dependencies_since(inherited_dependency_start);
+                                extend_unique_inherited_provider_accesses(
+                                    &mut element_state.inherited_provider_accesses,
+                                    paint_provider_accesses,
+                                );
+                                extend_unique_inherited_dependencies(
+                                    &mut element_state.inherited_dependencies,
+                                    paint_dependencies,
+                                );
+                            }
                             element_state.paint_range = paint_start..paint_end;
 
                             ((), element_state)
@@ -280,6 +323,32 @@ impl Element for AnyView {
                 }
             });
         });
+    }
+}
+
+fn extend_unique_inherited_dependencies(
+    target: &mut Vec<InheritedDependency>,
+    dependencies: Vec<InheritedDependency>,
+) {
+    let mut seen = target.iter().cloned().collect::<FxHashSet<_>>();
+
+    for dependency in dependencies {
+        if seen.insert(dependency.clone()) {
+            target.push(dependency);
+        }
+    }
+}
+
+fn extend_unique_inherited_provider_accesses(
+    target: &mut Vec<ProviderScopeKey>,
+    provider_accesses: Vec<ProviderScopeKey>,
+) {
+    let mut seen = target.iter().cloned().collect::<FxHashSet<_>>();
+
+    for provider in provider_accesses {
+        if seen.insert(provider.clone()) {
+            target.push(provider);
+        }
     }
 }
 

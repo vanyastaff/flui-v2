@@ -26,8 +26,9 @@ pub mod state;
 /// Widget pattern documentation — maps Flutter concepts to flui equivalents.
 pub mod widget;
 
-// Re-export core types at crate root
-pub use flui_core::{InheritedValue, Provider, read, try_read};
+// Re-export core provider construction types at crate root. Inherited reads are
+// scoped to `Window` / lifecycle contexts in K01 and are not global functions.
+pub use flui_core::{InheritedValue, Provider};
 pub use layout::{EdgeInsets, Expanded, Flexible, Padding, SizedBox, Stack, column, row};
 pub use primitives::{
     ButtonBase, CheckboxBase, DialogBase, RadioBase, ScrollBase, SelectBase, SliderBase,
