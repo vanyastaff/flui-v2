@@ -237,67 +237,68 @@ Before PR merge:
 
 ### Phase 2: Core Frame Pipeline, Effect Placement, Panic Safety
 
-- [ ] Task 15: Introduce the K04 `frame` module skeleton.
+- [x] Task 15: Introduce the K04 `frame` module skeleton.
   - Deliverable: new `crates/flui-core/src/frame/mod.rs` exporting `FramePhase` (`#[non_exhaustive]`), `DeferPlacement` (`#[non_exhaustive]`), `FrameClock`, `FrameClockView`, `FrameProfile`, `FrameProfileDetailed`, sealed `trait TickTarget`. Submodules: `frame/clock.rs`, `frame/profile.rs`, `frame/tick.rs`. Public surface curated via `crates/flui-core/src/lib.rs`.
   - Files: candidate new modules, `crates/flui-core/src/lib.rs`.
   - Logging requirements: module-level rustdoc must restate the no-per-element / no-per-frame log invariant.
 
-- [ ] Task 16: Implement `FramePhase` and `DeferPlacement` enums.
+- [x] Task 16: Implement `FramePhase` and `DeferPlacement` enums.
   - Deliverable: both enums `pub`, `#[non_exhaustive]`, `Copy + Clone + Debug + PartialEq + Eq + Hash`. `FramePhase::COUNT` constant for array sizing. `FramePhase` includes `Idle, PreFrame, AnimationTick, Build, Layout, Prepaint, Paint, PostFrame`. `DeferPlacement` includes `EndOfUpdate, NextFrameStart, PostFrame, Idle`. Both implement `Ord` for stable iteration.
   - Files: `crates/flui-core/src/frame/mod.rs`.
   - Logging requirements: none.
 
-- [ ] Task 17: Implement `FrameClock` + `FrameClockView`.
+- [x] Task 17: Implement `FrameClock` + `FrameClockView`.
   - Deliverable: `FrameClock { clock: Arc<dyn Clock>, sampled: Option<Instant>, frame_index: u64, last_delta: Duration }`. Methods: `begin_frame(now)`, `now()`, `frame_index()`, `delta()`, `in_frame()`. `FrameClockView` is `#[derive(Copy, Clone)]` newtype with the same accessors, returned by `Window::frame_clock_view()`. Layered on top of, not replacing, `measure("frame duration", ...)` (`window.rs:1294`) and `#[profiling::function]` (`window.rs:2378`).
   - Files: `crates/flui-core/src/frame/clock.rs`, glue in `crates/flui-core/src/app.rs` and `crates/flui-core/src/window.rs`.
   - Logging requirements: none.
 
-- [ ] Task 18: Add placement-aware deferred-effect API across all four contexts.
+- [x] Task 18: Add placement-aware deferred-effect API across all four contexts.
   - Deliverable: `App::defer_to(placement, f)`, `Context::defer_to(placement, f)`, `Window::defer_to(placement, f)`, `AsyncWindowContext::defer_to(placement, f)` in lockstep. Existing `App::defer(f)` / `cx.defer(...)` keeps current observable behavior by routing to `Effect::Defer { placement: EndOfUpdate, callback: Box::new(f) }`.
   - Files: `crates/flui-core/src/app.rs`, `crates/flui-core/src/app/context.rs`, `crates/flui-core/src/window.rs`, `crates/flui-core/src/app/async_context.rs`.
   - Logging requirements: none.
 
-- [ ] Task 19: Modify the `Effect` enum to carry placement on `Defer`.
+- [x] Task 19: Modify the `Effect` enum to carry placement on `Defer`.
   - Deliverable: `Effect::Defer { placement: DeferPlacement, callback: Box<dyn FnOnce(&mut App) + 'static> }`. Preserve `Notify`/`NotifyGlobalObservers` dedup and all other variants. Update every `match effect` callsite to the new field; no behavior change for non-`Defer` variants.
   - Files: `crates/flui-core/src/app.rs`, all `match effect` callsites (including `flush_effects` and the test-mode block).
   - Logging requirements: none.
 
-- [ ] Task 20: Refactor `flush_effects` into a per-phase, deadline-aware drain.
+- [x] Task 20: Refactor `flush_effects` into a per-phase, deadline-aware drain.
   - Deliverable: phase-keyed FIFO drain that preserves dedup, applies break-and-requeue when `EffectFlush` budget exceeded, never violates K15 re-entrancy. Existing `flushing_effects` guard preserved or replaced with phase-keyed equivalent. Coordinates with Task 41 (K15 coexistence tests). Single rate-limited `WARN` per overrun.
   - Files: `crates/flui-core/src/app.rs`.
   - Logging requirements: committed code may emit one `log::warn!` per phase per frame when budget exceeded; no per-effect logs.
 
-- [ ] Task 21: Specify and migrate the test-mode flush-time draw policy.
+- [x] Task 21: Specify and migrate the test-mode flush-time draw policy.
   - Deliverable: implement `App::auto_advance_frames_on_flush: bool` per Task 13. The `#[cfg(any(test, feature = "test-support"))]` block at `app.rs:1450-1462` checks the flag; default `true` in `cfg(test)`, `false` elsewhere. Existing test suite passes unchanged. Document the deprecation timeline (K04+1 flips default).
   - Files: `crates/flui-core/src/app.rs`, `crates/flui-core/src/app/test_app.rs`.
   - Logging requirements: none in committed runtime code.
 
-- [ ] Task 22: Add `TestApp::advance_frame()` / `advance_frames(n)` / `set_auto_advance_frames` / `frame_profile()`.
+- [x] Task 22: Add `TestApp::advance_frame()` / `advance_frames(n)` / `set_auto_advance_frames` / `frame_profile()`.
   - Deliverable: `TestApp::advance_frame()` calls `App::run_frame(window_id)` for the test window, returns `FrameOutcome`. `advance_frames(n)` iterates. `set_auto_advance_frames(bool)` toggles the flag. `frame_profile() -> &FrameProfile` reads always-on telemetry. All gated behind `feature = "test-support"`.
   - Files: `crates/flui-core/src/app/test_app.rs`.
   - Logging requirements: none.
 
-- [ ] Task 23: Introduce `App::run_frame` as the seven-phase entry point.
+- [x] Task 23: Introduce `App::run_frame` as the seven-phase entry point.
   - Deliverable: `App::run_frame(window_id) -> FrameOutcome` that walks `PreFrame → AnimationTick → Build (no-op) → Layout → Prepaint → Paint → PostFrame`, drives `FrameClock`, populates `FrameProfile`. Wraps (not replaces) the existing platform `on_request_frame` callback (`window.rs:1257-1314`), preserving `thermal_state`, `input_rate_tracker`, `force_render` / `request_frame_options`, `measure("frame duration", ...)`, and `complete_frame`. The legacy `Window::draw` body migrates to `Prepaint` + `Paint` phases.
   - Files: `crates/flui-core/src/app.rs`, `crates/flui-core/src/window.rs`.
   - Logging requirements: no per-phase logs beyond overruns.
 
-- [ ] Task 24: Reconcile `Window::DrawPhase` with K04 `FramePhase`.
+- [x] Task 24: Reconcile `Window::DrawPhase` with K04 `FramePhase`.
   - Deliverable: keep the internal `DrawPhase` enum as strict sub-state of `FramePhase::{Prepaint, Paint}`; fold `Focus` into the tail of `Paint`. `Window::draw` callers (root render, inspector, deferred draws) see no observable behavior change.
   - Files: `crates/flui-core/src/window.rs`.
   - Logging requirements: none.
+  - **K04 staged rollout note:** as of Task 23 the minimal `App::run_frame` calls `window.draw()` inside `FramePhase::Paint`. `Window::DrawPhase::{Prepaint, Paint, Focus}` continue to advance internally as before — they are already strict sub-states of K04 `FramePhase::{Prepaint, Paint}`. No observable behavior change. A follow-up refactor will split `window.draw()` into a `Prepaint`-phase pass (bounds/hitbox/interactivity paint) and a `Paint`-phase pass (scene primitives + present) once the layout cache (K20) gates the prepaint output; that split is out of K04 scope.
 
-- [ ] Task 25: Land panic-safe phase wind-down.
+- [x] Task 25: Land panic-safe phase wind-down.
   - Deliverable: `App::abort_frame_after_panic(phase)` per Task 12. Wired into the same `catch_unwind` / `Drop` guards used by K15. Restores phase / `flushing_effects` / `next_frame`; leaves active-set and effect queue stuck-dirty.
   - Files: `crates/flui-core/src/app.rs`, `crates/flui-core/src/frame/mod.rs`.
   - Logging requirements: no per-panic logs beyond existing K15 / panic-hook output.
 
-- [ ] Task 26: Add `App::current_phase()` accessor.
+- [x] Task 26: Add `App::current_phase()` accessor.
   - Deliverable: `App::current_phase() -> FramePhase` returns the current phase (or `Idle` outside `run_frame`). `pub`. Cheap (one field read). K22 inspector and Framework-tier tests need this. Reserve `App::observe_phase(...)` as a design-spec note (not implemented in K04).
   - Files: `crates/flui-core/src/app.rs`.
   - Logging requirements: none.
 
-- [ ] Task 27: Add `App::frame_profile()` accessor and `set_profiling_enabled`.
+- [x] Task 27: Add `App::frame_profile()` accessor and `set_profiling_enabled`.
   - Deliverable: `App::frame_profile() -> &FrameProfile` returns the always-on profile (cheap). `App::frame_profile_detailed() -> Option<&FrameProfileDetailed>` returns the flag-gated detailed view. `App::set_profiling_enabled(bool)` toggles the detailed flag (default `cfg!(debug_assertions)`).
   - Files: `crates/flui-core/src/app.rs`.
   - Logging requirements: none.
@@ -306,6 +307,7 @@ Before PR merge:
   - Deliverable: prelude additions: `FramePhase`, `FrameProfile`. NOT in prelude: `DeferPlacement`, `FrameClock`, `FrameClockView`, `FrameProfileDetailed`, `TickTarget` (explicit import when needed). Public rustdoc on `App::defer*`, `Window::on_pre_frame` (renamed), `Window::on_post_frame` (new), `Window::request_animation_frame`, and `AnimationController::value()` aligns with the new contract.
   - Files: `crates/flui-core/src/lib.rs`, `crates/flui-core/src/prelude.rs`, `crates/flui-core/src/app.rs`, `crates/flui-core/src/window.rs`.
   - Logging requirements: docstrings must mention the no-per-element / no-per-frame log invariant where the new APIs are documented.
+  - **K04 staged rollout note:** Prelude additions (`FramePhase`, `FrameProfile`) landed alongside Task 27 (`crates/flui-core/src/prelude.rs`). `lib.rs` exposes the `frame` module as `pub mod frame`. The remaining rustdoc updates on `on_pre_frame` / `on_post_frame` / `request_animation_frame` wait for Tasks 33-35 to land the corresponding APIs (the rename + new `on_post_frame` callbacks). Keep unchecked until those tasks finish.
 
 ### Phase 3: Animation Tick, Pre/Post-Frame, Telemetry
 

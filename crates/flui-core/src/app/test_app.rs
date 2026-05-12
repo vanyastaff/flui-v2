@@ -26,10 +26,10 @@
 
 use crate::{
     AnyWindowHandle, App, AppCell, AppContext, AsyncApp, BackgroundExecutor, BorrowAppContext,
-    Bounds, ClipboardItem, Context, Entity, ForegroundExecutor, Global, InputEvent, Keystroke,
-    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Platform,
+    Bounds, ClipboardItem, Context, Entity, ForegroundExecutor, FrameOutcome, Global, InputEvent,
+    Keystroke, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Platform,
     PlatformTextSystem, Point, Render, Size, Task, TestDispatcher, TestPlatform, TextSystem,
-    Window, WindowBounds, WindowHandle, WindowOptions, app::GpuiMode,
+    Window, WindowBounds, WindowHandle, WindowOptions, app::GpuiMode, frame::profile::FrameProfile,
 };
 use std::{future::Future, rc::Rc, sync::Arc, time::Duration};
 
@@ -308,6 +308,66 @@ impl TestApp {
     pub fn windows(&self) -> Vec<AnyWindowHandle> {
         self.read(|cx| cx.windows())
     }
+
+    /// K04 Task 22: toggles the test-mode auto-redraw at
+    /// `App::flush_effects_at` (the K04 Task 21 flag). Default is `true` under
+    /// `cfg(test, feature = "test-support")` so pre-K04 tests keep working
+    /// unchanged. Phase-order tests and other K04 / Framework-tier tests flip
+    /// this to `false` and drive frames explicitly via [`Self::advance_frame`].
+    ///
+    /// K04+1 will flip the default to `false` once Tier-C tests migrate to
+    /// `advance_frame`.
+    pub fn set_auto_advance_frames(&mut self, enabled: bool) {
+        let mut app = self.app.borrow_mut();
+        app.auto_advance_frames_on_flush = enabled;
+    }
+
+    /// K04 Task 22: returns the most recently recorded always-on per-frame
+    /// telemetry. Before the first [`Self::advance_frame`] call, every field
+    /// is zero / empty (see [`FrameProfile::default()`]).
+    pub fn frame_profile(&self) -> FrameProfile {
+        *self.app.borrow().frame_profile()
+    }
+
+    /// K04 Task 22: drives one frame through [`App::run_frame`] on the
+    /// most-recently-opened window. Returns the resulting [`FrameOutcome`].
+    ///
+    /// # Window selection
+    ///
+    /// Picks the single open window when there is exactly one; panics when
+    /// there is none. With multiple windows, use [`TestAppWindow::advance_frame`]
+    /// directly on the desired window for unambiguous targeting.
+    pub fn advance_frame(&mut self) -> FrameOutcome {
+        let handle = {
+            let app = self.app.borrow();
+            let mut handles = app.windows();
+            assert!(
+                !handles.is_empty(),
+                "TestApp::advance_frame called with no open windows; open a window first"
+            );
+            assert_eq!(
+                handles.len(),
+                1,
+                "TestApp::advance_frame is ambiguous with {} open windows; use TestAppWindow::advance_frame",
+                handles.len()
+            );
+            handles.pop().unwrap()
+        };
+        let outcome = self
+            .app
+            .borrow_mut()
+            .run_frame(handle)
+            .expect("run_frame failed");
+        self.run_until_parked();
+        outcome
+    }
+
+    /// K04 Task 22: iterates [`Self::advance_frame`] `n` times. Returns a vec
+    /// of per-frame outcomes in order. `n == 0` returns an empty vec without
+    /// touching the App.
+    pub fn advance_frames(&mut self, n: usize) -> Vec<FrameOutcome> {
+        (0..n).map(|_| self.advance_frame()).collect()
+    }
 }
 
 impl Default for TestApp {
@@ -490,6 +550,22 @@ impl<V: 'static + Render> TestAppWindow<V> {
         })
         .unwrap();
     }
+
+    /// K04 Task 22: drives one frame through [`App::run_frame`] on this
+    /// specific window. Returns the resulting [`FrameOutcome`].
+    ///
+    /// Use this rather than [`TestApp::advance_frame`] when the test owns
+    /// multiple windows and needs to advance a specific one.
+    pub fn advance_frame(&mut self) -> FrameOutcome {
+        let any_handle: AnyWindowHandle = self.handle.into();
+        let outcome = self
+            .app
+            .borrow_mut()
+            .run_frame(any_handle)
+            .expect("run_frame failed");
+        self.background_executor.run_until_parked();
+        outcome
+    }
 }
 
 impl<V> Clone for TestAppWindow<V> {
@@ -577,6 +653,30 @@ mod tests {
         app.read_entity(&entity, |counter, _| {
             assert_eq!(counter.count, 43);
         });
+    }
+
+    #[test]
+    fn test_advance_frame_records_profile() {
+        let mut app = TestApp::new();
+        // Phase order needs the legacy auto-redraw OFF — otherwise effects
+        // flushed during `open_window` already drew once and a subsequent
+        // `advance_frame` is redundant.
+        app.set_auto_advance_frames(false);
+
+        let mut window = app.open_window(Counter::new);
+
+        let initial = app.frame_profile().frame_index;
+
+        let outcome = window.advance_frame();
+
+        assert!(outcome.panicked_phase.is_none());
+        assert_eq!(outcome.frame_index, initial + 1);
+
+        let profile = app.frame_profile();
+        assert_eq!(profile.frame_index, outcome.frame_index);
+
+        drop(window);
+        app.update(|cx| cx.shutdown());
     }
 
     #[test]

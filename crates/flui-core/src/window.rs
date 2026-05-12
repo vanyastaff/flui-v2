@@ -1805,9 +1805,41 @@ impl Window {
 
     /// Schedules the given function to be run at the end of the current effect cycle, allowing entities
     /// that are currently on the stack to be returned to the app.
+    ///
+    /// Routes through K04 [`DeferPlacement::EndOfUpdate`] — the placement that
+    /// drains at every phase boundary. Callers that want a specific later phase
+    /// should use [`Window::defer_to`] instead.
+    ///
+    /// [`DeferPlacement::EndOfUpdate`]: crate::frame::DeferPlacement::EndOfUpdate
     pub fn defer(&self, cx: &mut App, f: impl FnOnce(&mut Window, &mut App) + 'static) {
         let handle = self.handle;
         cx.defer(move |cx| {
+            handle.update(cx, |_, window, cx| f(window, cx)).ok();
+        });
+    }
+
+    /// K04 placement-aware deferred callback (window-scoped).
+    ///
+    /// Schedules `f` to run at the next `placement` boundary against this window.
+    /// Mirror of [`Window::defer`] using [`App::defer_to`] under the hood; the
+    /// window handle is captured so the callback runs only if the window is
+    /// still alive at drain time.
+    ///
+    /// As of K04 Phase 2 Task 18 the API is wired but `flush_effects` does not
+    /// yet filter by placement (Task 20). For now every placement drains
+    /// identically to [`DeferPlacement::EndOfUpdate`]. Task 20 will make
+    /// placements observable; downstream code that calls `defer_to` today will
+    /// pick up the corrected drain semantics automatically when Task 20 lands.
+    ///
+    /// [`DeferPlacement::EndOfUpdate`]: crate::frame::DeferPlacement::EndOfUpdate
+    pub fn defer_to(
+        &self,
+        cx: &mut App,
+        placement: crate::frame::DeferPlacement,
+        f: impl FnOnce(&mut Window, &mut App) + 'static,
+    ) {
+        let handle = self.handle;
+        cx.defer_to(placement, move |cx| {
             handle.update(cx, |_, window, cx| f(window, cx)).ok();
         });
     }
