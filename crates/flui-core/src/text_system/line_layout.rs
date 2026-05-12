@@ -147,6 +147,22 @@ impl LineLayout {
             .enumerate()
             .flat_map(move |(run_ix, run)| {
                 run.glyphs.iter().enumerate().map(move |(glyph_ix, glyph)| {
+                    // CONTRACT (ADR-004): `glyph.index` is the byte offset
+                    // recorded by the platform shaper (CoreText / DirectWrite /
+                    // HarfBuzz) for this glyph cluster. The shaper is the
+                    // source (c) per `ADR-004-text-slicing-utf8-safety.md` —
+                    // canonical text-run shaping yields char-boundary indices.
+                    // A future shaper that produces mid-codepoint indices for
+                    // grapheme clusters (ZWJ sequences, regional indicators)
+                    // would otherwise panic at `.unwrap()` below; the assert
+                    // turns that into a deterministic test failure.
+                    debug_assert!(
+                        text.is_char_boundary(glyph.index),
+                        "ADR-004: glyph.index ({}) must be a UTF-8 char boundary in \
+                         the run text (len = {}); shaper produced a mid-codepoint index",
+                        glyph.index,
+                        text.len()
+                    );
                     let character = text[glyph.index..].chars().next().unwrap();
                     (
                         WrapBoundary { run_ix, glyph_ix },

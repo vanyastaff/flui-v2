@@ -792,6 +792,10 @@ impl Element for InteractiveText {
                                         }
 
                                         mouse_down.take();
+                                        // LINT (ADR-002): per-element selection state.
+                                        // Candidate for migration to `cx.notify(view)` when
+                                        // this code path is next touched (ADR-002 decision 4:
+                                        // mixed files allowed; rule applies to touched sites).
                                         window.refresh();
                                     }
                                 },
@@ -806,6 +810,9 @@ impl Element for InteractiveText {
                                             text_layout.index_for_position(event.position)
                                     {
                                         mouse_down.set(Some(mouse_down_index));
+                                        // LINT (ADR-002): per-element selection state.
+                                        // Candidate for migration to `cx.notify(view)` when
+                                        // this code path is next touched.
                                         window.refresh();
                                     }
                                 },

@@ -749,6 +749,9 @@ mod test {
                 }
                 self.scroll_handle
                     .scroll_to_item(self.index, ScrollStrategy::Nearest);
+                // LINT (ADR-002): test-only TestView action handler — scroll target
+                // change is a discrete structural change (ADR-001 audit); full
+                // refresh is acceptable.
                 window.refresh();
             }
 
@@ -765,6 +768,7 @@ mod test {
                 }
                 self.scroll_handle
                     .scroll_to_item(self.index, ScrollStrategy::Nearest);
+                // LINT (ADR-002): test-only TestView action handler — see above.
                 window.refresh();
             }
         }

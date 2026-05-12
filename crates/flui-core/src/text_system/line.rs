@@ -207,7 +207,21 @@ impl ShapedLine {
             decoration_offset = run_end;
         }
 
-        // Split text
+        // Split text.
+        // CONTRACT (ADR-004): `byte_index` is produced by `ShapedLine::split_at`
+        // from a column/x-offset by walking the layout runs. Whether the result
+        // lands on a char boundary in every path (mixed-script lines, RTL
+        // embeds, soft hyphens) is held by the layout engine; this assertion
+        // turns a future regression into a deterministic debug-mode test
+        // failure instead of a CJK-resize-only panic at a user site. The
+        // matching slice operations below are sources (c) per
+        // `docs/research/adr/ADR-004-text-slicing-utf8-safety.md`.
+        debug_assert!(
+            self.text.is_char_boundary(byte_index),
+            "ADR-004: byte_index ({byte_index}) must be a UTF-8 char boundary in \
+             self.text (len = {})",
+            self.text.len()
+        );
         let left_text = SharedString::new(self.text[..byte_index].to_string());
         let right_text = SharedString::new(self.text[byte_index..].to_string());
 

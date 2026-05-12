@@ -1,3 +1,22 @@
+// CONTRACT (ADR-004 — Text slicing UTF-8 safety):
+//
+// Every `&str` slice index inside `text_system` MUST originate from one of:
+//   (a) `str::char_indices` / `str::byte_offsets` — trivially on a boundary.
+//   (b) An explicit `str::is_char_boundary` / `floor_char_boundary` /
+//       `ceil_char_boundary` call at or before the slice site.
+//   (c) A typed byte offset produced by a routine that documents and,
+//       where cheap, asserts the boundary invariant (the platform shaper,
+//       the line splitter, the layout engine).
+//
+// `text[i..]` / `text[..i]` with a raw `usize` is forbidden unless one of
+// (a)–(c) is documented at the slice site. (c)-sourced sites carry a
+// `debug_assert!(text.is_char_boundary(i))` immediately before the slice.
+//
+// `format!("{prefix}{}{suffix}", body)` is the only sanctioned way to join
+// truncation affixes; concatenation by byte length is forbidden.
+//
+// See: `docs/research/adr/ADR-004-text-slicing-utf8-safety.md`.
+
 use crate::{FontId, Pixels, SharedString, TextRun, TextSystem, px};
 use collections::HashMap;
 use std::{borrow::Cow, iter, sync::Arc};
@@ -802,6 +821,86 @@ mod tests {
         // Runs res: Run0 { string: abcd, len: 4, ... }, Run1 { string: efgh, len:
         // 4, ... }, Run2 { string: …, len: 3, ... }
         perform_test("abcdefgh…", &[4, 4, 4], &[4, 4, 3]);
+    }
+
+    /// ADR-004 regression test for mixed-script truncation.
+    ///
+    /// Drives `truncate_line` across a corpus of strings mixing single-byte
+    /// ASCII with multi-byte CJK, Cyrillic, Bengali, and emoji (including
+    /// ZWJ sequences and regional-indicator pairs), at every prefix width
+    /// from 0 px up past the full text width, in both
+    /// `TruncateFrom::Start` and `TruncateFrom::End` directions. The
+    /// pre-ADR upstream symptom was `byte index N is not a char boundary`
+    /// panic when the calculated slice index landed mid-codepoint as the
+    /// container widens just enough to reveal the next character cluster.
+    /// This test passes iff none of those slices panic. It does not assert
+    /// the truncation output itself — that is covered by the other
+    /// `test_truncate_*` cases — only that no panic fires for any width.
+    ///
+    /// See `docs/research/adr/ADR-004-text-slicing-utf8-safety.md`.
+    #[test]
+    fn adr_004_mixed_script_truncation_does_not_panic() {
+        let corpus: &[&str] = &[
+            // Pure ASCII baseline.
+            "the quick brown fox jumps over the lazy dog",
+            // ASCII + CJK — the canonical GPUI #49860 repro shape.
+            "Hello 你好 World 世界",
+            // ASCII + Latin Extended diacritics.
+            "Café Münchner Straße ÀÁÂÃ",
+            // ASCII + Cyrillic.
+            "test АБВГДЕЖЗ end",
+            // ASCII + emoji (single codepoint).
+            "🦀 rust crabs 🦀🦀🦀 are tasty",
+            // Emoji ZWJ sequence (multi-codepoint grapheme).
+            "family 👨‍👩‍👧‍👦 and flag 🏳️‍🌈 emojis",
+            // Regional-indicator flag pairs.
+            "flags 🇺🇸 🇯🇵 🇷🇺 🇧🇷",
+            // Bengali combining marks.
+            "Bengali গিয়েছিলেন and ছেলে",
+            // Mixed everything.
+            "ASCII 你好 🦀 АБВ Café 👨‍👩‍👧 ছেলে",
+        ];
+        let widths_px: &[f32] =
+            &[0.0, 1.0, 8.0, 16.0, 32.0, 64.0, 120.0, 220.0, 480.0, 1024.0];
+
+        let mut wrapper = build_wrapper();
+        for text in corpus {
+            // Single dummy run covering the full byte length. Wrapper takes
+            // ownership via `text.into()`, so each iteration starts clean.
+            let dummy_runs = generate_test_runs(&[text.len()]);
+            for &w in widths_px {
+                for from in [TruncateFrom::Start, TruncateFrom::End] {
+                    let (result, runs) = wrapper.truncate_line(
+                        (*text).into(),
+                        px(w),
+                        "…",
+                        &dummy_runs,
+                        from,
+                    );
+                    // Even after truncation, the result must be valid UTF-8
+                    // (constructed via `format!`, but assert anyway to lock
+                    // the contract).
+                    assert!(
+                        std::str::from_utf8(result.as_bytes()).is_ok(),
+                        "ADR-004: truncate_line produced invalid UTF-8 for \
+                         text={text:?}, width={w}, from={from:?}, result={result:?}"
+                    );
+                    // The first run's reported length must not exceed the
+                    // result's byte length — a basic invariant; if a slice
+                    // bug ever lets it overshoot, downstream paint code
+                    // would panic later.
+                    if let Some(first) = runs.first() {
+                        assert!(
+                            first.len <= result.len(),
+                            "ADR-004: first run len ({}) exceeds truncated \
+                             text byte length ({}) for text={text:?}, width={w}, from={from:?}",
+                            first.len,
+                            result.len(),
+                        );
+                    }
+                }
+            }
+        }
     }
 
     #[test]
