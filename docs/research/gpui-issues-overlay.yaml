@@ -85,8 +85,8 @@ issues:
     notes: 'Покрыто ADR-003 (docs/research/adr/ADR-003-color-alpha-pipeline.md). `Rgba::blend` в color.rs:58 возвращает `out.a = self.a` — это та же ошибка. GPU side корректен (PREMULTIPLIED_ALPHA_BLENDING). Action item 1 в ADR-003: исправить CPU-формулу.'
   55214:
     adr: 'yes'
-    repro: 'n-a'
-    notes: 'Metrics hinting + bi-level rendering. Архитектурный выбор: подписан на Skrifa. ADR в text_system по text rasterization strategy.'
+    repro: 'partial'
+    notes: 'Покрыто ADR-013 (docs/research/adr/ADR-013-text-rasterization-strategy.md). Mac forces subpixel+AA (text_system.rs:442); нет выбора bi-level/hinted. Контракт: TextRasterMode enum + поле в TextStyle + per-platform fallback.'
   52715:
     adr: 'yes'
     repro: 'unknown'
