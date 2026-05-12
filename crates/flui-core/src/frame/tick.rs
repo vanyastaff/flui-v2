@@ -65,9 +65,14 @@ impl TickTargetId {
     pub(crate) fn allocate() -> Self {
         static COUNTER: AtomicU64 = AtomicU64::new(1);
         // `Relaxed` is sufficient — we only need atomicity, not ordering
-        // across IDs. Saturating would risk reuse; on `u64` overflow we
-        // accept a `0` collision rather than panic (would take ~584 years
-        // at 1 ID / nanosecond).
+        // across IDs.
+        //
+        // Counter starts at 1 so `0` is effectively a reserved sentinel
+        // (never returned under non-overflowed conditions). On `u64`
+        // wrap-around — which would take ~584 years at 1 ID / nanosecond —
+        // a post-overflow `0` is theoretically possible; the cost of
+        // adding `fetch_update` to skip `0` is not worth paying for a
+        // never-occurring case.
         Self(COUNTER.fetch_add(1, Ordering::Relaxed))
     }
 

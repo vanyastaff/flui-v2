@@ -247,7 +247,7 @@ pub enum FramePhase {
 
 #### Interleaved `EffectFlush` schedule
 
-```
+```text
 PreFrame  →  flush(EndOfUpdate)
 AnimationTick  →  flush(EndOfUpdate)
 Build  →  flush(EndOfUpdate)
@@ -433,7 +433,7 @@ the platform constraint: enforce only what is safely interruptible.
 
 **Budgets (per `docs/promt.md` §3.1):**
 
-```
+```text
 PreFrame:      1 ms (advisory)
 AnimationTick: 1 ms (advisory)
 Build:         4 ms (reserved hard, SF05)

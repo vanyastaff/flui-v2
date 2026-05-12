@@ -152,15 +152,22 @@ fn k04_defer_placements_drain_in_matching_phase() {
     // Frame 2: NextFrameStart drains in PreFrame.
     let _ = window.advance_frame();
 
+    // Tighten the assertions: `contains` alone would let a same-frame
+    // misfire of `NextFrameStart` pass. Require strict relative ordering —
+    // the `PostFrame` defer must fire BEFORE the `NextFrameStart` defer
+    // (which lives in frame 2's `PreFrame`).
     let observed = log.borrow().clone();
+    let post_idx = observed
+        .iter()
+        .position(|p| *p == FramePhase::PostFrame)
+        .unwrap_or_else(|| panic!("expected PostFrame drain; observed {:?}", observed));
+    let pre_idx = observed
+        .iter()
+        .position(|p| *p == FramePhase::PreFrame)
+        .unwrap_or_else(|| panic!("expected PreFrame drain; observed {:?}", observed));
     assert!(
-        observed.contains(&FramePhase::PostFrame),
-        "DeferPlacement::PostFrame must drain in PostFrame; observed {:?}",
-        observed
-    );
-    assert!(
-        observed.contains(&FramePhase::PreFrame),
-        "DeferPlacement::NextFrameStart must drain in PreFrame; observed {:?}",
+        post_idx < pre_idx,
+        "NextFrameStart defer must not fire before current-frame PostFrame; observed {:?}",
         observed
     );
 
@@ -170,7 +177,9 @@ fn k04_defer_placements_drain_in_matching_phase() {
 
 /// Task 38 follow-on: three consecutive frames each fire on_pre_frame +
 /// on_post_frame markers in their respective phases, and `frame_index`
-/// advances monotonically.
+/// advances monotonically. Phase order is verified by attaching markers
+/// per frame and asserting the sequence
+/// `PreFrame, PostFrame, PreFrame, PostFrame, PreFrame, PostFrame`.
 #[test]
 fn k04_phase_order_three_frames() {
     let mut app = TestApp::new();
@@ -179,8 +188,21 @@ fn k04_phase_order_three_frames() {
     let mut window = app.open_window(ProbeView::new);
 
     let outcomes: Rc<RefCell<Vec<FrameOutcome>>> = Rc::new(RefCell::new(Vec::new()));
+    let phase_log = new_phase_log();
 
     for _ in 0..3 {
+        // Re-register the per-frame markers before each `advance_frame` so
+        // we observe the phases for that frame (FnOnce drains once).
+        app.update({
+            let phase_log = phase_log.clone();
+            move |cx| {
+                cx.on_pre_frame({
+                    let phase_log = phase_log.clone();
+                    move |cx| record(&phase_log, cx.current_phase())
+                });
+                cx.on_post_frame(move |cx| record(&phase_log, cx.current_phase()));
+            }
+        });
         let out = window.advance_frame();
         outcomes.borrow_mut().push(out);
     }
@@ -193,6 +215,19 @@ fn k04_phase_order_three_frames() {
     for out in outs {
         assert!(out.panicked_phase.is_none());
     }
+
+    // Phase order across three frames: PreFrame, PostFrame repeated 3x.
+    assert_eq!(
+        phase_log.borrow().as_slice(),
+        &[
+            FramePhase::PreFrame,
+            FramePhase::PostFrame,
+            FramePhase::PreFrame,
+            FramePhase::PostFrame,
+            FramePhase::PreFrame,
+            FramePhase::PostFrame,
+        ]
+    );
 
     drop(window);
     app.update(|cx| cx.shutdown());

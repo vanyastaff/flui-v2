@@ -2072,8 +2072,8 @@ impl Window {
     /// `on_next_frame` was misleading — callbacks fire BEFORE the next
     /// frame's draw, not after. Use `on_pre_frame` going forward.
     #[deprecated(
-        since = "0.2.0",
-        note = "renamed to `on_pre_frame` — the callback fires before the next frame's draw (K04)"
+        since = "0.1.0",
+        note = "renamed to `on_pre_frame` (K04) — the callback fires before the next frame's draw; this alias is scheduled for removal in 0.2.0"
     )]
     pub fn on_next_frame(&self, callback: impl FnOnce(&mut Window, &mut App) + 'static) {
         self.on_pre_frame(callback);
@@ -2120,8 +2120,18 @@ impl Window {
     ///   defense-in-depth invalidator mark for callers that hit this method
     ///   outside a view context.
     pub fn request_animation_frame(&self) {
-        let entity = self.current_view();
-        self.on_pre_frame(move |_, cx| cx.notify(entity));
+        // Inside a view-rendering context (paint / prepaint / render),
+        // `try_current_view` returns the active view's `EntityId` and we
+        // schedule a per-view notify for next frame. Outside that context
+        // (e.g. called from a `cx.spawn` task, an `on_post_frame` callback,
+        // or a non-view async path), `try_current_view` is `None` and we
+        // fall back to dirtying the entire window invalidator. Without the
+        // fallback, `current_view()` would assert and panic.
+        if let Some(entity) = self.try_current_view() {
+            self.on_pre_frame(move |_, cx| cx.notify(entity));
+        } else {
+            self.invalidator.set_dirty(true);
+        }
         // Idempotence flag — defense-in-depth for callers outside a view.
         self.request_next_frame.set(true);
     }

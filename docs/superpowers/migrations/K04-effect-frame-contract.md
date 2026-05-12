@@ -239,6 +239,22 @@ default `true`.
 `TestAppWindow::advance_frame()` is the per-window variant for tests that
 own multiple windows.
 
+### Panic conditions on `TestApp::advance_frame()`
+
+`TestApp::advance_frame()` is a convenience wrapper that assumes the
+TestApp owns exactly one open window. It panics in two scenarios:
+
+- **No windows open** — `"TestApp::advance_frame called with no open
+  windows; open a window first"`. Construct the test window via
+  `app.open_window(...)` before calling `advance_frame()`.
+- **Multiple windows open** — `"TestApp::advance_frame is ambiguous with
+  N open windows; use TestAppWindow::advance_frame"`. With more than one
+  window, the wrapper cannot pick which one to drive — call
+  `window.advance_frame()` on the specific `TestAppWindow` instead.
+
+The per-window `TestAppWindow::advance_frame()` does not panic on
+window-count; it drives the window the handle owns.
+
 ## K15 Q&A
 
 **Q: Did K04 add new re-entry escape paths?**

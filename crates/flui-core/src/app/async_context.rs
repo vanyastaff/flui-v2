@@ -335,8 +335,8 @@ impl AsyncWindowContext {
 
     /// K04 Task 33: deprecated alias for [`Self::on_pre_frame`].
     #[deprecated(
-        since = "0.2.0",
-        note = "renamed to `on_pre_frame` — the callback fires before the next frame's draw (K04)"
+        since = "0.1.0",
+        note = "renamed to `on_pre_frame` (K04) — the callback fires before the next frame's draw; this alias is scheduled for removal in 0.2.0"
     )]
     pub fn on_next_frame(&mut self, f: impl FnOnce(&mut Window, &mut App) + 'static) {
         self.on_pre_frame(f);
