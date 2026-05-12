@@ -2029,8 +2029,8 @@ impl Window {
     /// `on_next_frame` was misleading — callbacks fire BEFORE the next
     /// frame's draw, not after. Use `on_pre_frame` going forward.
     #[deprecated(
-        since = "K04",
-        note = "renamed to `on_pre_frame` — the callback fires before the next frame's draw"
+        since = "0.2.0",
+        note = "renamed to `on_pre_frame` — the callback fires before the next frame's draw (K04)"
     )]
     pub fn on_next_frame(&self, callback: impl FnOnce(&mut Window, &mut App) + 'static) {
         self.on_pre_frame(callback);
