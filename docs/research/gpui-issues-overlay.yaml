@@ -41,8 +41,8 @@ issues:
     notes: 'X11 1.5x scale: wrap guides слишком тонкие. Pixel-rounding в рендере под non-integer scale. Локально, без ADR.'
   14590:
     adr: 'yes'
-    repro: 'n-a'
-    notes: 'X11 background blur. Feature ADR — стоит решать вместе с #5040 closed по transparency.'
+    repro: 'partial'
+    notes: 'Покрыто ADR-017 (docs/research/adr/ADR-017-window-background-blur.md). API уже есть: WindowBackgroundAppearance::Blurred. X11 импл отсутствует — нужно поставить _KDE_NET_WM_BLUR_BEHIND_REGION и _NET_WM_DEEPIN_BLUR_REGION_ROUNDED xprops.'
   54017:
     adr: 'maybe'
     repro: 'unknown'
