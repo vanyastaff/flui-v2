@@ -49,8 +49,8 @@ issues:
     notes: Floating window не становится key. macOS NSWindow level/key behavior. Если у нас macOS не приоритет — отложить.
   52550:
     adr: 'yes'
-    repro: 'n-a'
-    notes: 'Архитектурный: контракт IME/keybinding. doCommandBySelector ignores selector → ломает DefaultKeyBinding.dict. ADR по input/IME pipeline (касается всех платформ).'
+    repro: 'yes'
+    notes: 'Покрыто ADR-009 (docs/research/adr/ADR-009-input-ime-contract.md). `do_command_by_selector` в mac/window.rs:2423 имеет тот же шаблон — селектор игнорируется (`_: Sel`), keystroke re-fire через keymap. Контракт: дополнить InputHandler методом handle_editor_command + enum EditorCommand.'
   40623:
     adr: 'no'
     repro: 'unknown'
