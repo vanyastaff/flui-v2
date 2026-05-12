@@ -121,8 +121,8 @@ issues:
     notes: 'Покрыто ADR-014 (docs/research/adr/ADR-014-software-rendering-fallback.md). Адаптер не классифицируется, frame budget не tightens на software. Контракт: RendererKind + per-kind frame budget (60→30 fps).'
   44339:
     adr: 'yes'
-    repro: 'unknown'
-    notes: 'ObjectFit::Cover не клипает rounded corners — закругляется сам image, а не visible area. Архитектурный: composition порядок clip + image transform. Применимо к нашим img-элементам.'
+    repro: 'yes'
+    notes: 'Покрыто ADR-015 (docs/research/adr/ADR-015-image-clip-vs-corner.md). img.rs:490 применяет corner_radii к new_bounds (image, расширенный Cover), а не к container. push_layer не имеет rounded варианта. Контракт: push_rounded_clip + clip-then-paint.'
   44252:
     adr: 'no'
     repro: 'n-a'
