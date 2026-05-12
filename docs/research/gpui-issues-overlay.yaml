@@ -117,8 +117,8 @@ issues:
     notes: crates.io старый gpui + macOS SDK mismatch. Чужая инфраструктурная проблема.
   45897:
     adr: 'yes'
-    repro: 'unknown'
-    notes: 'Нет Vulkan → 100% CPU на всех ядрах. Архитектурный: fallback стратегия рендера / event loop при software rendering. У нас wgpu — проверить software path.'
+    repro: 'partial'
+    notes: 'Покрыто ADR-014 (docs/research/adr/ADR-014-software-rendering-fallback.md). Адаптер не классифицируется, frame budget не tightens на software. Контракт: RendererKind + per-kind frame budget (60→30 fps).'
   44339:
     adr: 'yes'
     repro: 'unknown'
