@@ -265,11 +265,13 @@ only and may coalesce across multiple `Idle` entries.
 
 ### D2. `FramePhase::Build` Reservation
 
-`Build` is a no-op phase in K04. The phase enters and exits immediately, drains no effects,
-advances no state. The slot exists between `AnimationTick` and `Layout` so SF05 can fill it
-with `BuildOwner::flush_dirty()` without adding a new enum variant — which would otherwise be
-a SemVer break under `#[non_exhaustive]` if downstream code matched exhaustively on
-`FramePhase`.
+`Build` has a **no-op phase body** in K04: the phase enters and exits immediately, the body
+itself performs no work and advances no state. The standard boundary flush
+(`flush(EndOfUpdate)`, listed in the boundary schedule above) still runs at the `Build`
+boundaries — that is a property of every phase, not phase-body work. The slot exists between
+`AnimationTick` and `Layout` so SF05 can fill the phase body with `BuildOwner::flush_dirty()`
+without adding a new enum variant — which would otherwise be a SemVer break under
+`#[non_exhaustive]` if downstream code matched exhaustively on `FramePhase`.
 
 The deadline class for `Build` is "Reserved Hard" — it will become a hard deadline in SF05
 because rebuild storms must be terminable. K04 does not implement the hard mode; the slot's
@@ -492,17 +494,29 @@ K04. Future opening (removing the sealing supertrait) is an additive change.
 ```rust
 pub struct AnimationController {
     // ... existing fields ...
-    cached_at_frame: Option<(u64, f32)>,  // (frame_index, sampled_value)
+    // Interior mutability — `value(&self)` reads the cache via shared
+    // reference, so the cache fields must allow mutation through `&self`.
+    // `Cell` is enough because the cache holds `Copy` types only.
+    last_tick_frame_index: Cell<Option<u64>>,        // seeded by `tick()`
+    value_cache: Cell<Option<(u64, f32)>>,           // (frame_index, sampled_value)
 }
 
 impl AnimationController {
     pub fn value(&self) -> f32 {
-        let frame_index = /* read frame_clock.frame_index() */;
-        if let Some((cached_idx, cached_val)) = self.cached_at_frame {
-            if cached_idx == frame_index { return cached_val; }
+        // The walker passes `frame_index` into `tick()` and the controller
+        // caches it in `last_tick_frame_index`. Outside an `AnimationTick`
+        // (pre-attach, between frames) the cache is bypassed and value()
+        // falls back to ticker.now() — same behavior as pre-K04.
+        if let Some(frame_index) = self.last_tick_frame_index.get()
+            && let Some((cached_idx, cached_val)) = self.value_cache.get()
+            && cached_idx == frame_index
+        {
+            return cached_val;
         }
-        let val = self.sample();  // existing computation
-        self.cached_at_frame = Some((frame_index, val));
+        let val = self.sample();  // existing curve / simulation computation
+        if let Some(frame_index) = self.last_tick_frame_index.get() {
+            self.value_cache.set(Some((frame_index, val)));
+        }
         val
     }
 }
