@@ -13,8 +13,8 @@ issues:
     notes: Wayland-specific (drag/resize не работают для standalone). Под нас не приоритет, пока Linux не доезжаем.
   46378:
     adr: 'yes'
-    repro: 'unknown'
-    notes: 'Архитектурный: AppContext::displays() пуст до создания первого окна. ADR по lifecycle обнаружения мониторов до окон.'
+    repro: 'partial'
+    notes: 'Покрыто ADR-007 (docs/research/adr/ADR-007-display-lifecycle.md). `App::displays` — pass-through в platform без кеша/wait. Contract decision 6 требует "blocking populate" если платформе нужен event-loop tick.'
   44529:
     adr: 'no'
     repro: 'unknown'
@@ -24,13 +24,13 @@ issues:
     repro: 'unknown'
     notes: X11 cursor lag на 4K. Платформенный bug. Linux пока не приоритет.
   30469:
-    adr: 'no'
-    repro: 'unknown'
-    notes: 'Output-disconnect, не device-loss — ADR-005 явно дисамбигуирует и кладёт в out-of-scope. Отдельный future ADR (Wayland wl_output lifecycle), сиблинг #46378.'
-  21851:
     adr: 'yes'
     repro: 'unknown'
-    notes: 'Архитектурный: обновление DPI scale при переходе окна между мониторами X11. ADR по DPI tracking contract.'
+    notes: 'Покрыто ADR-007 (docs/research/adr/ADR-007-display-lifecycle.md), decision 5: output disconnect reattaches window to primary_display, не убивает приложение. Action item 4 — тест на test-platform.'
+  21851:
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Покрыто ADR-007 (docs/research/adr/ADR-007-display-lifecycle.md). `scale_factor` обновляется только в `bounds_changed`; cross-monitor без resize пропускается. Action item 3 в ADR-007 добавит XRandR-driven path.'
   21341:
     adr: 'maybe'
     repro: 'unknown'
