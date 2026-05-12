@@ -166,8 +166,10 @@ debug-only assert added with this ADR — see action item 2 below.
    [ADR-002 — Hover / active / pressed state invalidation](ADR-002-hover-active-invalidation.md).
    The contract is fixed; the actual `div.rs` migration is its own action
    item, not landed here.
-4. Open a separate spec file for partial present once K-series finishes —
-   referenced by GPUI #15166 and Flutter #14288 in the snapshot.
+4. ~~Open a separate spec file for partial present once K-series finishes.~~
+   **Done.** See [ADR-006 — Partial present / damage regions](ADR-006-partial-present-damage-regions.md).
+   That ADR is a scoping document, not an implementation; the work itself
+   remains queued.
 
 ## References
 

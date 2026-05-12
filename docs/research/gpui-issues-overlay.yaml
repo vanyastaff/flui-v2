@@ -158,7 +158,7 @@ issues:
   15166:
     adr: 'yes'
     repro: 'yes'
-    notes: 'Подтверждено в ADR-001: `present()` зовёт `platform_window.draw(&scene)` без damage region. ADR-001 фиксирует это как known gap; partial present — отдельный future ADR (action item 4).'
+    notes: 'Покрыто ADR-001 + scoping ADR-006 (docs/research/adr/ADR-006-partial-present-damage-regions.md). PlatformWindow::draw принимает только Scene без damage; ADR-006 фиксирует constraints на будущий damage-region API (backward-compatible, opt-in per backend, device pixels, additive hint).'
   14110:
     adr: 'no'
     repro: 'unknown'
