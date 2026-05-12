@@ -440,14 +440,8 @@ impl TextRasterMode {
                 TextRasterMode::Subpixel,
                 TextRasterMode::Grayscale,
             ][..],
-            TextRasterMode::Subpixel => &[
-                TextRasterMode::Subpixel,
-                TextRasterMode::Grayscale,
-            ][..],
-            TextRasterMode::Grayscale => &[
-                TextRasterMode::Grayscale,
-                TextRasterMode::Subpixel,
-            ][..],
+            TextRasterMode::Subpixel => &[TextRasterMode::Subpixel, TextRasterMode::Grayscale][..],
+            TextRasterMode::Grayscale => &[TextRasterMode::Grayscale, TextRasterMode::Subpixel][..],
         };
         for &mode in chain {
             if is_supported(mode) {
@@ -1657,9 +1651,8 @@ mod tests {
     fn adr_013_fallback_chain_bi_level_to_grayscale() {
         // Backend that supports only Grayscale + Subpixel (cosmic-text
         // on Linux per the capability matrix).
-        let supports_subpixel_and_grayscale = |m: TextRasterMode| {
-            matches!(m, TextRasterMode::Subpixel | TextRasterMode::Grayscale)
-        };
+        let supports_subpixel_and_grayscale =
+            |m: TextRasterMode| matches!(m, TextRasterMode::Subpixel | TextRasterMode::Grayscale);
         // BiLevel → falls through to Grayscale (next in chain that is
         // supported).
         assert_eq!(

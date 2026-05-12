@@ -67,13 +67,13 @@ where
         // "click outside to close" pattern is opt-in via the public
         // `modal_backdrop(on_dismiss)` constructor.
         let on_dismiss = self.on_dismiss;
-        let backdrop = div()
-            .size_full()
-            .bg(transparent_black())
-            .on_mouse_down(crate::MouseButton::Left, move |_, window, cx| {
+        let backdrop = div().size_full().bg(transparent_black()).on_mouse_down(
+            crate::MouseButton::Left,
+            move |_, window, cx| {
                 on_dismiss(window, cx);
                 cx.stop_propagation();
-            });
+            },
+        );
         ModalBackdropElement {
             inner: Some(
                 deferred(backdrop)

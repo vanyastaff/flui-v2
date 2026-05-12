@@ -1117,8 +1117,7 @@ impl WgpuRenderer {
                 );
                 self.device_lost
                     .store(true, std::sync::atomic::Ordering::SeqCst);
-                *self.last_error.lock().unwrap() =
-                    Some(format!("Surface texture error: {kind}"));
+                *self.last_error.lock().unwrap() = Some(format!("Surface texture error: {kind}"));
                 return;
             }
         };

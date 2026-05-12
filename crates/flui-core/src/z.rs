@@ -86,9 +86,6 @@ mod tests {
             (100_000..1_000_000).contains(&Z_MODAL),
             "Z_MODAL in 100000..1000000"
         );
-        assert!(
-            Z_DRAG_PREVIEW >= 1_000_000,
-            "Z_DRAG_PREVIEW in 1000000..*"
-        );
+        assert!(Z_DRAG_PREVIEW >= 1_000_000, "Z_DRAG_PREVIEW in 1000000..*");
     }
 }

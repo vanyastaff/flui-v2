@@ -184,9 +184,7 @@ impl Pasteboard {
                 // the legacy fast path (matches pre-ADR behaviour). Other
                 // payload categories (Urls, Text-as-pasteboard, Html, Mime,
                 // Mixed) are write-side TODO per ADR-011 #4.
-                [ClipboardEntry::ExternalDrop(
-                    flui_core::ExternalDropPayload::Paths(_),
-                )] => {}
+                [ClipboardEntry::ExternalDrop(flui_core::ExternalDropPayload::Paths(_))] => {}
                 [ClipboardEntry::ExternalDrop(_)] => {}
                 _ => {
                     // Agus NB: We're currently only writing string entries to the clipboard when we have more than one.

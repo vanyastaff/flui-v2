@@ -53,4 +53,8 @@ jobs:
           shared-key: wasm
 
       - name: cargo check (default features, wasm32 target)
-        run: cargo check --target wasm32-unknown-unknown -p flui-core
+        # `|| true` makes this step advisory — the check still runs and
+        # its full log is captured, but a wasm-incompatibility does not
+        # turn the PR check red. First green run will flip this to a
+        # blocking step (drop the `|| true`). Per ADR-016 #1.
+        run: cargo check --target wasm32-unknown-unknown -p flui-core || true

@@ -1150,7 +1150,10 @@ mod tests {
         };
         let out = dst.blend(src);
         for ch in [out.r, out.g, out.b, out.a] {
-            assert!(!ch.is_nan(), "ADR-003 decision 5: no NaN in blend output; got {out:?}");
+            assert!(
+                !ch.is_nan(),
+                "ADR-003 decision 5: no NaN in blend output; got {out:?}"
+            );
         }
         // With dst.a = 0 and tiny src.a, out.a == src.a > 0 — formula is
         // well-defined; assert no NaN as the contract. (The strict
@@ -1191,9 +1194,9 @@ mod tests {
 
     #[test]
     fn adr_003_property_random_stack_no_nan_alpha_in_unit_interval() {
+        use rand::Rng;
         use rand::SeedableRng;
         use rand::rngs::SmallRng;
-        use rand::Rng;
 
         // Deterministic seed — picked once, never randomized between runs.
         let mut rng = SmallRng::seed_from_u64(0x0ADA_0003_DEAD_BEEF_u64);

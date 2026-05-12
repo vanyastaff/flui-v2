@@ -3946,11 +3946,7 @@ mod tests {
         }
 
         impl Render for ClickableTestView {
-            fn render(
-                &mut self,
-                _window: &mut Window,
-                cx: &mut Context<Self>,
-            ) -> impl IntoElement {
+            fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
                 div()
                     .id("clickable")
                     .size_full()
@@ -3989,9 +3985,7 @@ mod tests {
         // and `~2941` (`clicked_state`).
         window.simulate_mouse_down(point(px(10.0), px(10.0)), MouseButton::Left);
 
-        let dirty_views = window.update(|_view, window, _cx| {
-            window.invalidator.take_views()
-        });
+        let dirty_views = window.update(|_view, window, _cx| window.invalidator.take_views());
 
         assert!(
             dirty_views.contains(&view_id),

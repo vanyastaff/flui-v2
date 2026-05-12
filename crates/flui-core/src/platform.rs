@@ -1535,9 +1535,7 @@ impl EditorCommand {
             "moveToBeginningOfDocumentAndModifySelection:" => {
                 E::MoveToBeginningOfDocumentAndModifySelection
             }
-            "moveToEndOfDocumentAndModifySelection:" => {
-                E::MoveToEndOfDocumentAndModifySelection
-            }
+            "moveToEndOfDocumentAndModifySelection:" => E::MoveToEndOfDocumentAndModifySelection,
             "pageUpAndModifySelection:" => E::PageUpAndModifySelection,
             "pageDownAndModifySelection:" => E::PageDownAndModifySelection,
             // Deletion.
@@ -2295,9 +2293,8 @@ impl ClipboardItem {
                 // representation and are skipped here. A future
                 // overload could surface URL / text fallbacks if a
                 // user-visible reason emerges.
-                if let ClipboardEntry::ExternalDrop(
-                    crate::ExternalDropPayload::Paths(paths),
-                ) = entry
+                if let ClipboardEntry::ExternalDrop(crate::ExternalDropPayload::Paths(paths)) =
+                    entry
                 {
                     for path in &paths.0 {
                         use std::fmt::Write as _;
@@ -2701,8 +2698,7 @@ mod tests {
                 self.seen.push(cmd);
                 matches!(
                     cmd,
-                    EditorCommand::DeleteWordBackward
-                        | EditorCommand::MoveToBeginningOfLine
+                    EditorCommand::DeleteWordBackward | EditorCommand::MoveToBeginningOfLine
                 )
             }
         }

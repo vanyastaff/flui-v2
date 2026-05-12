@@ -917,12 +917,10 @@ mod test {
         use smallvec::smallvec;
         use std::path::PathBuf;
 
-        let paths = ExternalDropPayload::Paths(ExternalPaths(smallvec![PathBuf::from(
-            "/some/file.txt"
-        )]));
-        let urls = ExternalDropPayload::Urls(smallvec![
-            url::Url::parse("https://example.com").unwrap()
-        ]);
+        let paths =
+            ExternalDropPayload::Paths(ExternalPaths(smallvec![PathBuf::from("/some/file.txt")]));
+        let urls =
+            ExternalDropPayload::Urls(smallvec![url::Url::parse("https://example.com").unwrap()]);
         let text = ExternalDropPayload::Text("hello".into());
         let html = ExternalDropPayload::Html {
             html: "<b>hi</b>".into(),
@@ -1000,15 +998,15 @@ mod test {
         assert_ne!(a, c);
         // Mixed recursive equality — construct each side fresh rather
         // than cloning, to keep clippy's redundant-clone lint happy.
-        let mix_a = ExternalDropPayload::Mixed(smallvec![Box::new(
-            ExternalDropPayload::Paths(ExternalPaths(smallvec![PathBuf::from("/x")]))
-        )]);
-        let mix_b = ExternalDropPayload::Mixed(smallvec![Box::new(
-            ExternalDropPayload::Paths(ExternalPaths(smallvec![PathBuf::from("/x")]))
-        )]);
-        let mix_c = ExternalDropPayload::Mixed(smallvec![Box::new(
-            ExternalDropPayload::Paths(ExternalPaths(smallvec![PathBuf::from("/y")]))
-        )]);
+        let mix_a = ExternalDropPayload::Mixed(smallvec![Box::new(ExternalDropPayload::Paths(
+            ExternalPaths(smallvec![PathBuf::from("/x")])
+        ))]);
+        let mix_b = ExternalDropPayload::Mixed(smallvec![Box::new(ExternalDropPayload::Paths(
+            ExternalPaths(smallvec![PathBuf::from("/x")])
+        ))]);
+        let mix_c = ExternalDropPayload::Mixed(smallvec![Box::new(ExternalDropPayload::Paths(
+            ExternalPaths(smallvec![PathBuf::from("/y")])
+        ))]);
         assert_eq!(mix_a, mix_b);
         assert_ne!(mix_a, mix_c);
     }

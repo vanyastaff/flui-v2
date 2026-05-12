@@ -860,8 +860,7 @@ mod tests {
             // Mixed everything.
             "ASCII 你好 🦀 АБВ Café 👨‍👩‍👧 ছেলে",
         ];
-        let widths_px: &[f32] =
-            &[0.0, 1.0, 8.0, 16.0, 32.0, 64.0, 120.0, 220.0, 480.0, 1024.0];
+        let widths_px: &[f32] = &[0.0, 1.0, 8.0, 16.0, 32.0, 64.0, 120.0, 220.0, 480.0, 1024.0];
 
         let mut wrapper = build_wrapper();
         for text in corpus {
@@ -870,13 +869,8 @@ mod tests {
             let dummy_runs = generate_test_runs(&[text.len()]);
             for &w in widths_px {
                 for from in [TruncateFrom::Start, TruncateFrom::End] {
-                    let (result, runs) = wrapper.truncate_line(
-                        (*text).into(),
-                        px(w),
-                        "…",
-                        &dummy_runs,
-                        from,
-                    );
+                    let (result, runs) =
+                        wrapper.truncate_line((*text).into(), px(w), "…", &dummy_runs, from);
                     // Even after truncation, the result must be valid UTF-8
                     // (constructed via `format!`, but assert anyway to lock
                     // the contract).

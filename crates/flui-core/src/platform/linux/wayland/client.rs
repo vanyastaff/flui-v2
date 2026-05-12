@@ -2214,14 +2214,13 @@ impl Dispatch<wl_data_device::WlDataDevice, ()> for WaylandClientStatePtr {
                             // is a per-platform follow-up tracked in the
                             // rollout plan; for now this emits the legacy
                             // Paths-only payload via the new typed enum.
-                            let input = PlatformInput::FileDrop(
-                                flui_core::ExternalDropEvent::Entered {
+                            let input =
+                                PlatformInput::FileDrop(flui_core::ExternalDropEvent::Entered {
                                     position,
                                     payload: flui_core::ExternalDropPayload::Paths(
                                         flui_core::ExternalPaths(paths),
                                     ),
-                                },
-                            );
+                                });
 
                             let client = this.get_client();
                             let mut state = client.borrow_mut();
