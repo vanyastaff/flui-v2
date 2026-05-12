@@ -1,0 +1,56 @@
+name: Wasm Check
+
+# ADR-016 — wasm target dependency gating.
+#
+# Verifies that `flui-core` builds on `wasm32-unknown-unknown` with the
+# default feature set. The `// CONTRACT (ADR-016):` block at the top of
+# `crates/flui-core/Cargo.toml` documents the gating policy this job
+# enforces:
+#
+#   1. Dev-dependencies must never become production dependencies on any
+#      target (including wasm).
+#   2. A dependency that does not compile on wasm32 must be gated by
+#      `[target.'cfg(not(target_family = "wasm"))'.dependencies]` at the
+#      Cargo.toml level — NOT only inside lib.rs. The compile error must
+#      surface at dependency resolution, not after a long build.
+#   3. The `default` feature set is wasm-buildable.
+#
+# A regression like upstream GPUI #52715 (proptest becoming a production
+# link dep, transitively pulling `imp` which does not compile on
+# wasm32) would fail this job at the dependency-resolution step.
+#
+# Currently advisory: `continue-on-error: true` so a wasm break does
+# not block PRs while the contract is bedding in. Flip to blocking
+# once the first green run lands. See ADR-016 action item 1.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -Dwarnings
+
+jobs:
+  wasm-check:
+    name: cargo check --target wasm32-unknown-unknown
+    runs-on: ubuntu-latest
+    continue-on-error: true # ADR-016: advisory until first green run; flip after.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install wasm32 target
+        # `rust-toolchain.toml` pins the channel to the workspace MSRV;
+        # the action picks that up automatically. We only need to add
+        # the wasm32 target on top.
+        run: rustup target add wasm32-unknown-unknown
+
+      - name: Cache cargo registry + target
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: wasm
+
+      - name: cargo check (default features, wasm32 target)
+        run: cargo check --target wasm32-unknown-unknown -p flui-core

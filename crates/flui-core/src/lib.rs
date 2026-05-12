@@ -69,6 +69,14 @@ pub mod queue;
 /// `docs/superpowers/specs/2026-05-09-K15-reentrancy-contract-design.md`.
 pub mod reentrancy;
 mod scene;
+/// ADR-019: scroll-physics scaffolding (trait + reference impls) for
+/// the future `Scrollable` widget. Types-only; no widget consumer
+/// yet.
+pub mod scroll;
+/// ADR-018: named priority constants for [`Window::defer_draw`]
+/// (`Z_TOOLTIP`, `Z_DROPDOWN`, `Z_MODAL`, `Z_DRAG_PREVIEW`). See the
+/// module's own docs for the convention.
+pub mod z;
 /// The scheduler module provides task scheduling, execution, and timing primitives.
 pub mod scheduler;
 mod shared_string;

@@ -116,14 +116,20 @@ safely.
 
 ### Phase H — Image clip-vs-corner + wasm gating
 - [ ] Task 14: ADR-015 `push_rounded_clip` + `img.rs` two-step paint.
-- [ ] Task 15: ADR-016 wasm gating policy + closure audit.
+  - **Status:** deferred — requires GPU-side `Scene::push_layer` extension to honour `Corners<Pixels>` clip shape (today scene only supports rectangular clips). The `img.rs` two-step paint can only land once the renderer (wgpu / Metal / DirectX) honours rounded clip layers; otherwise replacing the existing `corner_radii` arg on `paint_image` with a container-side clip drops the clip entirely. Verifiable only via Linux visual-regression (S01b headless wgpu harness) — keep as Linux-side commit.
+- [x] Task 15: ADR-016 wasm gating policy + closure audit.
+  - **Landed:** `.github/workflows/wasm-check.yml` CI job runs `cargo check --target wasm32-unknown-unknown -p flui-core` on every PR (`continue-on-error: true` advisory mode until first green run, then flip blocking per ADR-016 #1); `Closure::wrap`/`Closure::new` audit for the two web closure sites (`platform/web/window.rs::create_resize_observer_closure` and `create_raf_closure`) — both annotated with `// CONTRACT (ADR-016)` blocks documenting that they follow the JS-owns-the-closure / Rust-hands-off-ownership pattern, NOT the recursive `Closure::wrap` anti-pattern from GPUI #52715. The `// CONTRACT` block on `Cargo.toml` landed in C1; an audit of the current Cargo.toml confirms zero wasm-only deps in the cross-target `[dependencies]` block (compliance with decision 4).
 
 ### Phase I — Background blur + modal/overlay layering
 - [ ] Task 16: ADR-017 X11/KDE/Deepin background blur xprops.
-- [ ] Task 17: ADR-018 `flui_core::z` module + hit-test priority audit.
+- [x] Task 17: ADR-018 `flui_core::z` module + hit-test priority audit.
+  - **Landed:** `flui_core::z` module exposing `Z_IN_TREE` / `Z_TOOLTIP` / `Z_DROPDOWN` / `Z_MODAL` / `Z_DRAG_PREVIEW` constants matching the ADR-018 decision 2 range table; `elements::modal_backdrop(on_dismiss)` helper that paints a full-window transparent backdrop at `Z_MODAL - 1`, consumes mouse-down + scroll input, and fires the dismiss closure (the canonical "click-outside-to-close" pattern); 2 regression tests locking constant ordering + range membership.
+  - **Deferred:** Hit-test priority audit in `gesture/dispatch.rs` (decision 3 — verify the bounds tree consults `defer_draw` priority before document order, add a sort pre-pass if not); per-window-modality multi-window test (decision 4 — needs `TestApp` to host two windows concurrently and dispatch a click in window B while a modal is up in window A).
 
 ### Phase J — Scroll physics scaffolding
-- [ ] Task 18: ADR-019 `ScrollPhysics` trait + reference implementations.
+- [x] Task 18: ADR-019 `ScrollPhysics` trait + reference implementations.
+  - **Landed:** new `crate::scroll` module — `ScrollPhysics` trait (`Send + Sync + 'static`, three methods: `apply_delta`, `fling`, `allows_overscroll`); `ScrollState` (offset / min / max / velocity / axis_lock) + `Axis` enum; `BouncingPhysics` (iOS / macOS — rubber-band resistance, allows overscroll, axis-lock) and `ClampingPhysics` (Android / Windows / Linux — truncates at boundary, no overscroll, axis-lock); 5 regression tests covering decision 3 (axis-lock zeroes orthogonal), overscroll-mode divergence, clamping truncation, rubber-band resistance, boundary-edge semantics.
+  - **Deferred:** `Theme::scroll_physics_default()` in `flui-theme` (cross-crate; platform-conditional default); `UniformListScrollHandle::scroll_to_item` animated parameter; `gesture/recognizers/drag.rs` axis-lock audit; concrete `fling()` simulator composition (current `BouncingPhysics::fling`/`ClampingPhysics::fling` return `None` — the future `Scrollable` widget composes `SpringSimulation` + `FrictionSimulation` from `crate::animation::simulation` against these physics impls).
 
 ### Phase K — Partial present scaffolding
 - [ ] Task 19: ADR-006 `draw_with_damage` default + wgpu implementation.
