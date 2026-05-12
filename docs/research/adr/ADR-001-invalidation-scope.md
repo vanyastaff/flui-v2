@@ -162,9 +162,10 @@ debug-only assert added with this ADR — see action item 2 below.
    `cargo test -p flui-core --lib` (410 tests) and `cargo clippy -p flui-core
    --all-targets -- -D warnings` both pass — no existing code paths violate the
    new contract.
-3. Open ADR-002 — "hover / active state invalidation" — to migrate
-   `div.rs` hover/click/tooltip `refresh()` calls to per-view invalidation
-   where possible. Driven by GPUI #24405 and #38350.
+3. ~~Open ADR-002 — "hover / active state invalidation".~~ **Done.** See
+   [ADR-002 — Hover / active / pressed state invalidation](ADR-002-hover-active-invalidation.md).
+   The contract is fixed; the actual `div.rs` migration is its own action
+   item, not landed here.
 4. Open a separate spec file for partial present once K-series finishes —
    referenced by GPUI #15166 and Flutter #14288 in the snapshot.
 

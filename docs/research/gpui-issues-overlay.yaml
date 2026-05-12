@@ -57,8 +57,8 @@ issues:
     notes: macOS trackpad horizontal scroll не блокирует vertical. Конкретный gesture-bug.
   38350:
     adr: 'yes'
-    repro: 'unknown'
-    notes: 'Hover events когда окно не в foreground. Архитектурный: event filtering при background-state. У нас flui-core/src/gesture — нужен ADR по contract на pointer-events lifecycle.'
+    repro: 'partial'
+    notes: 'Частично покрыто ADR-002 (docs/research/adr/ADR-002-hover-active-invalidation.md) — scoped invalidation reduces over-paint от лишних hover events. Сама причина (events fire when window is in background) — отдельный ADR про event filtering при background-state.'
   35903:
     adr: 'no'
     repro: 'unknown'
@@ -149,8 +149,8 @@ issues:
     notes: 'Color blending не совпадает со стандартным source-over alpha. Дублирует #55972 — оба покрываются единым ADR по color/alpha pipeline.'
   24405:
     adr: 'yes'
-    repro: 'unknown'
-    notes: 'Hover events просачиваются сквозь панели. Архитектурный: hit-test layering. Связано с #52013.'
+    repro: 'partial'
+    notes: 'Частично покрыто ADR-002 (docs/research/adr/ADR-002-hover-active-invalidation.md) — scoped invalidation cuts the per-hover full-window repaint that amplifies the symptom. Сама причина (hit-test layering) — отдельный future ADR. Связано с #52013.'
   23288:
     adr: 'yes'
     repro: 'unknown'
