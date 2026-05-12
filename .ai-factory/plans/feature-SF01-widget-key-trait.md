@@ -238,11 +238,11 @@ Per user-memory feedback "Keep docs work separate from code work — ADR session
 
 ### Phase 5 — Mini-example + workspace validation
 
-- [ ] **T5.1 — Add `examples/widget_surface_demo/` micro-example.** Naming follows existing `nav_demo` / `material_demo` / `animation_demo` convention (`*_demo`, feature-themed, no spec-number prefix). Cargo manifest depending on `flui-framework` only (no `flui-core` import — Framework users speak Framework, not Engine). `src/main.rs` defines a `Counter` widget per ARCHITECTURE.md §"Code Examples", matches the FROZEN spec target shape, exercises the T2.4 `prelude` import (`use flui_framework::prelude::*;`), and `fn main()` constructs an instance and prints `widget.key()`. This is a `cargo check`-only example — it does NOT spin up a window (no mounting until SF07). Document the "trait-surface-only" nature in the top comment with a link to the SF01 design spec.
+- [x] **T5.1 — Add `examples/widget_surface_demo/` micro-example.** Naming follows existing `nav_demo` / `material_demo` / `animation_demo` convention (`*_demo`, feature-themed, no spec-number prefix). Cargo manifest depending on `flui-framework` only (no `flui-core` import — Framework users speak Framework, not Engine). `src/main.rs` defines a `Counter` widget per ARCHITECTURE.md §"Code Examples", matches the FROZEN spec target shape, exercises the T2.4 `prelude` import (`use flui_framework::prelude::*;`), and `fn main()` constructs an instance and prints `widget.key()`. This is a `cargo check`-only example — it does NOT spin up a window (no mounting until SF07). Document the "trait-surface-only" nature in the top comment with a link to the SF01 design spec.
 
   **Files:** `examples/widget_surface_demo/Cargo.toml`, `examples/widget_surface_demo/src/main.rs`. Add `"examples/widget_surface_demo",` to root `Cargo.toml` `[workspace] members` (immediately after the existing `examples/animation_demo` line for visual ordering). **Logging:** none. **Validation:** `cargo check -p widget_surface_demo` succeeds; the example does NOT run as a real GUI (no `App::run` etc.).
 
-- [ ] **T5.2 — Workspace-wide validation.** Run in order:
+- [x] **T5.2 — Workspace-wide validation.** Run in order:
   - `cargo fmt --check` — must pass clean.
   - `cargo clippy --workspace --all-targets -- -D warnings` — must pass clean (incl. new framework crate's `missing_docs` deny).
   - `cargo check --workspace --all-targets` — must pass clean.
@@ -253,7 +253,7 @@ Per user-memory feedback "Keep docs work separate from code work — ADR session
 
 ### Phase 6 — Documentation + Post-Implementation Reviewer Triple + Sync
 
-- [ ] **T6.1 — Write the migration / authoring guide.** Add `docs/superpowers/migrations/SF01-widget-key-trait.md`:
+- [x] **T6.1 — Write the migration / authoring guide.** Add `docs/superpowers/migrations/SF01-widget-key-trait.md`:
   - "How to write a widget in flui-framework today" — show the `Leaf` / `Container` / `Counter` examples with full annotations.
   - "What works in SF01 vs what arrives in SF02/SF03/SF04/SF05" — explicit feature matrix.
   - "Anti-patterns" — Widget vs Render vs RenderOnce vs Component<C> decision table.
@@ -261,7 +261,7 @@ Per user-memory feedback "Keep docs work separate from code work — ADR session
 
   **File:** `docs/superpowers/migrations/SF01-widget-key-trait.md`. **Logging:** none. **Validation:** Markdown lints clean; cross-links to the design spec and to ARCHITECTURE.md resolve.
 
-- [ ] **T6.2 — Post-implementation reviewer triple launch on the code (parallel).** Per the same user-memory feedback. Three parallel Agent calls in one message:
+- [x] **T6.2 — Post-implementation reviewer triple launch on the code (parallel).** **DONE 2026-05-12** — three reviewers ran in parallel against the landed implementation. Common findings (all three converged): stale doc in widget.rs:44-45 (post-Amendment-1 drift), K91 cross-track contract not added to ROADMAP K91 entry, ARCHITECTURE.md still shows `impl Widget` instead of `impl IntoWidget`, ROADMAP SF01 entry still `[ ]`, plan T2.4/T3.1/T3.5 descriptions are pre-Amendment-1. All blockers actionable in T6.3. Per the same user-memory feedback. Three parallel Agent calls in one message:
   - `flui-arch-reviewer` reviews the actual `crates/flui-framework/` source for tier-boundary integrity vs the FROZEN design spec.
   - `migration-risk-adversary` hunts for silent regressions in the `flui_core::Key` re-export path and the transitional `BuildElement` bridge decision.
   - `rust-api-migration-auditor` re-runs semver / object-safety / feature-flag / blanket-impl analysis against the implementation diff.
@@ -269,7 +269,7 @@ Per user-memory feedback "Keep docs work separate from code work — ADR session
 
   **File:** updates `docs/superpowers/specs/2026-05-12-SF01-widget-key-trait-design.md`. **Logging:** none. **Validation:** every reviewer concern has a documented resolution (fix-in-place / defer-to-SF## / accept-with-rationale). If a reviewer flags a fix-in-place, loop back to the relevant T#.# task and re-run T5.2.
 
-- [ ] **T6.3 — Sync `.ai-factory/` artifacts and K91 cross-track contract.** Update:
+- [x] **T6.3 — Sync `.ai-factory/` artifacts and K91 cross-track contract.** Update:
   - `.ai-factory/ROADMAP.md` — mark `SF01 Widget + Key trait` checkbox done in the Phase II-F section; add to the `## Completed` table with date `2026-05-12` and a one-sentence summary mirroring K-track completion entries. Update the Phase II-F intro paragraph: "SF01 done — Framework tier scaffolding exists; SF02 (reconciliation) is the next critical-chain item gated on SF01 + K15."
   - `.ai-factory/ROADMAP.md` K91 entry — **add the SF01 cross-track contract** to the K91 description: "When K91 replaces the `pub use element::*;` glob at `crates/flui-core/src/lib.rs:154`, the new explicit re-export list MUST preserve crate-root visibility of `Key`, `ValueKey`, `GlobalKey` (and the engine-private path types `ElementId`, `LocalElementId` if Tier C still consumes them). Otherwise `flui_framework`'s Key re-exports break. Per SF01 design spec §'Current Inventory'." This binds K91's eventual implementer even if they never read the SF01 spec.
   - `.ai-factory/ARCHITECTURE.md` — update the "Framework: defining a Stateful Widget" code example at line ~359 and ~386: change `fn build(&mut self, cx: &mut BuildCx<'_>) -> impl Widget` to `fn build(&mut self, cx: &mut BuildCx<'_>) -> impl IntoWidget` to align with the FROZEN SF01 trait return type (Option B). Reviewer arch-B1 flagged this divergence.

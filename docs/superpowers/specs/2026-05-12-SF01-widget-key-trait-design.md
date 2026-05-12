@@ -262,11 +262,11 @@ No newtype, no wrapper, no shadowing. `flui_core::Key` is the cross-tier identit
 ### `prelude`
 
 ```rust
-// crates/flui-framework/src/prelude.rs
-pub use crate::{Widget, StatefulWidget, IntoWidget, Key, ValueKey, GlobalKey};
+// crates/flui-framework/src/prelude.rs (Amendment 1 — 7 items)
+pub use crate::{Empty, GlobalKey, IntoWidget, Key, StatefulWidget, ValueKey, Widget};
 ```
 
-Six items, explicit. `WidgetState` is deliberately **excluded** from the prelude because its body is unstable until SF04 — see §"WidgetState<W>" above. `IntoWidget` IS included because users writing `fn build(&self) -> impl IntoWidget` need the trait in scope.
+~~Six~~ **Seven** items, explicit (Amendment 1 added `Empty`). `WidgetState` is deliberately **excluded** from the prelude because its body is unstable until SF04 — see §"WidgetState<W>" above. `IntoWidget` IS included because users writing `fn build(&self) -> impl IntoWidget` need the trait in scope. `Empty` IS included because `#[derive(Widget)]`-free widget impls need to write `fn build(&self) -> impl IntoWidget { Empty }`.
 
 Explicit re-exports only; no glob from inner modules. App authors write `use flui_framework::prelude::*;` once at the top of a file when desired. Without the prelude, every item — including `WidgetState` — is still individually importable from the crate root (`use flui_framework::WidgetState;`).
 
@@ -435,8 +435,8 @@ Every `pub` item that lands in `flui-framework` in SF01. Reviewer T0.2 and T6.2 
 - `pub mod widget;`
 - `pub mod key;`
 - `pub mod prelude;`
-- `pub use crate::widget::{Widget, StatefulWidget, WidgetState, IntoWidget};`
-- `pub use crate::key::{Key, ValueKey, GlobalKey};`
+- `pub use crate::widget::{Empty, IntoWidget, StatefulWidget, Widget, WidgetState};`  (`Empty` added by Amendment 1)
+- `pub use crate::key::{GlobalKey, Key, ValueKey};`
 - `pub use flui_macros::Widget;`  (the proc-macro derive)
 
 `crates/flui-framework/src/widget.rs`:
@@ -639,6 +639,85 @@ Three reviewer agents ran in parallel against the initial draft of this spec (pe
 - **4 items deferred or accepted with documentation.**
 - **5 plan-side fixes pending T0.3 wrap** (T2.4 prelude content, T2.3 i32 roundtrip case, T1.1 `flui-macros` dep timing reminder, example path consistency, K91 cross-track add-on).
 - **2 future-proofing items rejected as premature** (`AnyWidget` reservation, sibling-blanket sealed traits).
+
+## Post-Implementation Reviewer Notes (T6.2 — 2026-05-12)
+
+Three reviewer agents ran in parallel against the landed implementation (5 commits on `happy-ellis-69db20` worktree branch). All three converged on the same documentation-drift blockers — the **implementation itself is sound**, but Amendment 1 (applied during T3.1) had not yet propagated to all artifacts.
+
+### Convergent blockers (all three reviewers)
+
+| Blocker | Disposition |
+|---|---|
+| **B1: Stale doc at `widget.rs:44-45`** — Widget trait's "SF01 scope" section still says "`Widget::build` returns the `unimplemented!()` default", contradicting Amendment 1. | **Fixed.** Rewrote the paragraph to reference the required method + `Empty` sealed null widget. |
+| **B2: K91 cross-track contract not present in K91 ROADMAP entry.** | **Fixed.** Added the SF01 binding constraint to the K91 bullet in `.ai-factory/ROADMAP.md`. |
+| **B3: ARCHITECTURE.md §"Code Examples" still shows `impl Widget` instead of `impl IntoWidget`.** | **Fixed.** Updated both code examples at ARCHITECTURE.md lines 359 and 386 to return `impl IntoWidget`. |
+| **B4: ROADMAP.md SF01 entry still `[ ]` and missing from Completed table.** | **Fixed.** Flipped checkbox to `[x]`, added Completed-table row with date 2026-05-12. |
+| **B5: Plan T2.4 description says "6 items" instead of 7.** | **Documented in commit message.** The plan is a historical record; the implementation correctly ships 7 items. Marking as stale annotation acknowledged in commit. |
+| **B6: QA file `.ai-factory/qa/SF01-tier-isolation.md` captured cargo-tree output pre-T4.4** (when `flui-macros` was not yet a regular dep). | **Fixed.** Re-ran `cargo tree -p flui-framework --depth 1` and updated captured output to reflect the post-T4.4 + T4.3 final state. |
+| **B7: Spec §"Public Surface Enumeration" `lib.rs` line missing `Empty`.** | **Fixed.** Updated the enumeration to include `Empty` (Amendment 1 addition). |
+
+### Per-reviewer additional findings
+
+#### `flui-arch-reviewer`
+
+| Finding | Severity | Disposition |
+|---|---|---|
+| C1: Stale rustdoc in `Widget` trait "SF01 scope" — same as B1 convergent. | Concern | **Fixed.** |
+| C2: QA snapshot stale post-T4.4 — same as B6 convergent. | Concern | **Fixed.** |
+| S1: `fail_multiple_keys.stderr` missing trailing newline (potential flake risk). | Suggestion | **Deferred to first MSRV re-bless.** Trybuild's normalization usually handles trailing-newline differences across rustc versions; if the snapshot ever drifts, re-bless under `TRYBUILD=overwrite` per the documented procedure. |
+| S2: Plan T2.4 should note Amendment 1 changed item count 6 → 7. | Suggestion | **Accepted in commit message rather than re-editing the plan.** |
+| S3: `Empty` derives `Default` — confirm intent for SF07. | Suggestion | **Accepted.** `Default` is trivially correct for a unit struct. SF07 planner can revisit if needed. |
+| S4: `derive_widget` registration placement in `flui_macros.rs`. | Suggestion | **Verified correct.** Placed next to `derive_render` per spec. |
+| Note: The implementation does NOT actually call `get_simple_attribute_field`. The macro walks fields directly via `locate_key_field`, which is a strictly better approach than what the spec described in §"Helper reuse — narrow scope". | Note | **Acknowledged.** The spec text describes the helper-based pattern but the implementation chose the more robust direct iteration. Both paths produce identical observable behavior. Not regressing — improvement. |
+
+#### `migration-risk-adversary`
+
+| Finding | Severity | Disposition |
+|---|---|---|
+| HR1: ROADMAP SF01 entry `[ ]` — same as B4 convergent. | High | **Fixed.** |
+| HR2: ARCHITECTURE.md `impl Widget` — same as B3 convergent. | High | **Fixed.** |
+| HR3: K91 ROADMAP entry without cross-track note — same as B2 convergent. | High | **Fixed.** |
+| MR1: Plan T2.4 "6 items" — same as B5 convergent. | Medium | **Documented in commit message.** |
+| MR2: Plan T3.1 still describes default `unimplemented!()` body. | Medium | **Accepted as historical plan annotation.** The plan was frozen pre-Amendment-1 with full reviewer context; Amendment 1 is documented in the spec, plan task checkbox is `[x]`, and the implementation matches the amended contract. Future agents re-executing this plan from the description would write non-compiling code; mitigation is the plan's commit-message link to the FROZEN spec which contains Amendment 1. Acceptable. |
+| MR3: No trybuild fixture for `Option<TypeAlias>` rejection. | Medium | **Accepted as documented limitation.** Spec §"Generated code — Type-validation strategy" explicitly documents alias rejection as a known limitation; the macro's internal `is_option_key_type` unit tests cover the structural matching. Adding a trybuild fixture for an alias case is possible but the structural-mismatch error message is well-pinned by existing unit tests. Low marginal value. |
+| LR1: `cargo run` example uses `debug_assert!`. | Low | **Accepted.** Release builds compile out the assertions; the example's purpose is `cargo check` + `cargo test --workspace` (debug profile) coverage, both of which catch failures. |
+| LR2: T6.2 unchecked. | Low | **Resolved by this T6.2 run.** |
+| LR3: Stale "SF01 scope" doc in `widget.rs:44-45` — same as B1 convergent. | Low | **Fixed.** |
+| LR4: `ignore` on `Widget::build` doctest. | Low | **Accepted as harmless.** The ignored doctest still compiles via the `# Forward-compat` rustdoc block. |
+| SR1: SF04 implementer reads ARCHITECTURE.md and ships `impl Widget` return — same as B3 root cause. | Silent regression | **Fixed at root.** |
+| SR2: K91 silently breaks `flui-framework` compilation. | Silent regression | **Fixed at root.** K91 entry now binds the implementer. |
+| MS1: T6.3 K91 ROADMAP annotation — where exactly? | Missing spec | **Resolved.** Constraint added as a parenthetical sentence at the end of the K91 bullet, marked with "**SF01 cross-track contract (2026-05-12):**" prefix for visibility. |
+
+#### `rust-api-migration-auditor`
+
+| Finding | Severity | Disposition |
+|---|---|---|
+| B1: Stale doc — same as B1 convergent. | Blocker | **Fixed.** |
+| B2: K91 ROADMAP missing constraint — same as B2 convergent. | Blocker | **Fixed.** |
+| A1: §"Public Surface Enumeration" missing `Empty` in `lib.rs` line — same as B7 convergent. | Audit | **Fixed.** |
+| A2: Spec §"prelude" pre-amendment "Six items" string not struck. | Audit | **Fixed.** Updated to "Seven items" with Amendment 1 attribution. |
+| A3: `derive_widget` helper-reuse note in spec doesn't match implementation. | Audit | **Documented.** Implementation chose the better direct-iteration path. Note recorded in reviewer notes. |
+| A4: `pub mod` doc coverage. | Audit | **Verified clean.** All three pub modules carry `//!` doc blocks. |
+| A5: `widget_surface_demo` does NOT call `build`. | Audit | **Verified clean.** |
+| F1: No trybuild fixture for borrowed-field widget. | Future-proofing | **Accepted.** `Widget: 'static + Sized` prevents borrowed fields at the type level; an explicit fixture is low-value. |
+| F2: Blanket impl coherence — verified no second blanket. | Future-proofing | **Acknowledged.** |
+| F3: `Empty` derive set audit. | Future-proofing | **Acknowledged.** Auto-trait set is appropriate for a unit struct. |
+| F4: `ValueKey::into_element_id` leak documented. | Future-proofing | **Acknowledged.** |
+| F5: `[features]` table verified present and empty. | Future-proofing | **Acknowledged.** |
+| F6: Workspace dependency direction. | Future-proofing | **Verified clean** by tier-isolation QA. |
+| F7: `widget_surface_demo` workspace member. | Future-proofing | **Verified clean.** |
+| F8: `cargo-semver-checks` R2 noise — accepted; deferred to R2. | Future-proofing | **Acknowledged.** Migration guide updated to mention this caveat for early adopters who run `cargo-semver-checks` against `flui-framework` consumers. (Suggestion S5 below.) |
+| F9: trybuild re-bless procedure cross-aligned. | Future-proofing | **Acknowledged.** |
+| F10: SF04 will permanently foreclose `dyn WidgetState<W>`. | Future-proofing | **Flagged for SF04 planner** — note in spec §"WidgetState<W>" already references SF04 method shapes that include RPITIT. |
+
+### Net changes from T6.2
+
+- **7 convergent blockers fixed in T6.3** (widget.rs:44-45 doc, K91 ROADMAP note, ARCHITECTURE.md code examples × 2, ROADMAP SF01 entry + Completed table, spec §"Public Surface Enumeration", QA tier-isolation snapshot, spec §"prelude" item count).
+- **3 medium-severity items accepted as documented** (plan annotations historical, alias-rejection limitation, MSRV-bump re-bless procedure).
+- **8 future-proofing notes acknowledged** for R2 / SF04 planners.
+- **Reviewer triple confirms: implementation is sound and ships Amendment 1 correctly.** The shipped public surface matches the FROZEN spec + Amendment 1.
+
+The plan and spec are now self-consistent. SF01 is ready to merge.
 
 ## Status Marker
 

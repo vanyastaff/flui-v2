@@ -63,7 +63,7 @@
 //!
 //! | Trait | Tier | When to use |
 //! |---|---|---|
-//! | [`flui_framework::Widget`] | B | Writing a widget for an app or another widget to compose. |
+//! | [`Widget`] | B | Writing a widget for an app or another widget to compose. |
 //! | [`flui_core::Render`] | A | Engine-internal mutable view trait for window roots. |
 //! | [`flui_core::RenderOnce`] | A | Engine compatibility path for stateless engine recipes. |
 //! | [`flui_core::ElementBuilder`] | A | K03 engine substrate; the eventual lowering target of `Widget::build` (SF07 adapter). |
