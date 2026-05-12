@@ -93,8 +93,8 @@ issues:
     notes: 'wasm regression: closure recursive, proptest tянет imp. ADR по wasm target gating (dev-deps + feature flags). Мы тоже целимся в web — критично.'
   52110:
     adr: 'yes'
-    repro: 'unknown'
-    notes: 'External drag-and-drop в standalone-apps. Архитектурный: API контракт DnD на всех платформах. У нас сейчас drop-API нет.'
+    repro: 'yes'
+    notes: 'Покрыто ADR-011 (docs/research/adr/ADR-011-external-drag-drop.md). У нас есть FileDropEvent + ExternalPaths(SmallVec<PathBuf>) — только paths. URL/text/html-payloads дропаются на platform side. ADR-011 расширяет тип до ExternalDropEvent + sealed enum ExternalDropPayload.'
   52067:
     adr: 'yes'
     repro: 'partial'
