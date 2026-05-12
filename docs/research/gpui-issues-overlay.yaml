@@ -129,8 +129,8 @@ issues:
     notes: Старый NVIDIA driver на конкретной системе.
   43273:
     adr: 'yes'
-    repro: 'n-a'
-    notes: '`<canvas>`-аналог для one-off shaders. Feature ADR — связано с custom render pass API.'
+    repro: 'partial'
+    notes: 'Покрыто ADR-012 (docs/research/adr/ADR-012-custom-canvas-paint.md). Reading (A) — низкоуровневый paint — закрыт: `canvas(prepaint, paint)` в elements/canvas.rs. Reading (B) — custom shader — отдельный future ADR.'
   43207:
     adr: 'yes'
     repro: 'n-a'
