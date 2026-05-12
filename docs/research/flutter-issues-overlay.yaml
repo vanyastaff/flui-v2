@@ -1,0 +1,12 @@
+# Overlay для docs/research/flutter-issues.md.
+# Заполняется вручную; скрипт scripts/fetch-flutter-issues.sh подмешивает
+# поля в колонки `ADR?`, `Reproduced in flui-v2?`, `Notes`.
+#
+# Значения:
+#   adr:   yes | maybe | no | n-a
+#   repro: yes | partial | no | unknown | n-a
+#   notes: короткая заметка.
+#
+# Ключи — номера issue в flutter/flutter.
+
+issues: {}
