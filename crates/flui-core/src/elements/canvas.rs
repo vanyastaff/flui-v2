@@ -29,7 +29,69 @@ use crate::{
 };
 
 /// Construct a canvas element with the given paint callback.
-/// Useful for adding short term custom drawing to a view.
+/// Useful for adding short-term custom drawing to a view.
+///
+/// # ADR-012: prepaint / paint split
+///
+/// `canvas` is the public low-level paint surface (see the
+/// `// CONTRACT (ADR-012)` block at the top of this file). The two
+/// closures express the engine's prepaint → paint pipeline:
+///
+/// - **`prepaint(bounds, window, app) -> T`** runs during the prepaint
+///   phase. Use it for layout-dependent work that must run *before*
+///   paint can start — laying out shaped text, computing path metrics,
+///   sampling animation curves at the current frame time. The returned
+///   `T` is stored on the element until paint and then dropped; it does
+///   not survive across frames.
+/// - **`paint(bounds, T, window, app)`** runs during paint. Issue any
+///   number of `Window::paint_*` calls from inside.
+///
+/// # Example — sparkline
+///
+/// A minimal sparkline that lays out point positions in prepaint and
+/// strokes them as a path in paint. Each frame the value buffer is read
+/// fresh from the surrounding view; `canvas` participates in the same
+/// invalidation pipeline as any other element (ADR-001 / ADR-002).
+///
+/// ```no_compile
+/// use flui_core::{canvas, point, px, Bounds, Path, Pixels, Window};
+///
+/// fn sparkline(samples: Vec<f32>) -> impl flui_core::IntoElement {
+///     canvas(
+///         // Prepaint: convert sample values into points laid out
+///         // across the canvas bounds. The resulting Vec lives until
+///         // paint runs, then drops.
+///         move |bounds: Bounds<Pixels>, _window, _app| {
+///             let n = samples.len().max(1);
+///             let step = bounds.size.width / px(n as f32);
+///             let max = samples.iter().cloned().fold(0.0_f32, f32::max).max(1.0);
+///             samples
+///                 .iter()
+///                 .enumerate()
+///                 .map(|(i, &v)| {
+///                     point(
+///                         bounds.origin.x + step * px(i as f32),
+///                         bounds.origin.y + bounds.size.height * px(1.0 - v / max),
+///                     )
+///                 })
+///                 .collect::<Vec<_>>()
+///         },
+///         // Paint: stroke the path. The engine handles damage / clipping
+///         // / scaling around this closure.
+///         |_bounds, points, window, _app| {
+///             let mut path = Path::new(points[0]);
+///             for p in &points[1..] {
+///                 path.line_to(*p);
+///             }
+///             window.paint_path(path, flui_core::Hsla::black());
+///         },
+///     )
+/// }
+/// ```
+///
+/// (Marked `no_compile` because `flui-core` sets `doctest = false` in
+/// `Cargo.toml` — the example is rustdoc-rendered but not type-checked.
+/// The signatures above match the public API at the time of writing.)
 pub fn canvas<T>(
     prepaint: impl 'static + FnOnce(Bounds<Pixels>, &mut Window, &mut App) -> T,
     paint: impl 'static + FnOnce(Bounds<Pixels>, T, &mut Window, &mut App),

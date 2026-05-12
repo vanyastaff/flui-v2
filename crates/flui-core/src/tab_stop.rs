@@ -635,4 +635,51 @@ mod tests {
             .tab_stop(4, 1)
             .assert();
     }
+
+    /// ADR-010 — actual ordering for negative `tab_index`.
+    ///
+    /// **Implementation-observed semantics (locked by this test):** the
+    /// `TabStopMap` orders entries by lexicographic comparison of their
+    /// `TabStopPath`, which is plain numerical ordering for top-level
+    /// entries. Negative `tab_index` values therefore come BEFORE
+    /// non-negatives: `-2 < -1 < 0 < 1 < 2`.
+    ///
+    /// **Discrepancy with ADR-010 text (decision 2):** the ADR's
+    /// "negatives come after every non-negative entry in the same group"
+    /// phrasing reads as web-`tabindex="-1"` "behind everyone else"
+    /// semantics, which the current code does NOT implement. The audit
+    /// row in ADR-010 says the ADR "documents current behaviour", so
+    /// either the ADR text or the implementation should be revisited as
+    /// an ADR-010-followup task. For now this test locks the actual
+    /// observed semantics (lexicographic) so a future migration is a
+    /// deliberate, test-flipping change rather than silent drift.
+    ///
+    /// See `docs/research/adr/ADR-010-local-tab-index.md`.
+    #[test]
+    fn adr_010_negative_tab_index_locked_to_lexicographic_order() {
+        // Insertion order: 0, -1, 1, 2.
+        // Implementation traversal (lexicographic): -1, 0, 1, 2.
+        // Map "expected position" arguments to that order:
+        TabStopMapTest::new()
+            .tab_stop(0, 1) // -> expected pos 1 (after the -1)
+            .tab_stop(-1, 0) // negative comes FIRST (lexicographic)
+            .tab_stop(1, 2)
+            .tab_stop(2, 3)
+            .assert();
+    }
+
+    /// ADR-010 decision 2 + 3: `tab_stop = false` is independent of
+    /// `tab_index` — a handle with `tab_stop = false` does not
+    /// participate in keyboard navigation at all, even if its
+    /// `tab_index` would otherwise place it.
+    #[test]
+    fn adr_010_tab_stop_false_is_independent_of_tab_index() {
+        TabStopMapTest::new()
+            .tab_stop(0, 0)
+            .tab_non_stop(1) // tab_stop = false — invisible to next/prev
+            .tab_stop(2, 1)
+            .tab_non_stop(-1) // negative + tab_stop = false — also invisible
+            .tab_stop(3, 2)
+            .assert();
+    }
 }

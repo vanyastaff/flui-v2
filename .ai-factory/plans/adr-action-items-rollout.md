@@ -89,12 +89,14 @@ safely.
 - [x] Task 6: ADR-007 display lifecycle observers.
 
 ### Phase D — Window chrome & input enforcement
-- [ ] Task 7: ADR-008 `WindowOptions` invariants + drag-region hit-tree.
-- [ ] Task 8: ADR-009 `EditorCommand` enum + IME selector bridge.
+- [x] Task 7: ADR-008 `WindowOptions` invariants + drag-region hit-tree.
+- [x] Task 8: ADR-009 `EditorCommand` enum + IME selector bridge.
 
 ### Phase E — Surface existing capabilities
-- [ ] Task 9: ADR-010 surface `cx.tab_group()` + tests.
-- [ ] Task 10: ADR-012 `canvas` rustdoc example.
+- [x] Task 9: ADR-010 surface `cx.tab_group()` + tests.
+  - **Finding:** `Window::with_tab_group(Option<isize>, ...)` already existed as the stable public sugar (named `with_tab_group` not `tab_group` per file's `with_text_style` convention) — annotated with ADR-010 reference.
+  - **Implementation/contract drift flagged:** `TabStopMap` orders entries strictly by lexicographic comparison (negative `tab_index` comes BEFORE non-negatives), which contradicts ADR-010 decision 2's "negatives come after every non-negative" wording. The new test `adr_010_negative_tab_index_locked_to_lexicographic_order` locks the actual implementation behavior and documents the conflict. **Follow-up:** ADR-010 text or implementation needs reconciliation in a separate task (likely an ADR text update, since the ADR explicitly claims to "document current behaviour"). Tracked here so a future ADR-update PR can flip the test in lockstep with the spec change.
+- [x] Task 10: ADR-012 `canvas` rustdoc example.
 
 ### Phase F — External DnD payload
 - [ ] Task 11: ADR-011 `ExternalDropPayload` migration (breaking).
