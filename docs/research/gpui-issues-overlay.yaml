@@ -109,8 +109,8 @@ issues:
     notes: 'Покрыто ADR-001 (docs/research/adr/ADR-001-invalidation-scope.md). Наш animation использует `request_animation_frame`, но `draw()` всё равно делает full `draw_roots`. ADR честно фиксирует gap; partial-layout subtree caching — отдельный future ADR.'
   49860:
     adr: 'yes'
-    repro: 'unknown'
-    notes: CJK + ellipsis truncate → not-a-char-boundary panic. У нас flui-core/src/text_system — нужно срочно проверить наши truncation helpers на UTF-8 safety. ADR по text slicing contract.
+    repro: 'no'
+    notes: 'Покрыто ADR-004 (docs/research/adr/ADR-004-text-slicing-utf8-safety.md). Конкретный truncation site (line_wrapper.rs:205) безопасен — индекс приходит из char_indices. `TruncateFrom::Start` использует ceil_char_boundary. Два других слайс-сайта (line_layout.rs:150, line.rs:211-212) держат инвариант неявно — для них action items 1-2 в ADR-004 добавят debug_assert.'
   46486:
     adr: 'no'
     repro: 'n-a'
