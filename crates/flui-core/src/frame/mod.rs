@@ -55,6 +55,9 @@ pub mod clock;
 pub mod profile;
 pub mod tick;
 
+#[cfg(test)]
+mod tests;
+
 /// Logical frame phase executed by `App::run_frame`.
 ///
 /// Phases observe each other in the order declared by the discriminants

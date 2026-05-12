@@ -2114,24 +2114,19 @@ impl App {
                 |_app| { /* prepaint body lands when DrawPhase split lands */ },
             );
 
-            let primitive_count = self
-                .update_window_id(handle.id, |_, window, cx| {
-                    cx.current_phase = FramePhase::Paint;
+            // Paint phase: run window.draw inside a `run_phase` body so the
+            // `flushing_effects = true` guard suppresses the nested Legacy
+            // flush that `update_window_id`'s `finish_update` would otherwise
+            // trigger. Without the guard, the Legacy flush would prematurely
+            // drain `DeferPlacement::PostFrame` / `Idle` callbacks at this
+            // boundary instead of carrying them to their phase.
+            let mut primitive_count: usize = 0;
+            self.run_phase(FramePhase::Paint, |app| {
+                let _ = app.update_window_id(handle.id, |_, window, cx| {
                     let _arena_clear_needed = window.draw(cx);
-                    // Best-effort primitive count from the rendered scene.
-                    // `rendered_frame.scene` is the canonical source; surface
-                    // exposed via a single read at the end of Paint.
-                    window.rendered_frame.scene.len()
-                })
-                .ok()
-                .unwrap_or(0);
-            // `run_phase` advances `current_phase` itself; the inline override
-            // above is necessary because `window.draw()` is run via
-            // `update_window_id`, which can re-enter `flush_effects`. Reset to
-            // Paint after the draw so the post-Paint boundary drain runs with
-            // the correct phase.
-            self.current_phase = FramePhase::Paint;
-            self.flush_effects_at(FlushScope::Phase(FramePhase::Paint), None);
+                    primitive_count = window.rendered_frame.scene.len();
+                });
+            });
 
             // K04 Tasks 34/35: drain Window-level post-frame callbacks for
             // every open window. App-level App::on_post_frame callbacks
@@ -2199,6 +2194,15 @@ impl App {
     fn run_phase<F: FnOnce(&mut App)>(&mut self, phase: FramePhase, body: F) {
         self.current_phase = phase;
 
+        // K04: suppress nested Legacy flushes inside the phase body so
+        // placement-aware drains are the only drains. `update_window` /
+        // `update_entity` within `body` bump `pending_updates` and call
+        // `finish_update`, which under pre-K04 semantics drained every
+        // placement via `FlushScope::Legacy`. With the phase pipeline
+        // owning the drains, that Legacy flush would prematurely consume
+        // `DeferPlacement::PostFrame` etc.
+        let was_flushing = std::mem::replace(&mut self.flushing_effects, true);
+
         // Pre-phase boundary drain.
         self.flush_effects_at(FlushScope::Phase(phase), None);
 
@@ -2207,7 +2211,14 @@ impl App {
         body(self);
 
         // Post-phase boundary drain captures effects queued by `body`.
-        self.flush_effects_at(FlushScope::Phase(phase), None);
+        // Uses `PhasePost` (admits only `EndOfUpdate`) so a defer queued
+        // by `body` with placement matching `phase` (e.g.
+        // `defer_to(NextFrameStart, ...)` queued inside `on_pre_frame`)
+        // is carried to the NEXT frame's matching phase entry, not fired
+        // same-frame.
+        self.flush_effects_at(FlushScope::PhasePost(phase), None);
+
+        self.flushing_effects = was_flushing;
 
         if let Some(start) = phase_start {
             // Record per-phase duration for `FrameProfileDetailed`. The
@@ -3348,13 +3359,24 @@ pub(crate) enum FlushScope {
     /// Pre-K04 legacy entry. Drains every placement, no deadline. Used by
     /// `App::finish_update` until Task 23 wires `App::run_frame`.
     Legacy,
-    /// Phase-aware entry. Drains only placements admissible at `boundary`.
-    /// Used by `App::run_frame` from Task 23 onward.
-    //
-    // Constructor wired by Task 23 (`App::run_frame`). The dead-code warning
-    // until then is intentional — the variant is part of the K04 staged rollout.
+    /// Phase-entry drain. Runs at the START of a phase, BEFORE the phase
+    /// body executes. Admits the phase's "matching" placement (e.g.
+    /// `NextFrameStart` at `PreFrame`-entry, `PostFrame` at `PostFrame`-entry).
+    /// This is the boundary where a defer queued in a previous frame OR a
+    /// previous phase fires.
     #[allow(dead_code)]
     Phase(FramePhase),
+    /// Phase-exit drain. Runs at the END of a phase, AFTER the phase body
+    /// executes. Admits ONLY `EndOfUpdate` — defers queued during the body
+    /// (e.g. `defer_to(NextFrameStart, ...)`) MUST wait for their target
+    /// phase entry in a LATER frame, not fire same-frame.
+    ///
+    /// This guarantees the K04 axiom that `NextFrameStart` carries exactly
+    /// one frame, `PostFrame` carries to the current frame's `PostFrame`
+    /// (only if queued before `PostFrame` entry), and `Idle` carries until
+    /// the next `Idle`-entry boundary.
+    #[allow(dead_code)]
+    PhasePost(FramePhase),
 }
 
 impl FlushScope {
@@ -3373,6 +3395,9 @@ impl FlushScope {
                 (FramePhase::Idle, DeferPlacement::Idle) => true,
                 _ => false,
             },
+            // Post-drain admits only `EndOfUpdate`, never the phase's
+            // "matching" placement — those defers must carry forward.
+            FlushScope::PhasePost(_) => matches!(placement, DeferPlacement::EndOfUpdate),
         }
     }
 }
