@@ -141,8 +141,8 @@ issues:
     notes: iOS target. Стратегический ADR на наш roadmap.
   34796:
     adr: 'yes'
-    repro: 'n-a'
-    notes: 'Локальный tab-index API (не глобальный). Архитектурный: фокус-менеджмент / accessibility. Связано с flui-a11y.'
+    repro: 'no'
+    notes: 'Покрыто ADR-010 (docs/research/adr/ADR-010-local-tab-index.md). У нас уже есть hierarchical TabStopMap с begin_group/end_group (tab_stop.rs:92) и SumTree<TabStopPath>. Capability gap отсутствует — нужна только API-фиксация.'
   33050:
     adr: 'yes'
     repro: 'yes'
