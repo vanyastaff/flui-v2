@@ -190,6 +190,21 @@ impl WindowInvalidator {
             "this method can only be called during request_layout, prepaint, or paint"
         );
     }
+
+    /// Asserts the window is not currently in `Paint`.
+    ///
+    /// Used to reject frame-callback registrations from inside `paint`, which is
+    /// the pattern behind upstream GPUI #56294 (Wayland 1 px content shift when
+    /// an Element registers `on_next_frame` during `paint`). See
+    /// `docs/research/adr/ADR-001-invalidation-scope.md` for the contract.
+    #[track_caller]
+    pub fn debug_assert_not_paint(&self) {
+        debug_assert!(
+            !matches!(self.inner.borrow().draw_phase, DrawPhase::Paint),
+            "this method must not be called during paint; the callback observes the next frame, \
+             not the current one. Register it from layout, an event handler, or a deferred effect."
+        );
+    }
 }
 
 type AnyObserver = Box<dyn FnMut(&mut Window, &mut App) -> bool + 'static>;
@@ -2064,7 +2079,18 @@ impl Window {
     ///
     /// [`Self::on_next_frame`] continues to forward to this method with a
     /// `#[deprecated]` warning until the K04+1 release cycle removes it.
+    ///
+    /// # ADR-001 contract
+    ///
+    /// Must not be called during `Paint`. The callback observes the next
+    /// frame; registering it from `paint` produces the same Wayland resize
+    /// artefact as upstream GPUI #56294. Call from layout, an event handler,
+    /// or a deferred effect instead. The deprecated `on_next_frame` alias
+    /// inherits the same guard through this forward. See
+    /// `docs/research/adr/ADR-001-invalidation-scope.md`.
+    #[track_caller]
     pub fn on_pre_frame(&self, callback: impl FnOnce(&mut Window, &mut App) + 'static) {
+        self.invalidator.debug_assert_not_paint();
         RefCell::borrow_mut(&self.next_frame_callbacks).push(Box::new(callback));
     }
 

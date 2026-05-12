@@ -1,0 +1,244 @@
+# Overlay для docs/research/flutter-issues.md.
+# Заполняется вручную; скрипт scripts/fetch-flutter-issues.sh подмешивает
+# поля в колонки `ADR?`, `Reproduced in flui-v2?`, `Notes`.
+#
+# Значения:
+#   adr:   yes | maybe | no | n-a
+#   repro: yes | partial | no | unknown | n-a
+#   notes: короткая заметка.
+#
+# Большинство issues здесь — material для cross-walk (см.
+# docs/research/flutter-cross-walk.md). Triage точнее в самом cross-walk
+# документе; overlay даёт ту же информацию в табличной форме.
+#
+# Ключи — номера issue в flutter/flutter.
+
+issues:
+  # ─── ADR-001: invalidation scope ──────────────────────────
+  34864:
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Cross-walk → ADR-001. Android flicker on app-overview; invalidation timing.'
+  58425:
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Cross-walk → ADR-001. RenderOpacity omits layer during animations — closest Flutter analogue of GPUI #50392.'
+  69615:
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Cross-walk → ADR-001. Flare in Stack disappears when tree repaints.'
+  123123:
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Cross-walk → ADR-001. Partial screen flickering on Android.'
+  172079:
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Cross-walk → ADR-001 + ADR-002. Linux Desktop hover flicker on icon buttons.'
+
+  # ─── ADR-002: hover/active invalidation ───────────────────
+  83046:
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Cross-walk → ADR-002 + ADR-017. AnimatedOpacity + BackdropFilter lag on first trigger; pre-warming + invalidation.'
+
+  # ─── ADR-003: color/alpha pipeline ────────────────────────
+  14288:
+    adr: 'yes'
+    repro: 'no'
+    notes: 'Cross-walk → ADR-003 (disambiguation). Antialiasing artefacts — rasterizer, not alpha contract. 197 reactions.'
+  65633:
+    adr: 'yes'
+    repro: 'unknown'
+    notes: 'Cross-walk → ADR-003. Color.withOpacity on Arabic letters — alpha + run boundary.'
+  72249:
+    adr: 'yes'
+    repro: 'unknown'
+    notes: 'Cross-walk → ADR-003. ClipPath + BlendMode.difference artefacts.'
+  167835:
+    adr: 'yes'
+    repro: 'unknown'
+    notes: 'Cross-walk → ADR-003. BlendMode.clear + MaskFilter.blur render bug.'
+  182066:
+    adr: 'yes'
+    repro: 'unknown'
+    notes: 'Cross-walk → ADR-003. FadeTransition wrapping CupertinoPopupSurface breaks on Impeller.'
+
+  # ─── ADR-004: text slicing UTF-8 ──────────────────────────
+  79172:
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Cross-walk → ADR-004 + ADR-013. Complex characters rendered incorrectly on web.'
+  79931:
+    adr: 'yes'
+    repro: 'unknown'
+    notes: 'Cross-walk → ADR-004 + ADR-013. Chinese characters not vertically-aligned.'
+  180306:
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Cross-walk → ADR-004. CJK text-background rendering not clear; close relative of GPUI #49860.'
+  115517:
+    adr: 'yes'
+    repro: 'unknown'
+    notes: 'Cross-walk → ADR-004. Emoji/text order anomalies near grapheme boundaries.'
+
+  # ─── ADR-005: GPU device-loss ─────────────────────────────
+  111151:
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Cross-walk → ADR-005. Direct twin of GPUI #23288 — engine should gracefully handle device loss.'
+  177873:
+    adr: 'yes'
+    repro: 'unknown'
+    notes: 'Cross-walk → ADR-005. Android Impeller-OpenGL ES SVG/VG corruption after Vulkan fallback — backend swap is same loss family.'
+
+  # ─── ADR-006: partial present (CanvasKit family) ──────────
+  94429:
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Cross-walk → ADR-006 + ADR-012. CanvasKit resizing janky — partial present + canvas perf.'
+
+  # ─── ADR-007: display lifecycle ───────────────────────────
+  32115:
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Cross-walk → ADR-007. Allow setting logical pixel size programmatically — DPI knob; adjacent to our scale-factor contract.'
+
+  # ─── ADR-009: input / IME ─────────────────────────────────
+  77023:
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Cross-walk → ADR-009 + ADR-013. CanvasKit: load fonts on browser locale — keyboard/locale lifecycle.'
+  106789:
+    adr: 'yes'
+    repro: 'unknown'
+    notes: 'Cross-walk → ADR-009. Hero animation on text field dismiss keyboard — IME visibility + transition timing.'
+
+  # ─── ADR-011: drag-and-drop ──────────────────────────────
+  1837:
+    adr: 'maybe'
+    repro: 'unknown'
+    notes: 'Cross-walk → ADR-011. Internal DnD (Draggable feedback), не external payload. Tangential.'
+
+  # ─── ADR-012: canvas custom paint ─────────────────────────
+  77485:
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Cross-walk → ADR-012. Canvas.drawVertices AA — analogue of Window::paint_* low-level surface.'
+  105044:
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Cross-walk → ADR-012 + ADR-006. Skia CanvasKit perf on Chrome/macOS.'
+  77832:
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Cross-walk → ADR-012 + ADR-006. CanvasKit resizing black dotted render.'
+
+  # ─── ADR-013: text rasterization strategy ─────────────────
+  67034:
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Cross-walk → ADR-013. Fonts double-antialiased on desktop — top signal for TextRasterMode contract (60 reactions).'
+  75832:
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Cross-walk → ADR-013. Font weight light <400 on Flutter Web — rasterizer regression.'
+  100964:
+    adr: 'maybe'
+    repro: 'unknown'
+    notes: 'Cross-walk → ADR-013 (out-of-scope: colour glyphs). Emojis no color macOS — separate sub-pipeline.'
+  113026:
+    adr: 'maybe'
+    repro: 'unknown'
+    notes: 'Cross-walk → ADR-013 (out-of-scope: colour glyphs). Warning emoji rendering.'
+  59798:
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Cross-walk → ADR-013. Hairline stroke AA across fractional pixel boundaries — pixel-grid alignment, same tension as hinted vs subpixel.'
+  139854:
+    adr: 'yes'
+    repro: 'unknown'
+    notes: 'Cross-walk → ADR-013. CanvasKit Chinese text with different font weights.'
+
+  # ─── ADR-015: image clip vs corner ────────────────────────
+  86584:
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Cross-walk → ADR-015 + ADR-018. ListView background overflows from parent Container — child paint exceeds container, container clip not applied.'
+  117355:
+    adr: 'maybe'
+    repro: 'unknown'
+    notes: 'Cross-walk → ADR-015 (tangential). Border of widget blurry if centered — pixel-grid.'
+  184733:
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Cross-walk → ADR-015. Align widgets which use BoxFit — Flutter''s BoxFit ≡ our ObjectFit.'
+
+  # ─── ADR-016: wasm target gating ──────────────────────────
+  181848:
+    adr: 'yes'
+    repro: 'unknown'
+    notes: 'Cross-walk → ADR-016. Flutter web wasm occasional rendering issues — wasm target completeness.'
+  180959:
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Cross-walk → ADR-016. RuntimeEffect rejects dFdx/dFdy/fwidth — wasm capability matrix.'
+
+  # ─── ADR-017: window/widget blur ──────────────────────────
+  31706:
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Cross-walk → ADR-017 + ADR-003. BackdropFilter doesn''t work as child of Opacity — filter + alpha ordering.'
+  120028:
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Cross-walk → ADR-017. BackdropFilter inconsistent across edges with webview — cross-context composition.'
+  64828:
+    adr: 'yes'
+    repro: 'unknown'
+    notes: 'Cross-walk → ADR-017. ImageFilter.blur bright edges and clip when resizing.'
+  165422:
+    adr: 'yes'
+    repro: 'unknown'
+    notes: 'Cross-walk → ADR-017. BackdropFilter rendering issue.'
+  175537:
+    adr: 'yes'
+    repro: 'unknown'
+    notes: 'Cross-walk → ADR-017. BackdropFilter inside ShaderMask — composition.'
+
+  # ─── ADR-018: modal & overlay layering ────────────────────
+  182085:
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Cross-walk → ADR-018. Nested scroll view inside Stack escapes boundaries.'
+  46070:
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Cross-walk → ADR-018. Stack relayout too pessimistic w.r.t. Positioned children — performance side.'
+
+  # ─── Themes without an ADR yet (placeholder triage) ───────
+  # Listed for visibility; will be revisited if we expand ADR scope.
+  64001:
+    adr: 'n-a'
+    repro: 'n-a'
+    notes: 'Status bar icon brightness (54 reactions). Mobile-only; defer to mobile-roadmap.md.'
+  54029:
+    adr: 'n-a'
+    repro: 'n-a'
+    notes: 'AnnotatedRegion on iOS status bar. Mobile-only.'
+  119465:
+    adr: 'n-a'
+    repro: 'n-a'
+    notes: 'SystemUiMode.edgeToEdge transparency on older Android. Mobile-only.'
+  168813:
+    adr: 'n-a'
+    repro: 'n-a'
+    notes: 'Material 3 Expressive umbrella (765 reactions). Lives in flui-material, not engine.'
+  170310:
+    adr: 'n-a'
+    repro: 'n-a'
+    notes: 'iOS 26 Liquid Glass design support (670 reactions). flui-material concern.'
+  24722:
+    adr: 'n-a'
+    repro: 'n-a'
+    notes: 'Breaking-change governance umbrella. Our K-series + ADR governance is the equivalent.'

@@ -1,0 +1,173 @@
+issues:
+  56314:
+    adr: 'no'
+    repro: 'no'
+    notes: 'Audit 2026-05-12: у нас нет аналогичного init `unreachable!`. Все `unreachable!` в wayland/client.rs — exhaustive match на `wl_pointer::Axis` (safe). GPUI panic на crates/gpui_linux/src/linux.rs:55 у нас нет — у нас x11 и wayland раздельно.'
+  56294:
+    adr: 'yes'
+    repro: 'no'
+    notes: 'Закрыто debug-guard в `Window::on_next_frame` (`WindowInvalidator::debug_assert_not_paint`) — регистрация из `paint` теперь панически падает в debug. См. ADR-001 (action item 2 закрыт).'
+  48103:
+    adr: 'no'
+    repro: 'unknown'
+    notes: 'Audit 2026-05-12: API есть (wayland/window.rs:1391 start_window_move, :1399 start_window_resize через xdg_toplevel). Конкретный compositor-specific bug — требует Linux machine для проверки.'
+  46378:
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Покрыто ADR-007 (docs/research/adr/ADR-007-display-lifecycle.md). `App::displays` — pass-through в platform без кеша/wait. Contract decision 6 требует "blocking populate" если платформе нужен event-loop tick.'
+  44529:
+    adr: 'no'
+    repro: 'n-a'
+    notes: 'Audit 2026-05-12: Zed-specific UI (login → account avatar). У нас нет аналогичного account-flow UI. Не наш scope.'
+  33956:
+    adr: 'no'
+    repro: 'unknown'
+    notes: 'Audit 2026-05-12: X11 event loop у нас есть (platform/linux/x11/{client,event,window}.rs). Cursor-lag-specific поведение требует 4K X11 machine для воспроизведения.'
+  30469:
+    adr: 'yes'
+    repro: 'unknown'
+    notes: 'Покрыто ADR-007 (docs/research/adr/ADR-007-display-lifecycle.md), decision 5: output disconnect reattaches window to primary_display, не убивает приложение. Action item 4 — тест на test-platform.'
+  21851:
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Покрыто ADR-007 (docs/research/adr/ADR-007-display-lifecycle.md). `scale_factor` обновляется только в `bounds_changed`; cross-monitor без resize пропускается. Action item 3 в ADR-007 добавит XRandR-driven path.'
+  21341:
+    adr: 'maybe'
+    repro: 'partial'
+    notes: 'Audit 2026-05-12: у нас есть shadow rendering (paint_shadow в window.rs), но `transparent + maximized` сценарий не проверяли. Дизайн-вопрос; не блокирующий.'
+  19805:
+    adr: 'no'
+    repro: 'n-a'
+    notes: 'Audit 2026-05-12: wrap guides — Zed editor concept (editor "wrap_guides" в settings.json), не engine. У нас нет analogous element. Не наш scope.'
+  14590:
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Покрыто ADR-017 (docs/research/adr/ADR-017-window-background-blur.md). API уже есть: WindowBackgroundAppearance::Blurred. X11 импл отсутствует — нужно поставить _KDE_NET_WM_BLUR_BEHIND_REGION и _NET_WM_DEEPIN_BLUR_REGION_ROUNDED xprops.'
+  54017:
+    adr: 'maybe'
+    repro: 'n-a'
+    notes: 'Audit 2026-05-12: macOS NSWindow level/key API platform-specific. Mac не наш текущий приоритет. Отложено.'
+  52550:
+    adr: 'yes'
+    repro: 'yes'
+    notes: 'Покрыто ADR-009 (docs/research/adr/ADR-009-input-ime-contract.md). `do_command_by_selector` в mac/window.rs:2423 имеет тот же шаблон — селектор игнорируется (`_: Sel`), keystroke re-fire через keymap. Контракт: дополнить InputHandler методом handle_editor_command + enum EditorCommand.'
+  40623:
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Покрыто ADR-019 (docs/research/adr/ADR-019-scroll-physics.md), decision 3: axis-lock в ScrollPhysics::apply_delta. Закрывается data-change, не новым gesture recogniser.'
+  38350:
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Частично покрыто ADR-002 (docs/research/adr/ADR-002-hover-active-invalidation.md) — scoped invalidation reduces over-paint от лишних hover events. Сама причина (events fire when window is in background) — отдельный ADR про event filtering при background-state.'
+  35903:
+    adr: 'no'
+    repro: 'n-a'
+    notes: 'Audit 2026-05-12: macOS-specific platform bug. Mac не приоритет; конкретный fix должен прилететь от upstream GPUI или своими руками когда mac станет приоритетом.'
+  27500:
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Покрыто ADR-008 (docs/research/adr/ADR-008-window-chrome-contract.md), decision 4: drag-region вычисляется после per-child hit-test. Action item 3.'
+  52448:
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Покрыто ADR-018 (docs/research/adr/ADR-018-modal-overlay-layering.md), decision 4: модальность per-window, не app-global. Apps хотят "block below" → wrap modal в transparent backdrop element (helper modal_backdrop в action item 3).'
+  52085:
+    adr: 'no'
+    repro: 'no'
+    notes: 'Покрыто DirectX recovery path (windows/platform.rs:318, directx_renderer.rs:227, try_to_recover_from_device_lost) — см. ADR-005. Контракт зафиксирован; реальный driver-update сценарий — action item 4 ADR-005.'
+  37727:
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Audit 2026-05-12: структурно покрыто ADR-001 (invalidation) + ADR-006 (damage region) + ADR-013 (TextRasterMode) + ADR-015 (clip overhead). Конкретный GPU benchmark не проведён — требует целевой Windows-машины и сравнения с VSCode.'
+  55972:
+    adr: 'yes'
+    repro: 'yes'
+    notes: 'Покрыто ADR-003 (docs/research/adr/ADR-003-color-alpha-pipeline.md). `Rgba::blend` в color.rs:58 возвращает `out.a = self.a` — это та же ошибка. GPU side корректен (PREMULTIPLIED_ALPHA_BLENDING). Action item 1 в ADR-003: исправить CPU-формулу.'
+  55214:
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Покрыто ADR-013 (docs/research/adr/ADR-013-text-rasterization-strategy.md). Mac forces subpixel+AA (text_system.rs:442); нет выбора bi-level/hinted. Контракт: TextRasterMode enum + поле в TextStyle + per-platform fallback.'
+  52715:
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Покрыто ADR-016 (docs/research/adr/ADR-016-wasm-target-gating.md). Sub-bug 2 (proptest pulls imp) НЕ повторяется — у нас `dep:proptest` в `test-support`. Sub-bug 1 (closure recursion) — статус unknown до wasm hello_world аудита.'
+  52110:
+    adr: 'yes'
+    repro: 'yes'
+    notes: 'Покрыто ADR-011 (docs/research/adr/ADR-011-external-drag-drop.md). У нас есть FileDropEvent + ExternalPaths(SmallVec<PathBuf>) — только paths. URL/text/html-payloads дропаются на platform side. ADR-011 расширяет тип до ExternalDropEvent + sealed enum ExternalDropPayload.'
+  52067:
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Покрыто ADR-008 (docs/research/adr/ADR-008-window-chrome-contract.md). WS_MINIMIZEBOX устанавливает кнопку, но WM_SYSCOMMAND/SC_MINIMIZE не фильтруется. Контракт: invariant, а не hint. Action item 1.'
+  52013:
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Покрыто ADR-018 (docs/research/adr/ADR-018-modal-overlay-layering.md). У нас уже есть `defer_draw(priority)`. Контракт: priority — единственный механизм; hit-test тоже идёт по priority. Action item 1: верифицировать hit-test walk.'
+  50392:
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Покрыто ADR-001 (docs/research/adr/ADR-001-invalidation-scope.md). Наш animation использует `request_animation_frame`, но `draw()` всё равно делает full `draw_roots`. ADR честно фиксирует gap; partial-layout subtree caching — отдельный future ADR.'
+  49860:
+    adr: 'yes'
+    repro: 'no'
+    notes: 'Покрыто ADR-004 (docs/research/adr/ADR-004-text-slicing-utf8-safety.md). Конкретный truncation site (line_wrapper.rs:205) безопасен — индекс приходит из char_indices. `TruncateFrom::Start` использует ceil_char_boundary. Два других слайс-сайта (line_layout.rs:150, line.rs:211-212) держат инвариант неявно — для них action items 1-2 в ADR-004 добавят debug_assert.'
+  46486:
+    adr: 'no'
+    repro: 'n-a'
+    notes: crates.io старый gpui + macOS SDK mismatch. Чужая инфраструктурная проблема.
+  45897:
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Покрыто ADR-014 (docs/research/adr/ADR-014-software-rendering-fallback.md). Адаптер не классифицируется, frame budget не tightens на software. Контракт: RendererKind + per-kind frame budget (60→30 fps).'
+  44339:
+    adr: 'yes'
+    repro: 'yes'
+    notes: 'Покрыто ADR-015 (docs/research/adr/ADR-015-image-clip-vs-corner.md). img.rs:490 применяет corner_radii к new_bounds (image, расширенный Cover), а не к container. push_layer не имеет rounded варианта. Контракт: push_rounded_clip + clip-then-paint.'
+  44252:
+    adr: 'no'
+    repro: 'n-a'
+    notes: Старый NVIDIA driver на конкретной системе.
+  43273:
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Покрыто ADR-012 (docs/research/adr/ADR-012-custom-canvas-paint.md). Reading (A) — низкоуровневый paint — закрыт: `canvas(prepaint, paint)` в elements/canvas.rs. Reading (B) — custom shader — отдельный future ADR.'
+  43207:
+    adr: 'yes'
+    repro: 'n-a'
+    notes: 'Покрыто docs/research/mobile-roadmap.md (стратегический roadmap, не ADR). Touchpoints: android-activity crate, wgpu Vulkan, onPause→ADR-005 recover.'
+  43206:
+    adr: 'yes'
+    repro: 'n-a'
+    notes: 'Покрыто docs/research/mobile-roadmap.md. Touchpoints: objc2, UIKit lifecycle (applicationDidEnterBackground), wgpu Metal, ADR-009 IME contract extends к UITextInput.'
+  34796:
+    adr: 'yes'
+    repro: 'no'
+    notes: 'Покрыто ADR-010 (docs/research/adr/ADR-010-local-tab-index.md). У нас уже есть hierarchical TabStopMap с begin_group/end_group (tab_stop.rs:92) и SumTree<TabStopPath>. Capability gap отсутствует — нужна только API-фиксация.'
+  33050:
+    adr: 'yes'
+    repro: 'yes'
+    notes: 'Покрыто ADR-003 (docs/research/adr/ADR-003-color-alpha-pipeline.md). Та же ошибка в `Rgba::blend`. Контракт зафиксирован: canonical source-over alpha. Action item 1 — пересчёт формулы.'
+  24405:
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Частично покрыто ADR-002 (docs/research/adr/ADR-002-hover-active-invalidation.md) — scoped invalidation cuts the per-hover full-window repaint that amplifies the symptom. Сама причина (hit-test layering) — отдельный future ADR. Связано с #52013.'
+  23288:
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Покрыто ADR-005 (docs/research/adr/ADR-005-gpu-device-loss.md). У нас уже есть detection (wgpu_context.rs), surface reconfigure (wgpu_renderer.rs:1068), full recovery (wgpu_renderer.rs:1639), multi-window coordination, и отдельный DirectX path. 6 явных gaps — action items 2-5 ADR-005.'
+  15166:
+    adr: 'yes'
+    repro: 'yes'
+    notes: 'Покрыто ADR-001 + scoping ADR-006 (docs/research/adr/ADR-006-partial-present-damage-regions.md). PlatformWindow::draw принимает только Scene без damage; ADR-006 фиксирует constraints на будущий damage-region API (backward-compatible, opt-in per backend, device pixels, additive hint).'
+  14110:
+    adr: 'no'
+    repro: 'yes'
+    notes: 'Audit 2026-05-12: grep platform.rs — нет поля `disable_rounded_corners` / `square_corners` в WindowOptions. Минорная опция, ADR не нужен — добавить bool field когда будет UX-кейс.'
+  13605:
+    adr: 'no'
+    repro: 'n-a'
+    notes: Запуск GUI в терминале через kitty graphics. Вне нашего scope.
+  8043:
+    adr: 'yes'
+    repro: 'yes'
+    notes: 'Покрыто ADR-020 (docs/research/adr/ADR-020-opaque-pass-overdraw.md). Подтверждено в audit 2026-05-12: wgpu_renderer.rs:674 cull_mode=None, :679 depth_stencil=None. Контракт: opaque-pass front-to-back + depth reject; transparent-pass back-to-front с depth test без write.'
