@@ -290,7 +290,9 @@ impl WebWindowInner {
                 current_state.mouse_position = position;
             }
 
-            this.dispatch_input(PlatformInput::FileDrop(FileDropEvent::Pending { position }));
+            this.dispatch_input(PlatformInput::FileDrop(ExternalDropEvent::Pending {
+                position,
+            }));
         })
     }
 
@@ -320,14 +322,16 @@ impl WebWindowInner {
                 payload: ExternalDropPayload::Paths(ExternalPaths(paths)),
             }));
 
-            this.dispatch_input(PlatformInput::FileDrop(FileDropEvent::Submit { position }));
+            this.dispatch_input(PlatformInput::FileDrop(ExternalDropEvent::Submit {
+                position,
+            }));
         })
     }
 
     fn register_dragleave(self: &Rc<Self>) -> Closure<dyn FnMut(JsValue)> {
         let this = Rc::clone(self);
         self.listen("dragleave", move |_event: JsValue| {
-            this.dispatch_input(PlatformInput::FileDrop(FileDropEvent::Exited));
+            this.dispatch_input(PlatformInput::FileDrop(ExternalDropEvent::Exited));
         })
     }
 

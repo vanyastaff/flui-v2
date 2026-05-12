@@ -92,7 +92,7 @@ use crate::platform::linux::{
 };
 use crate::platform::wgpu::{CompositorGpuHint, GpuContext};
 use flui_core::{
-    AnyWindowHandle, Bounds, Capslock, CursorStyle, DevicePixels, DisplayId, FileDropEvent,
+    AnyWindowHandle, Bounds, Capslock, CursorStyle, DevicePixels, DisplayId, ExternalDropEvent,
     ForegroundExecutor, KeyDownEvent, KeyUpEvent, Keystroke, Modifiers, ModifiersChangedEvent,
     MouseButton, MouseDownEvent, MouseExitEvent, MouseMoveEvent, MouseUpEvent, NavigationDirection,
     Pixels, PlatformDisplay, PlatformInput, PlatformKeyboardLayout, PlatformWindow, Point,
@@ -2241,7 +2241,7 @@ impl Dispatch<wl_data_device::WlDataDevice, ()> for WaylandClientStatePtr {
                 let position = Point::new(x.into(), y.into());
                 state.drag.position = position;
 
-                let input = PlatformInput::FileDrop(FileDropEvent::Pending { position });
+                let input = PlatformInput::FileDrop(ExternalDropEvent::Pending { position });
                 drop(state);
                 drag_window.handle_input(input);
             }
@@ -2255,7 +2255,7 @@ impl Dispatch<wl_data_device::WlDataDevice, ()> for WaylandClientStatePtr {
                 state.drag.data_offer = None;
                 state.drag.window = None;
 
-                let input = PlatformInput::FileDrop(FileDropEvent::Exited {});
+                let input = PlatformInput::FileDrop(ExternalDropEvent::Exited {});
                 drop(state);
                 drag_window.handle_input(input);
             }
@@ -2270,7 +2270,7 @@ impl Dispatch<wl_data_device::WlDataDevice, ()> for WaylandClientStatePtr {
                 state.drag.data_offer = None;
                 state.drag.window = None;
 
-                let input = PlatformInput::FileDrop(FileDropEvent::Submit {
+                let input = PlatformInput::FileDrop(ExternalDropEvent::Submit {
                     position: state.drag.position,
                 });
                 drop(state);

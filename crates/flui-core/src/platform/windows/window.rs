@@ -1069,7 +1069,7 @@ impl IDropTarget_Impl for WindowsDragDropHandler_Impl {
                 .log_err();
         }
         let scale_factor = self.0.state.scale_factor.get();
-        let input = PlatformInput::FileDrop(FileDropEvent::Pending {
+        let input = PlatformInput::FileDrop(ExternalDropEvent::Pending {
             position: logical_point(
                 cursor_position.x as f32,
                 cursor_position.y as f32,
@@ -1085,7 +1085,7 @@ impl IDropTarget_Impl for WindowsDragDropHandler_Impl {
         unsafe {
             self.0.drop_target_helper.DragLeave().log_err();
         }
-        let input = PlatformInput::FileDrop(FileDropEvent::Exited);
+        let input = PlatformInput::FileDrop(ExternalDropEvent::Exited);
         self.handle_drag_drop(input);
 
         Ok(())
@@ -1111,7 +1111,7 @@ impl IDropTarget_Impl for WindowsDragDropHandler_Impl {
                 .log_err();
         }
         let scale_factor = self.0.state.scale_factor.get();
-        let input = PlatformInput::FileDrop(FileDropEvent::Submit {
+        let input = PlatformInput::FileDrop(ExternalDropEvent::Submit {
             position: logical_point(
                 cursor_position.x as f32,
                 cursor_position.y as f32,

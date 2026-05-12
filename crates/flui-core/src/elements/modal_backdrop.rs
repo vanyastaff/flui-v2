@@ -28,9 +28,12 @@ use crate::{
 /// composition:
 ///
 /// ```no_compile
-/// use flui_core::{deferred, elements::modal_backdrop, z};
+/// use flui_core::{App, Window, deferred, div, elements::modal_backdrop, z};
 ///
-/// fn my_modal(on_dismiss: impl Fn() + 'static) -> impl flui_core::IntoElement {
+/// fn my_modal(close: impl Fn() + 'static) -> impl flui_core::IntoElement {
+///     // `modal_backdrop` requires `Fn(&mut Window, &mut App)`. Adapt
+///     // a simple no-args callback by discarding the window/app refs.
+///     let on_dismiss = move |_window: &mut Window, _cx: &mut App| close();
 ///     div()
 ///         .child(modal_backdrop(on_dismiss))
 ///         .child(deferred(my_modal_content()).with_priority(z::Z_MODAL))
@@ -61,19 +64,25 @@ where
     type Element = ModalBackdropElement;
 
     fn into_element(self) -> Self::Element {
-        // ADR-018: full-window transparent backdrop. Captures
-        // mouse-down + scroll-wheel so clicks/scrolls below are
-        // blocked. The dismiss closure fires on mouse-down so the
-        // "click outside to close" pattern is opt-in via the public
-        // `modal_backdrop(on_dismiss)` constructor.
+        // ADR-018: full-window transparent backdrop. Captures both
+        // mouse-down AND scroll-wheel input so neither clicks nor
+        // wheel scrolls reach elements below the modal. The dismiss
+        // closure fires on mouse-down so the "click outside to close"
+        // pattern is opt-in via the public `modal_backdrop(on_dismiss)`
+        // constructor; scroll-wheel is consumed silently (we do not
+        // surface "scroll-outside-to-dismiss" — that would be
+        // surprising).
         let on_dismiss = self.on_dismiss;
-        let backdrop = div().size_full().bg(transparent_black()).on_mouse_down(
-            crate::MouseButton::Left,
-            move |_, window, cx| {
+        let backdrop = div()
+            .size_full()
+            .bg(transparent_black())
+            .on_mouse_down(crate::MouseButton::Left, move |_, window, cx| {
                 on_dismiss(window, cx);
                 cx.stop_propagation();
-            },
-        );
+            })
+            .on_scroll_wheel(|_, _window, cx| {
+                cx.stop_propagation();
+            });
         ModalBackdropElement {
             inner: Some(
                 deferred(backdrop)

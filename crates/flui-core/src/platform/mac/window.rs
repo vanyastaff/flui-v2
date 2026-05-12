@@ -23,7 +23,7 @@ use cocoa::{
 };
 use dispatch2::DispatchQueue;
 use flui_core::{
-    AnyWindowHandle, BackgroundExecutor, Bounds, Capslock, ExternalPaths, FileDropEvent,
+    AnyWindowHandle, BackgroundExecutor, Bounds, Capslock, ExternalDropEvent, ExternalPaths,
     ForegroundExecutor, KeyDownEvent, Keystroke, Modifiers, ModifiersChangedEvent, MouseButton,
     MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, PlatformAtlas, PlatformDisplay,
     PlatformInput, PlatformInputHandler, PlatformWindow, Point, PromptButton, PromptLevel,
@@ -2509,9 +2509,12 @@ extern "C" fn do_command_by_selector(this: &Object, _: Sel, command: Sel) {
 
     // Fallback: re-fire the original keystroke through the keymap when
     // the editor command was unknown OR not claimed downstream (decision
-    // 3). The keymap may resolve it to an action; if neither path claims
-    // the keystroke the macOS default behavior (e.g. NSSystemBeep) fires
-    // because `do_command_handled` remains None.
+    // 3). When the keymap callback returns `propagate = true` (no flui
+    // handler claimed the keystroke), we set `do_command_handled =
+    // Some(false)`, which tells AppKit we did NOT consume the command
+    // and lets it apply its default behaviour (e.g. NSSystemBeep on
+    // truly-unhandled selectors, or the NSResponder fall-through that
+    // forwards `insertText:` for plain typing).
     if !handled_via_editor_command {
         if let Some((keystroke, callback)) = keystroke.zip(event_callback.as_mut()) {
             let handled = (callback)(PlatformInput::KeyDown(KeyDownEvent {
@@ -2589,7 +2592,7 @@ extern "C" fn dragging_entered(this: &Object, _: Sel, dragging_info: id) -> NSDr
 extern "C" fn dragging_updated(this: &Object, _: Sel, dragging_info: id) -> NSDragOperation {
     let window_state = unsafe { get_window_state(this) };
     let position = drag_event_position(&window_state, dragging_info);
-    if send_file_drop_event(window_state, FileDropEvent::Pending { position }) {
+    if send_file_drop_event(window_state, ExternalDropEvent::Pending { position }) {
         NSDragOperationCopy
     } else {
         NSDragOperationNone
@@ -2598,13 +2601,13 @@ extern "C" fn dragging_updated(this: &Object, _: Sel, dragging_info: id) -> NSDr
 
 extern "C" fn dragging_exited(this: &Object, _: Sel, _: id) {
     let window_state = unsafe { get_window_state(this) };
-    send_file_drop_event(window_state, FileDropEvent::Exited);
+    send_file_drop_event(window_state, ExternalDropEvent::Exited);
 }
 
 extern "C" fn perform_drag_operation(this: &Object, _: Sel, dragging_info: id) -> BOOL {
     let window_state = unsafe { get_window_state(this) };
     let position = drag_event_position(&window_state, dragging_info);
-    send_file_drop_event(window_state, FileDropEvent::Submit { position }).to_objc()
+    send_file_drop_event(window_state, ExternalDropEvent::Submit { position }).to_objc()
 }
 
 fn external_paths_from_event(dragging_info: *mut Object) -> Option<ExternalPaths> {
@@ -2626,7 +2629,7 @@ fn external_paths_from_event(dragging_info: *mut Object) -> Option<ExternalPaths
 
 extern "C" fn conclude_drag_operation(this: &Object, _: Sel, _: id) {
     let window_state = unsafe { get_window_state(this) };
-    send_file_drop_event(window_state, FileDropEvent::Exited);
+    send_file_drop_event(window_state, ExternalDropEvent::Exited);
 }
 
 async fn synthetic_drag(
@@ -2652,15 +2655,15 @@ async fn synthetic_drag(
     }
 }
 
-/// Sends the specified FileDropEvent using `PlatformInput::FileDrop` to the window
+/// Sends the specified ExternalDropEvent using `PlatformInput::FileDrop` to the window
 /// state and updates the window state according to the event passed.
 fn send_file_drop_event(
     window_state: Arc<Mutex<MacWindowState>>,
-    file_drop_event: FileDropEvent,
+    file_drop_event: ExternalDropEvent,
 ) -> bool {
     let external_files_dragged = match file_drop_event {
-        FileDropEvent::Entered { .. } => Some(true),
-        FileDropEvent::Exited => Some(false),
+        ExternalDropEvent::Entered { .. } => Some(true),
+        ExternalDropEvent::Exited => Some(false),
         _ => None,
     };
 

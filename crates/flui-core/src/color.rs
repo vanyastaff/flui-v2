@@ -1161,34 +1161,37 @@ mod tests {
         // out_a == 0.0 exactly — see next test.)
     }
 
+    /// ADR-003 decision 5 — zero-alpha *inputs* are absorbed by the
+    /// fast paths (`other.a <= 0.0` → return `self`).
+    ///
+    /// The lower-level `out_a <= 0.0` early-return inside the canonical
+    /// formula is reachable only through floating-point rounding edge
+    /// cases (both inputs in `(0, 1)` AND the product summing to a
+    /// non-positive result — practically unreachable with normal float
+    /// values; the branch exists as defence against subnormals /
+    /// future numeric drift). This test exercises the **fast-path**
+    /// behaviour explicitly; the defensive branch is verified by
+    /// inspection alongside `reference_source_over` in the property
+    /// test.
     #[test]
-    fn adr_003_exact_zero_output_alpha_returns_origin() {
+    fn adr_003_zero_alpha_input_fast_paths() {
         let dst = Rgba {
             r: 0.5,
             g: 0.5,
             b: 0.5,
             a: 0.0,
         };
-        // src.a is strictly between 0 and 1, so neither fast path fires,
-        // but out_a = 0 + 0 * (1 - 0) = 0 after dst.a = 0. Wait — that
-        // requires src.a = 0 to hit the zero branch. Use a slightly
-        // pathological pair where neither is the fast-path 0/1 boundary
-        // but out_a still rounds to 0. Easiest: pick a dst with zero alpha
-        // and let the fast paths handle it.
-        //
-        // Direct check: blend zero-alpha source onto zero-alpha dst via
-        // the fast-path branch (src.a == 0 returns dst unchanged) — the
-        // "exact zero out_a" branch in blend itself is the next test
-        // path, which we'll exercise with a manual call.
         let zero_src = Rgba {
             r: 0.0,
             g: 0.0,
             b: 0.0,
             a: 0.0,
         };
+        // src.a <= 0.0 → returns dst unchanged.
         let out = dst.blend(zero_src);
-        assert_eq!(out, dst); // fast path
-        let out2 = zero_src.blend(zero_src); // also fast path (src.a <= 0)
+        assert_eq!(out, dst);
+        // src.a <= 0.0 → returns self (which here equals src structurally).
+        let out2 = zero_src.blend(zero_src);
         assert_eq!(out2, zero_src);
     }
 

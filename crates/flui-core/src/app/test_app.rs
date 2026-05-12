@@ -783,6 +783,119 @@ mod tests {
         );
     }
 
+    /// ADR-009 regression test for the
+    /// [`InputHandler::handle_editor_command`] default — implements
+    /// the full trait without overriding `handle_editor_command`, then
+    /// invokes the method via `&mut Window` / `&mut App` inside a
+    /// `window.update(...)` closure. Asserts the default body returns
+    /// `false` so the macOS bridge's keystroke-fallback path engages
+    /// when no widget claims the command.
+    ///
+    /// This is the trait-level companion to
+    /// `platform::tests::adr_009_editor_command_dispatch_pattern`,
+    /// which exercises the dispatch shape with a mock receiver — both
+    /// together cover the ADR-009 default + override contract.
+    #[test]
+    fn adr_009_input_handler_handle_editor_command_default_returns_false() {
+        use crate::{
+            App, Bounds, EditorCommand, InputHandler, Pixels, Point, UTF16Selection, Window,
+        };
+        use std::ops::Range;
+
+        struct DefaultInputHandler;
+
+        impl InputHandler for DefaultInputHandler {
+            fn selected_text_range(
+                &mut self,
+                _ignore_disabled_input: bool,
+                _window: &mut Window,
+                _cx: &mut App,
+            ) -> Option<UTF16Selection> {
+                None
+            }
+            fn marked_text_range(
+                &mut self,
+                _window: &mut Window,
+                _cx: &mut App,
+            ) -> Option<Range<usize>> {
+                None
+            }
+            fn text_for_range(
+                &mut self,
+                _range_utf16: Range<usize>,
+                _adjusted_range: &mut Option<Range<usize>>,
+                _window: &mut Window,
+                _cx: &mut App,
+            ) -> Option<String> {
+                None
+            }
+            fn replace_text_in_range(
+                &mut self,
+                _replacement_range: Option<Range<usize>>,
+                _text: &str,
+                _window: &mut Window,
+                _cx: &mut App,
+            ) {
+            }
+            fn replace_and_mark_text_in_range(
+                &mut self,
+                _range_utf16: Option<Range<usize>>,
+                _new_text: &str,
+                _new_selected_range: Option<Range<usize>>,
+                _window: &mut Window,
+                _cx: &mut App,
+            ) {
+            }
+            fn unmark_text(&mut self, _window: &mut Window, _cx: &mut App) {}
+            fn bounds_for_range(
+                &mut self,
+                _range_utf16: Range<usize>,
+                _window: &mut Window,
+                _cx: &mut App,
+            ) -> Option<Bounds<Pixels>> {
+                None
+            }
+            fn character_index_for_point(
+                &mut self,
+                _point: Point<Pixels>,
+                _window: &mut Window,
+                _cx: &mut App,
+            ) -> Option<usize> {
+                None
+            }
+            // Intentionally do NOT override `handle_editor_command` —
+            // we want the trait default to fire.
+        }
+
+        let mut app = TestApp::new();
+        let mut window = app.open_window(Counter::new);
+
+        let mut handler = DefaultInputHandler;
+        let observed = window.update(|_view, w, cx| {
+            // Default body returns `false` for every variant.
+            let any_returned_true = [
+                EditorCommand::DeleteWordBackward,
+                EditorCommand::MoveToBeginningOfLine,
+                EditorCommand::Transpose,
+                EditorCommand::SelectAll,
+            ]
+            .into_iter()
+            .any(|cmd| handler.handle_editor_command(cmd, w, cx));
+            any_returned_true
+        });
+
+        assert!(
+            !observed,
+            "ADR-009: InputHandler::handle_editor_command default impl must \
+             return false so the macOS bridge's keystroke-fallback path engages \
+             when no widget claims the command. A regression that flips the \
+             default to true would silently swallow every standard Cocoa binding."
+        );
+
+        drop(window);
+        app.update(|cx| cx.shutdown());
+    }
+
     #[test]
     fn adr_008_minimize_window_rejected_when_options_disallow_it() {
         let mut app = TestApp::new();

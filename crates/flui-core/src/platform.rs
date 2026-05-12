@@ -2676,25 +2676,28 @@ mod tests {
         );
     }
 
-    /// ADR-009 regression test for the [`InputHandler::handle_editor_command`]
-    /// default — returns `false` so existing implementors compile
-    /// unchanged and the macOS bridge falls back to the keystroke path.
-    /// A custom impl overrides the default and is reachable.
+    /// ADR-009 — locks the *dispatch pattern* the macOS bridge expects
+    /// downstream: a mock receiver records observed [`EditorCommand`]
+    /// values and reports whether it claims each one. This is the
+    /// shape the bridge calls into; the actual
+    /// [`InputHandler::handle_editor_command`] default return (false)
+    /// is verified by a separate `TestApp`-based test in
+    /// `app::test_app::tests::adr_009_input_handler_handle_editor_command_default_returns_false`
+    /// where `&mut Window` / `&mut App` can be constructed.
+    ///
+    /// The two tests are split because the trait method requires
+    /// engine-level context (`&mut Window` / `&mut App`) which
+    /// `platform.rs::tests` cannot reach without crossing back into
+    /// the `app` module. This test stays focused on the variant-level
+    /// dispatch contract: a receiver can observe the variant and
+    /// return a boolean.
     #[test]
-    fn adr_009_input_handler_handle_editor_command_default_false() {
-        // A handler that never implements the new method — exercises the
-        // trait's default body directly via `dyn` dispatch is not
-        // feasible (would require constructing &mut Window and &mut App).
-        // Instead, exercise the type-level contract: `handle_editor_command`
-        // is callable on any `dyn InputHandler` with the signature
-        // we promised, and a concrete impl can override.
-        struct CustomHandler {
+    fn adr_009_editor_command_dispatch_pattern() {
+        struct MockReceiver {
             seen: Vec<EditorCommand>,
         }
-        impl CustomHandler {
-            fn fake_call(&mut self, cmd: EditorCommand) -> bool {
-                // Mimics what the engine would do once routing lands:
-                // dispatch the command and observe the handler's return.
+        impl MockReceiver {
+            fn dispatch(&mut self, cmd: EditorCommand) -> bool {
                 self.seen.push(cmd);
                 matches!(
                     cmd,
@@ -2703,10 +2706,10 @@ mod tests {
             }
         }
 
-        let mut handler = CustomHandler { seen: Vec::new() };
-        assert!(handler.fake_call(EditorCommand::DeleteWordBackward));
-        assert!(handler.fake_call(EditorCommand::MoveToBeginningOfLine));
-        assert!(!handler.fake_call(EditorCommand::Transpose));
+        let mut handler = MockReceiver { seen: Vec::new() };
+        assert!(handler.dispatch(EditorCommand::DeleteWordBackward));
+        assert!(handler.dispatch(EditorCommand::MoveToBeginningOfLine));
+        assert!(!handler.dispatch(EditorCommand::Transpose));
         assert_eq!(handler.seen.len(), 3);
         assert_eq!(handler.seen[0], EditorCommand::DeleteWordBackward);
         assert_eq!(handler.seen[1], EditorCommand::MoveToBeginningOfLine);
