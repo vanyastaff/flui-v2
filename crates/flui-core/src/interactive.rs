@@ -679,6 +679,13 @@ pub enum PlatformInput {
     Pinch(PinchEvent),
     /// Files were dragged and dropped onto the window.
     FileDrop(FileDropEvent),
+    /// ADR-009: a typed editor command from the platform IME / key-binding
+    /// system. On macOS the bridge reads the selector argument of
+    /// `doCommandBySelector:` and emits this variant (instead of dropping
+    /// the selector and re-firing the keystroke). Routes to
+    /// [`crate::InputHandler::handle_editor_command`] downstream; the
+    /// keymap is the fallback when no widget claims the command.
+    EditorCommand(crate::platform::EditorCommand),
 }
 
 impl PlatformInput {
@@ -696,6 +703,8 @@ impl PlatformInput {
             #[cfg(any(target_os = "linux", target_os = "macos"))]
             PlatformInput::Pinch(event) => Some(event),
             PlatformInput::FileDrop(event) => Some(event),
+            // ADR-009: EditorCommand is a non-mouse, non-keyboard input.
+            PlatformInput::EditorCommand(_) => None,
         }
     }
 
@@ -713,6 +722,10 @@ impl PlatformInput {
             #[cfg(any(target_os = "linux", target_os = "macos"))]
             PlatformInput::Pinch(_) => None,
             PlatformInput::FileDrop(_) => None,
+            // ADR-009: EditorCommand routes through the InputHandler trait
+            // method (`handle_editor_command`), not the keystroke-event
+            // matchers — those would mistake it for raw key input.
+            PlatformInput::EditorCommand(_) => None,
         }
     }
 }

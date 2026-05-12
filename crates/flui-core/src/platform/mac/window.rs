@@ -442,6 +442,18 @@ struct MacWindowState {
     activated_least_once: bool,
     // The parent window if this window is a sheet (Dialog kind)
     sheet_parent: Option<id>,
+    // ADR-008: WindowOptions invariants carried into MacWindow so the
+    // platform-side `minimize()` / `zoom()` methods can enforce them
+    // as a second line of defense. The first line is the style mask
+    // (NSMiniaturizableWindowMask / NSResizableWindowMask) set at
+    // window creation, which only greys the title-bar button. System-
+    // menu interception (Dock right-click → Minimize, View menu → Zoom)
+    // is a TODO that requires NSWindowDelegate / NSMenu validation
+    // hooks; see `docs/research/adr/ADR-008-window-chrome-contract.md`
+    // action item 2.
+    is_movable: bool,
+    is_resizable: bool,
+    is_minimizable: bool,
 }
 
 impl MacWindowState {
@@ -765,6 +777,9 @@ impl MacWindow {
                 toggle_tab_bar_callback: None,
                 activated_least_once: false,
                 sheet_parent: None,
+                is_movable,
+                is_resizable,
+                is_minimizable,
             })));
 
             (*native_window).set_ivar(
@@ -1411,7 +1426,25 @@ impl PlatformWindow for MacWindow {
     }
 
     fn minimize(&self) {
-        let window = self.0.lock().native_window;
+        // ADR-008 second line: reject programmatic minimize when the
+        // invariant was opted out. First line (NSMiniaturizableWindowMask
+        // absence) only greys the title-bar button; programmatic
+        // `miniaturize_:` and Dock right-click → Minimize bypass it.
+        // System-menu and Dock interception requires NSWindowDelegate /
+        // NSMenu validation hooks — TODO(ADR-008 #2): wire those when
+        // touching the macOS window code next.
+        let this = self.0.lock();
+        if !this.is_minimizable {
+            log::warn!(
+                "ADR-008: ignored programmatic minimize() on macOS — window \
+                 created with `is_minimizable = false`. (Dock → Minimize and \
+                 keyboard shortcuts are still TODO; tracked in ADR-008 \
+                 action item 2.)"
+            );
+            return;
+        }
+        let window = this.native_window;
+        drop(this);
         unsafe {
             window.miniaturize_(nil);
         }
@@ -1419,6 +1452,16 @@ impl PlatformWindow for MacWindow {
 
     fn zoom(&self) {
         let this = self.0.lock();
+        // ADR-008 decision 3: a non-resizable window is also non-maximizable
+        // (Cocoa conflates the two via `NSResizableWindowMask`).
+        if !this.is_resizable {
+            log::warn!(
+                "ADR-008: ignored programmatic zoom() on macOS — window created \
+                 with `is_resizable = false`. (View menu → Zoom and traffic-light \
+                 zoom-button paths are still TODO; tracked in ADR-008 action item 2.)"
+            );
+            return;
+        }
         let window = this.native_window;
         this.foreground_executor
             .spawn(async move {
@@ -2418,26 +2461,69 @@ extern "C" fn attributed_substring_for_proposed_range(
     .unwrap_or(nil)
 }
 
-// We ignore which selector it asks us to do because the user may have
-// bound the shortcut to something else.
-extern "C" fn do_command_by_selector(this: &Object, _: Sel, _: Sel) {
+/// ADR-009 macOS bridge for `doCommandBySelector:`.
+///
+/// The Cocoa key-binding manager calls this after translating a key combo
+/// (including anything the user added to
+/// `~/Library/KeyBindings/DefaultKeyBinding.dict`) into a selector. The
+/// pre-ADR handler dropped the selector and re-fired the original
+/// keystroke through the flui keymap, losing every standard Cocoa binding
+/// (`ctrl-W` = word-delete, `ctrl-A` = line-start, ...) and every user
+/// binding.
+///
+/// The new contract (ADR-009 decision 1): look the selector up in
+/// `editor_command_for_selector_name`. On a known mapping, dispatch a
+/// typed [`crate::EditorCommand`] event via `event_callback`. On unknown
+/// selectors OR when the downstream handler does not claim the command,
+/// fall back to the legacy keystroke path (decision 3 — keymap is a
+/// fallback, not a bypass). The macOS default beep on truly-unhandled
+/// commands is preserved.
+extern "C" fn do_command_by_selector(this: &Object, _: Sel, command: Sel) {
+    use flui_core::EditorCommand;
     let state = unsafe { get_window_state(this) };
     let mut lock = state.as_ref().lock();
     let keystroke = lock.keystroke_for_do_command.take();
     let mut event_callback = lock.event_callback.take();
     drop(lock);
 
-    if let Some((keystroke, callback)) = keystroke.zip(event_callback.as_mut()) {
-        let handled = (callback)(PlatformInput::KeyDown(KeyDownEvent {
-            keystroke,
-            is_held: false,
-            prefer_character_input: false,
-        }));
-        state.as_ref().lock().do_command_handled = Some(!handled.propagate);
+    // SAFETY: `Sel::name()` returns a borrow tied to the static
+    // selector-name table maintained by the Objective-C runtime; the
+    // returned &str is valid for the duration of this call.
+    let selector_name: &str = command.name();
+    let mapped: Option<EditorCommand> = EditorCommand::for_cocoa_selector(selector_name);
+
+    let mut handled_via_editor_command = false;
+
+    if let (Some(cmd), Some(callback)) = (mapped, event_callback.as_mut()) {
+        let result = (callback)(PlatformInput::EditorCommand(cmd));
+        if !result.propagate {
+            handled_via_editor_command = true;
+            state.as_ref().lock().do_command_handled = Some(true);
+        }
+    }
+
+    // Fallback: re-fire the original keystroke through the keymap when
+    // the editor command was unknown OR not claimed downstream (decision
+    // 3). The keymap may resolve it to an action; if neither path claims
+    // the keystroke the macOS default behavior (e.g. NSSystemBeep) fires
+    // because `do_command_handled` remains None.
+    if !handled_via_editor_command {
+        if let Some((keystroke, callback)) = keystroke.zip(event_callback.as_mut()) {
+            let handled = (callback)(PlatformInput::KeyDown(KeyDownEvent {
+                keystroke,
+                is_held: false,
+                prefer_character_input: false,
+            }));
+            state.as_ref().lock().do_command_handled = Some(!handled.propagate);
+        }
     }
 
     state.as_ref().lock().event_callback = event_callback;
 }
+
+// (selector → EditorCommand mapping is `EditorCommand::for_cocoa_selector`
+// in `flui_core::platform` — kept cross-platform so it is unit-testable
+// without a macOS host.)
 
 extern "C" fn view_did_change_effective_appearance(this: &Object, _: Sel) {
     unsafe {

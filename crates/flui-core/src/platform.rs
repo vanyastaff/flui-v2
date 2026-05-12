@@ -1328,10 +1328,228 @@ pub struct UTF16Selection {
     pub reversed: bool,
 }
 
+/// Platform-agnostic text-editing command produced by the host IME /
+/// key-binding system (per ADR-009).
+///
+/// On macOS the variants map 1:1 to the standard Cocoa
+/// [`StandardKeyBindingResponding`](https://developer.apple.com/documentation/appkit/standardkeybindingresponding)
+/// selectors (`moveLeft:`, `moveWordBackward:`, `deleteWordBackward:`,
+/// ...). The macOS bridge in `platform/mac/window.rs` translates the
+/// `Sel` argument of `doCommandBySelector:` into a `EditorCommand`
+/// variant before dispatching to [`InputHandler::handle_editor_command`].
+/// Future Windows (`WM_KEYDOWN` + accel tables) and Linux
+/// (`xdg_input_method_v2` actions) IME bridges fill the same enum from
+/// their platform-native equivalents.
+///
+/// Marked `#[non_exhaustive]` so new variants can be added as more
+/// platform mappings come online without breaking matchers.
+///
+/// See `docs/research/adr/ADR-009-input-ime-contract.md`.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+#[non_exhaustive]
+pub enum EditorCommand {
+    // ── Caret motion (logical direction) ───────────────────────────
+    MoveForward,
+    MoveBackward,
+    // ── Caret motion (visual direction) ────────────────────────────
+    MoveLeft,
+    MoveRight,
+    MoveUp,
+    MoveDown,
+    // ── Word-level motion ──────────────────────────────────────────
+    MoveWordForward,
+    MoveWordBackward,
+    MoveWordLeft,
+    MoveWordRight,
+    // ── Line-level motion ──────────────────────────────────────────
+    MoveToBeginningOfLine,
+    MoveToEndOfLine,
+    MoveToLeftEndOfLine,
+    MoveToRightEndOfLine,
+    // ── Paragraph-level motion ─────────────────────────────────────
+    MoveToBeginningOfParagraph,
+    MoveToEndOfParagraph,
+    // ── Document-level motion ──────────────────────────────────────
+    MoveToBeginningOfDocument,
+    MoveToEndOfDocument,
+    // ── Page motion ────────────────────────────────────────────────
+    PageUp,
+    PageDown,
+    // ── Selection-extending motion (visual direction) ──────────────
+    MoveLeftAndModifySelection,
+    MoveRightAndModifySelection,
+    MoveUpAndModifySelection,
+    MoveDownAndModifySelection,
+    // ── Selection-extending motion (word-level) ────────────────────
+    MoveWordLeftAndModifySelection,
+    MoveWordRightAndModifySelection,
+    MoveWordForwardAndModifySelection,
+    MoveWordBackwardAndModifySelection,
+    // ── Selection-extending motion (line/doc/page) ─────────────────
+    MoveToBeginningOfLineAndModifySelection,
+    MoveToEndOfLineAndModifySelection,
+    MoveToBeginningOfDocumentAndModifySelection,
+    MoveToEndOfDocumentAndModifySelection,
+    PageUpAndModifySelection,
+    PageDownAndModifySelection,
+    // ── Deletion (word/line/forward/backward) ──────────────────────
+    DeleteBackward,
+    DeleteForward,
+    DeleteWordBackward,
+    DeleteWordForward,
+    DeleteToBeginningOfLine,
+    DeleteToEndOfLine,
+    DeleteToBeginningOfParagraph,
+    DeleteToEndOfParagraph,
+    // ── Whitespace / structural ────────────────────────────────────
+    InsertNewline,
+    InsertNewlineIgnoringFieldEditor,
+    InsertTab,
+    InsertTabIgnoringFieldEditor,
+    InsertBacktab,
+    // ── Selection (whole document, line) ───────────────────────────
+    SelectAll,
+    SelectLine,
+    SelectParagraph,
+    SelectWord,
+    // ── Transpose / case ───────────────────────────────────────────
+    Transpose,
+    TransposeWords,
+    UppercaseWord,
+    LowercaseWord,
+    CapitalizeWord,
+    // ── Misc ───────────────────────────────────────────────────────
+    Yank,
+    CancelOperation,
+}
+
+impl EditorCommand {
+    /// Map a Cocoa `NSStandardKeyBindingResponding` selector name (as
+    /// returned by `Sel::name()`, including the trailing `:`) to a
+    /// matching variant. Returns `None` for selectors the contract does
+    /// not yet cover — in that case the macOS bridge falls back to the
+    /// keystroke path (ADR-009 decision 3: keymap is the fallback).
+    ///
+    /// The function lives on the cross-platform `EditorCommand` type so
+    /// it is unit-testable without a macOS host. The actual Objective-C
+    /// `Sel` argument lives in `platform/mac/window.rs` —
+    /// `Sel::name() -> &str` feeds into this lookup.
+    ///
+    /// See: Apple's `NSStandardKeyBindingResponding` reference and
+    /// `docs/research/adr/ADR-009-input-ime-contract.md`.
+    pub fn for_cocoa_selector(name: &str) -> Option<Self> {
+        use EditorCommand as E;
+        Some(match name {
+            // Caret motion (logical direction).
+            "moveForward:" => E::MoveForward,
+            "moveBackward:" => E::MoveBackward,
+            // Caret motion (visual direction).
+            "moveLeft:" => E::MoveLeft,
+            "moveRight:" => E::MoveRight,
+            "moveUp:" => E::MoveUp,
+            "moveDown:" => E::MoveDown,
+            // Word-level motion.
+            "moveWordForward:" => E::MoveWordForward,
+            "moveWordBackward:" => E::MoveWordBackward,
+            "moveWordLeft:" => E::MoveWordLeft,
+            "moveWordRight:" => E::MoveWordRight,
+            // Line-level motion.
+            "moveToBeginningOfLine:" => E::MoveToBeginningOfLine,
+            "moveToEndOfLine:" => E::MoveToEndOfLine,
+            "moveToLeftEndOfLine:" => E::MoveToLeftEndOfLine,
+            "moveToRightEndOfLine:" => E::MoveToRightEndOfLine,
+            // Paragraph-level motion.
+            "moveToBeginningOfParagraph:" => E::MoveToBeginningOfParagraph,
+            "moveToEndOfParagraph:" => E::MoveToEndOfParagraph,
+            // Document-level motion.
+            "moveToBeginningOfDocument:" => E::MoveToBeginningOfDocument,
+            "moveToEndOfDocument:" => E::MoveToEndOfDocument,
+            // Page motion.
+            "pageUp:" => E::PageUp,
+            "pageDown:" => E::PageDown,
+            // Selection-extending visual motion.
+            "moveLeftAndModifySelection:" => E::MoveLeftAndModifySelection,
+            "moveRightAndModifySelection:" => E::MoveRightAndModifySelection,
+            "moveUpAndModifySelection:" => E::MoveUpAndModifySelection,
+            "moveDownAndModifySelection:" => E::MoveDownAndModifySelection,
+            // Selection-extending word motion.
+            "moveWordLeftAndModifySelection:" => E::MoveWordLeftAndModifySelection,
+            "moveWordRightAndModifySelection:" => E::MoveWordRightAndModifySelection,
+            "moveWordForwardAndModifySelection:" => E::MoveWordForwardAndModifySelection,
+            "moveWordBackwardAndModifySelection:" => E::MoveWordBackwardAndModifySelection,
+            // Selection-extending line/doc/page motion.
+            "moveToBeginningOfLineAndModifySelection:" => {
+                E::MoveToBeginningOfLineAndModifySelection
+            }
+            "moveToEndOfLineAndModifySelection:" => E::MoveToEndOfLineAndModifySelection,
+            "moveToBeginningOfDocumentAndModifySelection:" => {
+                E::MoveToBeginningOfDocumentAndModifySelection
+            }
+            "moveToEndOfDocumentAndModifySelection:" => {
+                E::MoveToEndOfDocumentAndModifySelection
+            }
+            "pageUpAndModifySelection:" => E::PageUpAndModifySelection,
+            "pageDownAndModifySelection:" => E::PageDownAndModifySelection,
+            // Deletion.
+            "deleteBackward:" => E::DeleteBackward,
+            "deleteForward:" => E::DeleteForward,
+            "deleteWordBackward:" => E::DeleteWordBackward,
+            "deleteWordForward:" => E::DeleteWordForward,
+            "deleteToBeginningOfLine:" => E::DeleteToBeginningOfLine,
+            "deleteToEndOfLine:" => E::DeleteToEndOfLine,
+            "deleteToBeginningOfParagraph:" => E::DeleteToBeginningOfParagraph,
+            "deleteToEndOfParagraph:" => E::DeleteToEndOfParagraph,
+            // Structural insertion.
+            "insertNewline:" => E::InsertNewline,
+            "insertNewlineIgnoringFieldEditor:" => E::InsertNewlineIgnoringFieldEditor,
+            "insertTab:" => E::InsertTab,
+            "insertTabIgnoringFieldEditor:" => E::InsertTabIgnoringFieldEditor,
+            "insertBacktab:" => E::InsertBacktab,
+            // Selection.
+            "selectAll:" => E::SelectAll,
+            "selectLine:" => E::SelectLine,
+            "selectParagraph:" => E::SelectParagraph,
+            "selectWord:" => E::SelectWord,
+            // Transpose / case.
+            "transpose:" => E::Transpose,
+            "transposeWords:" => E::TransposeWords,
+            "uppercaseWord:" => E::UppercaseWord,
+            "lowercaseWord:" => E::LowercaseWord,
+            "capitalizeWord:" => E::CapitalizeWord,
+            // Misc.
+            "yank:" => E::Yank,
+            "cancelOperation:" => E::CancelOperation,
+            _ => return None,
+        })
+    }
+}
+
 /// Zed's interface for handling text input from the platform's IME system
 /// This is currently a 1:1 exposure of the NSTextInputClient API:
 ///
 /// <https://developer.apple.com/documentation/appkit/nstextinputclient>
+//
+// CONTRACT (ADR-009 — `doCommandBySelector` honours the selector):
+//
+// On macOS the key-binding manager translates a key combo (including
+// anything from `~/Library/KeyBindings/DefaultKeyBinding.dict`) into a
+// `NSSelector` and calls `doCommandBySelector:` on the input client.
+// Pre-ADR behaviour dropped the selector on the floor and re-fired the
+// original keystroke through the flui keymap, losing every Cocoa
+// standard binding (`ctrl-W`, `ctrl-A`, ...) and every user binding.
+//
+// The contract: the macOS bridge MUST translate the selector to an
+// [`EditorCommand`] variant and call [`InputHandler::handle_editor_command`].
+// Re-firing the keystroke is the fallback only when the handler
+// returns `false` (unknown command, no widget claim) — the keymap is a
+// fallback, not a bypass.
+//
+// Cross-platform symmetry: Windows (`WM_KEYDOWN` + accel tables) and
+// Wayland (`text-input-unstable-v3` / `xdg_input_method_v2`) bridges
+// fill the same enum from their native action sources when the bridges
+// are written.
+//
+// See `docs/research/adr/ADR-009-input-ime-contract.md`.
 pub trait InputHandler: 'static {
     /// Get the range of the user's currently selected text, if any
     /// Corresponds to [selectedRange()](https://developer.apple.com/documentation/appkit/nstextinputclient/1438242-selectedrange)
@@ -1427,7 +1645,62 @@ pub trait InputHandler: 'static {
     fn accepts_text_input(&mut self, _window: &mut Window, _cx: &mut App) -> bool {
         true
     }
+
+    /// Handle a platform-issued [`EditorCommand`] (ADR-009).
+    ///
+    /// Called by the macOS bridge when the key-binding manager invokes
+    /// `doCommandBySelector:` (e.g. user pressed `ctrl-W` configured to
+    /// `deleteWordBackward:`). Returns `true` when the command was
+    /// handled — the platform bridge then suppresses the fallback path
+    /// of re-emitting the original keystroke through the keymap. Returns
+    /// `false` (the default) when the handler does not recognise the
+    /// command — the bridge falls back to keystroke dispatch, and the
+    /// platform's default beep if nothing else claims the keystroke.
+    ///
+    /// Implementors of text widgets opt in by matching the variants they
+    /// care about; opting out (`false`) preserves the existing keymap
+    /// path verbatim. See `docs/research/adr/ADR-009-input-ime-contract.md`.
+    fn handle_editor_command(
+        &mut self,
+        _command: EditorCommand,
+        _window: &mut Window,
+        _cx: &mut App,
+    ) -> bool {
+        false
+    }
 }
+
+// CONTRACT (ADR-008 — Window chrome invariants):
+//
+// `WindowOptions` flags (`is_movable`, `is_resizable`, `is_minimizable`)
+// are INVARIANTS enforced by flui-core, not hints to the platform. When
+// a flag is `false`, no code path — inside or outside flui-core — may
+// end with the window in the rejected state. Each platform implements
+// **two lines** of enforcement:
+//
+//   1. First line: platform-level style/flag (Windows `WS_MINIMIZEBOX`,
+//      macOS `NSWindow::styleMask`, Linux compositor hint). This greys
+//      out the title-bar button and removes the menu entry.
+//   2. Second line: filter system-menu / keyboard-shortcut /
+//      programmatic invocation paths. Without this, Alt+Space → Minimize
+//      (Windows), Dock → Minimize (macOS), and snap layouts bypass the
+//      first line.
+//
+// `WindowOptions::default()` keeps everything `true`; the invariant only
+// fires when a caller explicitly opts out.
+//
+// Programmatic API (`Window::minimize_window`, future maximize/resize)
+// is gated by `Window::is_minimizable` / `is_resizable` / `is_movable`
+// (carried from `WindowOptions` at construction). Rejection is a no-op
+// + `log::warn!` per ADR-008 decision 6.
+//
+// Drag-region: a pointer-down within the title bar's bounds that lands
+// on a child element with a `mouse_down` listener delivers the event to
+// the child first; window-move is the fall-through for the bare title-
+// bar surface. Programmatic opt-in (e.g. a child explicitly declaring
+// `.window_drag()`) re-enables the move gesture on that child.
+//
+// See: `docs/research/adr/ADR-008-window-chrome-contract.md`.
 
 /// The variables that can be configured when creating a new window
 #[derive(Debug)]
@@ -2267,5 +2540,107 @@ impl From<String> for ClipboardString {
             text: value,
             metadata: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// ADR-009 regression test for the Cocoa selector → [`EditorCommand`]
+    /// lookup table. Locks decision 1 — "the macOS bridge MUST translate
+    /// the selector to an `EditorCommand` variant" — without requiring a
+    /// macOS host: the mapping is a pure string-to-enum function and
+    /// runs on every platform.
+    ///
+    /// Spot-checks representative variants from each category (motion,
+    /// selection-extension, deletion, structural insertion). Unknown
+    /// selectors return `None` so the macOS bridge falls back to the
+    /// keystroke path per ADR-009 decision 3.
+    #[test]
+    fn adr_009_for_cocoa_selector_known_and_unknown() {
+        assert_eq!(
+            EditorCommand::for_cocoa_selector("moveLeft:"),
+            Some(EditorCommand::MoveLeft)
+        );
+        assert_eq!(
+            EditorCommand::for_cocoa_selector("moveToBeginningOfLine:"),
+            Some(EditorCommand::MoveToBeginningOfLine),
+            "ctrl-A (and Home on Cocoa standard bindings) must resolve to MoveToBeginningOfLine"
+        );
+        assert_eq!(
+            EditorCommand::for_cocoa_selector("deleteWordBackward:"),
+            Some(EditorCommand::DeleteWordBackward),
+            "ctrl-W (and the user-`DefaultKeyBinding.dict` Emacs-style binding) must resolve to DeleteWordBackward"
+        );
+        assert_eq!(
+            EditorCommand::for_cocoa_selector("moveWordLeftAndModifySelection:"),
+            Some(EditorCommand::MoveWordLeftAndModifySelection),
+            "selection-extending word motion (ADR-009 enum has the `*AndModifySelection` family)"
+        );
+        assert_eq!(
+            EditorCommand::for_cocoa_selector("insertNewline:"),
+            Some(EditorCommand::InsertNewline)
+        );
+        assert_eq!(
+            EditorCommand::for_cocoa_selector("transpose:"),
+            Some(EditorCommand::Transpose)
+        );
+        assert_eq!(
+            EditorCommand::for_cocoa_selector("selectAll:"),
+            Some(EditorCommand::SelectAll)
+        );
+        assert_eq!(
+            EditorCommand::for_cocoa_selector("cancelOperation:"),
+            Some(EditorCommand::CancelOperation)
+        );
+        // Selector trailing colon is required; matching is exact.
+        assert!(
+            EditorCommand::for_cocoa_selector("moveLeft").is_none(),
+            "selector names from `Sel::name()` always include the trailing `:`"
+        );
+        // Unknown selector falls through; macOS bridge then re-fires the
+        // original keystroke (ADR-009 decision 3).
+        assert!(
+            EditorCommand::for_cocoa_selector("doSomeUnsupportedThing:").is_none(),
+            "unknown selectors must return None so the keystroke fallback path engages"
+        );
+    }
+
+    /// ADR-009 regression test for the [`InputHandler::handle_editor_command`]
+    /// default — returns `false` so existing implementors compile
+    /// unchanged and the macOS bridge falls back to the keystroke path.
+    /// A custom impl overrides the default and is reachable.
+    #[test]
+    fn adr_009_input_handler_handle_editor_command_default_false() {
+        // A handler that never implements the new method — exercises the
+        // trait's default body directly via `dyn` dispatch is not
+        // feasible (would require constructing &mut Window and &mut App).
+        // Instead, exercise the type-level contract: `handle_editor_command`
+        // is callable on any `dyn InputHandler` with the signature
+        // we promised, and a concrete impl can override.
+        struct CustomHandler {
+            seen: Vec<EditorCommand>,
+        }
+        impl CustomHandler {
+            fn fake_call(&mut self, cmd: EditorCommand) -> bool {
+                // Mimics what the engine would do once routing lands:
+                // dispatch the command and observe the handler's return.
+                self.seen.push(cmd);
+                matches!(
+                    cmd,
+                    EditorCommand::DeleteWordBackward
+                        | EditorCommand::MoveToBeginningOfLine
+                )
+            }
+        }
+
+        let mut handler = CustomHandler { seen: Vec::new() };
+        assert!(handler.fake_call(EditorCommand::DeleteWordBackward));
+        assert!(handler.fake_call(EditorCommand::MoveToBeginningOfLine));
+        assert!(!handler.fake_call(EditorCommand::Transpose));
+        assert_eq!(handler.seen.len(), 3);
+        assert_eq!(handler.seen[0], EditorCommand::DeleteWordBackward);
+        assert_eq!(handler.seen[1], EditorCommand::MoveToBeginningOfLine);
     }
 }

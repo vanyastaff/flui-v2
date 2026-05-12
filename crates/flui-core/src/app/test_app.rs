@@ -738,6 +738,72 @@ mod tests {
     /// to verify Wayland `wl_output` add/remove and X11 XRandR paths.
     ///
     /// See `docs/research/adr/ADR-007-display-lifecycle.md`.
+    /// ADR-008 regression test: `Window::minimize_window` rejects the
+    /// programmatic call when the window was created with
+    /// `WindowOptions::is_minimizable = false`, and the public accessor
+    /// `Window::is_minimizable()` agrees.
+    ///
+    /// The test platform's `TestWindow::minimize()` is
+    /// `unimplemented!()` — i.e. it panics. The test passes only when the
+    /// engine-side gate in `Window::minimize_window` short-circuits
+    /// before reaching the platform call. A regression that drops the
+    /// gate (e.g. someone re-orders the early-return) would re-enter
+    /// `TestWindow::minimize()` and surface as a panic in this test.
+    ///
+    /// Locks decisions 1 and 6 of ADR-008. The system-menu / Win+Down /
+    /// Alt+Space / Dock-right-click / macOS View-menu paths are
+    /// platform-specific and covered separately (Windows-side by the
+    /// `WM_SYSCOMMAND` filter in events.rs; macOS-side TODO per ADR-008
+    /// action item 2). See
+    /// `docs/research/adr/ADR-008-window-chrome-contract.md`.
+    #[test]
+    fn adr_008_minimize_window_rejected_when_options_disallow_it() {
+        let mut app = TestApp::new();
+
+        let window = app.open_window_with_options(
+            WindowOptions {
+                is_minimizable: false,
+                ..Default::default()
+            },
+            Counter::new,
+        );
+
+        // Accessor surface — public API for callers to branch on.
+        let is_minimizable = window.read(|_, _app| {
+            // No direct read accessor on TestAppWindow for is_minimizable
+            // — query through the app to reach Window state. We assert via
+            // the Window-level accessor by funneling through `update`.
+            ()
+        });
+        let _ = is_minimizable; // silence
+
+        let observed_is_minimizable = {
+            let any_handle: AnyWindowHandle = window.handle().into();
+            let mut app_lock = window.app.borrow_mut();
+            app_lock
+                .update_window(any_handle, |_, w, _cx| w.is_minimizable())
+                .unwrap()
+        };
+        assert!(
+            !observed_is_minimizable,
+            "ADR-008: Window::is_minimizable() must reflect the \
+             WindowOptions::is_minimizable invariant (false here)"
+        );
+
+        // The critical call: if the gate fails, `TestWindow::minimize` is
+        // `unimplemented!()` and the test panics. If the gate works, this
+        // is a no-op + warn.
+        let any_handle: AnyWindowHandle = window.handle().into();
+        let mut app_lock = window.app.borrow_mut();
+        app_lock
+            .update_window(any_handle, |_, w, _cx| w.minimize_window())
+            .unwrap();
+        drop(app_lock);
+
+        drop(window);
+        app.update(|cx| cx.shutdown());
+    }
+
     #[test]
     fn adr_007_observe_display_change_fires_on_display_swap() {
         use crate::platform::TestDisplay;

@@ -563,6 +563,24 @@ pub(crate) struct HitTest {
 }
 
 /// A type of window control area that corresponds to the platform window.
+///
+/// # ADR-008 contract for callers (custom title-bar implementations)
+///
+/// Implementations of [`Platform::on_hit_test_window_control`] consult
+/// the flui-side hit-test BEFORE returning [`WindowControlArea::Drag`].
+/// Concretely: when a pointer-down lands within the title-bar bounds,
+/// the callback must first walk the gesture hit-tree at that point; if
+/// any child element with a `mouse_down` listener (close button, tab
+/// strip tab, dropdown trigger) claims the point, the callback returns
+/// the matching control area (`Close` / `Max` / `Min`) or `None` so the
+/// click reaches the child. Only the *bare* title-bar surface — with no
+/// child claiming the point — yields [`WindowControlArea::Drag`].
+///
+/// This is decision 4 of `docs/research/adr/ADR-008-window-chrome-contract.md`:
+/// "Drag-region is computed *after* the per-child hit-test, not instead
+/// of it." Programmatic opt-in (a child element explicitly declaring
+/// `.window_drag()`) re-enables the move gesture on that child by
+/// returning `Drag` from inside the child's bounds.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WindowControlArea {
     /// An area that allows dragging of the platform window.
@@ -1050,6 +1068,13 @@ pub struct Window {
     /// (window moves between outputs) or when that display's scale factor
     /// changes. Distinct from `bounds_observers` which fires on size only.
     pub(crate) display_change_observers: SubscriberSet<(), AnyObserver>,
+    /// ADR-008: `WindowOptions` invariants kept on the Window so the
+    /// programmatic gates on `minimize_window` / future maximize/resize
+    /// APIs can reject mutations that violate the requested invariants
+    /// even when the platform layer would allow them.
+    pub(crate) is_movable: bool,
+    pub(crate) is_resizable: bool,
+    pub(crate) is_minimizable: bool,
     appearance: WindowAppearance,
     pub(crate) appearance_observers: SubscriberSet<(), AnyObserver>,
     active: Rc<Cell<bool>>,
@@ -1612,6 +1637,9 @@ impl Window {
             scale_factor,
             bounds_observers: SubscriberSet::new(),
             display_change_observers: SubscriberSet::new(),
+            is_movable,
+            is_resizable,
+            is_minimizable,
             appearance,
             appearance_observers: SubscriberSet::new(),
             active,
@@ -3590,6 +3618,21 @@ impl Window {
     }
 
     /// Executes the given closure within the context of a tab group.
+    ///
+    /// ADR-010: this is the stable public sugar for the engine's
+    /// `TabStopMap::{begin_group, end_group}` primitives. Widget authors
+    /// **must** use this helper (not the underlying `TabStopMap`, which
+    /// is `pub(crate)`) so a future change to the path representation
+    /// stays an internal refactor.
+    ///
+    /// When `index` is `None` the closure runs without entering a group
+    /// — convenient sugar for conditional grouping.
+    ///
+    /// Group boundaries are **not** absorbing (decision 4): tabbing out of
+    /// the last element of the group lands on the next sibling in the
+    /// parent's order, not on a group sentinel.
+    ///
+    /// See `docs/research/adr/ADR-010-local-tab-index.md`.
     #[inline]
     pub fn with_tab_group<R>(&mut self, index: Option<isize>, f: impl FnOnce(&mut Self) -> R) -> R {
         if let Some(index) = index {
@@ -4784,6 +4827,15 @@ impl Window {
                 }
             },
             PlatformInput::KeyDown(_) | PlatformInput::KeyUp(_) => event,
+            // ADR-009: pass-through. The downstream routing of
+            // `EditorCommand` to the focused widget's
+            // `InputHandler::handle_editor_command` is TODO — for now the
+            // event flows through the dispatch path unchanged, and a
+            // future commit wires the focused-handler lookup. The macOS
+            // bridge already falls back to the keystroke path when the
+            // command is unhandled, so user-visible behavior is unchanged
+            // until the routing lands.
+            PlatformInput::EditorCommand(_) => event,
         };
 
         // S07 T6 — Gesture-pass scaffold.
@@ -5603,8 +5655,48 @@ impl Window {
         self.platform_window.activate();
     }
 
+    /// ADR-008: query the `WindowOptions::is_movable` invariant the
+    /// window was created with. Callers can branch on this before
+    /// programmatic move attempts; the engine also rejects platform-side
+    /// move gestures when `false` (Windows `WM_SYSCOMMAND::SC_MOVE`
+    /// filter; macOS `NSWindow.setMovable_:` first line; system-menu /
+    /// titlebar drag second line is TODO per ADR-008 #2/#3).
+    pub fn is_movable(&self) -> bool {
+        self.is_movable
+    }
+
+    /// ADR-008: query the `WindowOptions::is_resizable` invariant. Also
+    /// implies `is_maximizable = false` per decision 3 (Cocoa and Win32
+    /// both conflate the two via `NSResizableWindowMask` and
+    /// `WS_THICKFRAME`/`WS_MAXIMIZEBOX`).
+    pub fn is_resizable(&self) -> bool {
+        self.is_resizable
+    }
+
+    /// ADR-008: query the `WindowOptions::is_minimizable` invariant.
+    /// `minimize_window` is the gated programmatic path on this Window.
+    pub fn is_minimizable(&self) -> bool {
+        self.is_minimizable
+    }
+
     /// Minimize the current window at the platform level.
+    ///
+    /// ADR-008 decision 6: gated on the `WindowOptions::is_minimizable`
+    /// invariant. If the window was created with `is_minimizable = false`,
+    /// this is a no-op and emits a `log::warn!`. Callers that need to
+    /// observe rejection without polling can wrap this in a higher-level
+    /// API that returns `Result`.
     pub fn minimize_window(&self) {
+        if !self.is_minimizable {
+            log::warn!(
+                "ADR-008: ignored programmatic minimize_window() on a window \
+                 created with `is_minimizable = false`. The invariant is \
+                 binding on programmatic callers — wrap the call in a flag \
+                 check or change `WindowOptions::is_minimizable` to true \
+                 if minimization should be permitted."
+            );
+            return;
+        }
         self.platform_window.minimize();
     }
 
