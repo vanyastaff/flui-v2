@@ -75,9 +75,13 @@ the matching shape on the clipboard side; it has the same limitation.
        Text(String),
        Html { html: String, text: Option<String> },
        Mime { kind: String, bytes: Bytes },
-       Mixed(SmallVec<[ExternalDropPayload; 4]>),
+       Mixed(SmallVec<[Box<ExternalDropPayload>; 4]>),
    }
    ```
+
+   `Mixed` boxes the recursive variant — Rust requires pointer
+   indirection for a self-referential enum (the same reason
+   `Box<dyn Trait>` is the canonical recursive shape).
 
    The exact variant list is the action item below; the contract is the
    shape: a sealed enum with file paths kept as a first-class variant so

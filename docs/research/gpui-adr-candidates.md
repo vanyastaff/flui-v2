@@ -35,10 +35,10 @@
 
 ## 3. Text rendering
 
-| Issue | Тема |
-|-------|------|
+| Issue | Тема | flui-v2 точка касания |
+|-------|------|------------------------|
 | [#49860](https://github.com/zed-industries/zed/issues/49860) | CJK truncate panic «not a char boundary» — UTF-8 unsafety при ellipsis | срочный код-аудит наших truncation helpers |
-| [#55214](https://github.com/zed-industries/zed/issues/55214) | metrics hinting + bi-level rendering (sharper text) — выбор стратегии растеризации |
+| [#55214](https://github.com/zed-industries/zed/issues/55214) | metrics hinting + bi-level rendering (sharper text) — выбор стратегии растеризации | стратегия растеризации текста |
 
 **Кандидаты:** _Text slicing UTF-8 safety_ (короткий ADR + проверка кода) и _Text rasterization strategy_ (более длинный, про Skrifa и режимы).
 
@@ -59,8 +59,8 @@
 
 ## 5. Input / focus / hit-testing
 
-| Issue | Тема |
-|-------|------|
+| Issue | Тема | flui-v2 точка касания |
+|-------|------|------------------------|
 | [#52550](https://github.com/zed-industries/zed/issues/52550) | macOS doCommandBySelector ignores → IME/keybinding pipeline ломается | контракт input/IME |
 | [#38350](https://github.com/zed-industries/zed/issues/38350) | hover events когда окно в background | pointer-events lifecycle |
 | [#34796](https://github.com/zed-industries/zed/issues/34796) | локальный tab-index API (не глобальный) | focus management, `flui-a11y` |

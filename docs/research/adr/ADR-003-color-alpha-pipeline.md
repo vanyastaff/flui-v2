@@ -79,7 +79,7 @@ impl Rgba {
 Canonical source-over for non-premultiplied RGBA, where `other` is the
 *source* and `self` is the destination, is:
 
-```
+```text
 out.a   = src.a + dst.a * (1 - src.a)
 out.rgb = (src.rgb * src.a + dst.rgb * dst.a * (1 - src.a)) / out.a   // when out.a > 0
 ```
@@ -138,7 +138,7 @@ draws on top of the precomposed colour now treats the dst alpha as
 1. **Canonical source-over is the only supported alpha model.** All blending
    in flui-core, both CPU and GPU, follows:
 
-   ```
+   ```text
    out.a   = src.a + dst.a * (1 - src.a)
    out.rgb = (src.rgb * src.a + dst.rgb * dst.a * (1 - src.a)) / out.a
             // RGB is undefined when out.a == 0; callers must check.

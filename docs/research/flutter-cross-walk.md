@@ -3,7 +3,7 @@
 **Date:** 2026-05-12
 **Status:** Derived artifact. Sources:
 [`flutter-issues.md`](flutter-issues.md) (997 unique open issues across
-10 UI-relevant labels) + [`adr/`](adr/) (ADRs 001–018).
+10 UI-relevant labels) + [`adr/`](adr/) (ADRs 001–020).
 
 ## Purpose
 
@@ -180,7 +180,7 @@ when we choose to expand.
 
 | Theme | Flutter issues |
 |-------|----------------|
-| **Scroll physics & bounce** | many `f: scrolling` issues; no flui-v2 ADR yet because we have not built a scroll widget. Worth a placeholder. |
+| **Scroll physics & bounce** | many `f: scrolling` issues; now scoped by [ADR-019](adr/ADR-019-scroll-physics.md). The implementation widget still has to be built. |
 | **Status bar / system UI overlay** | [#64001](https://github.com/flutter/flutter/issues/64001) (54), [#54029](https://github.com/flutter/flutter/issues/54029) (25), [#119465](https://github.com/flutter/flutter/issues/119465) (24). Mobile-only; defer to mobile roadmap. |
 | **iOS orientation handling** | [#73651](https://github.com/flutter/flutter/issues/73651) (17), [#71278](https://github.com/flutter/flutter/issues/71278) (25). Mobile-only. |
 | **Design-system fidelity** (Material 3 Expressive, Liquid Glass) | [#168813](https://github.com/flutter/flutter/issues/168813) (765), [#170310](https://github.com/flutter/flutter/issues/170310) (670). Lives in `flui-material`, not engine; out of scope for engine-level ADRs. |
@@ -203,5 +203,5 @@ when we choose to expand.
 
 - [docs/research/flutter-issues.md](flutter-issues.md) — 997-issue snapshot.
 - [docs/research/flutter-issues-overlay.yaml](flutter-issues-overlay.yaml) — per-issue triage overlay.
-- [docs/research/adr/](adr/) — ADR 001–018.
+- [docs/research/adr/](adr/) — ADR 001–020.
 - [docs/research/gpui-adr-candidates.md](gpui-adr-candidates.md) — original GPUI-derived theme grouping.

@@ -1,8 +1,25 @@
 #!/usr/bin/env bash
 # Regenerate docs/research/gpui-issues.md from the upstream zed-industries/zed
 # repository. Merges manual triage from docs/research/gpui-issues-overlay.yaml.
-# Requires: gh (authenticated), jq, python (for YAML→JSON).
+# Requires: gh (authenticated), jq, python3 with PyYAML
+# (the script imports `yaml` to convert the overlay YAML to JSON).
+#
+# Install PyYAML with `pip install pyyaml` if missing.
 set -euo pipefail
+
+# Preflight: confirm required tooling. PyYAML is only needed when an
+# overlay exists; we still check it eagerly so the error fires before
+# the long `gh api --paginate` fetch.
+for cmd in gh jq python; do
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    echo "ERROR: required command '$cmd' not found on PATH" >&2
+    exit 1
+  fi
+done
+if ! python -c "import yaml" >/dev/null 2>&1; then
+  echo "ERROR: Python module 'yaml' (PyYAML) not installed. Run: pip install pyyaml" >&2
+  exit 1
+fi
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
@@ -35,7 +52,7 @@ CLOSED_COUNT=$(jq -s 'map(select(.s=="closed")) | length' "$SRC")
 TOTAL=$(jq -s 'length' "$SRC")
 
 cat > "$OPEN_FILTER" <<'JQ'
-def clean(x): (x // "") | tostring | gsub("\r"; "") | gsub("\n"; " ") | gsub("\\|"; "\\|");
+def clean(x): (x // "") | tostring | gsub("\r"; "") | gsub("\n"; " ") | gsub("\\|"; "\\|") | gsub("\\["; "\\[") | gsub("\\]"; "\\]");
 def lookup($n): ($overlay[0].issues // {})[$n | tostring] // {};
 def adr_cell($n):  (lookup($n).adr  // "");
 def repro_cell($n):(lookup($n).repro// "");
@@ -58,7 +75,7 @@ select(.s == "open")
 JQ
 
 cat > "$CLOSED_FILTER" <<'JQ'
-def clean(x): (x // "") | tostring | gsub("\r"; "") | gsub("\n"; " ") | gsub("\\|"; "\\|");
+def clean(x): (x // "") | tostring | gsub("\r"; "") | gsub("\n"; " ") | gsub("\\|"; "\\|") | gsub("\\["; "\\[") | gsub("\\]"; "\\]");
 def lookup($n): ($overlay[0].issues // {})[$n | tostring] // {};
 def adr_cell($n):  (lookup($n).adr  // "");
 def repro_cell($n):(lookup($n).repro// "");

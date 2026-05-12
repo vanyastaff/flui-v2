@@ -44,10 +44,11 @@ traceable.
   back-to-front and writes every pixel of every overlapping
   primitive. The 5-6× factor from upstream RenderDoc traces is
   the expected outcome of this pipeline shape.
-- **Follow-up:** This is *not* covered by any existing ADR.
-  ADR-001 explicitly carved out "overdraw" as out of scope, and
-  ADR-006 (partial present) is a different layer. Worth a new
-  ADR-020 — see _Surfaced gaps_ below.
+- **Follow-up:** This audit surfaced the gap; it is now codified by
+  [ADR-020 — opaque-pass / overdraw](adr/ADR-020-opaque-pass-overdraw.md),
+  added in the same PR as this audit. ADR-001 explicitly carved out
+  "overdraw" as out of scope and ADR-006 (partial present) is a
+  different layer; ADR-020 sits between them.
 
 ### Reclassified as not-our-scope (`n-a`)
 
@@ -123,10 +124,10 @@ traceable.
 
 ## Surfaced gaps
 
-The audit found one issue (#8043 — overdraw) that is **not**
-covered by any existing ADR and reproduces in our pipeline. This
-becomes a candidate for **ADR-020 — opaque-pass / overdraw
-strategy** in a future research turn.
+The audit found one issue (#8043 — overdraw) that was **not**
+covered by any prior ADR and reproduces in our pipeline. It is now
+codified by [ADR-020 — opaque-pass / overdraw](adr/ADR-020-opaque-pass-overdraw.md),
+added in the same PR as this audit.
 
 The action items on existing ADRs that the audit re-confirmed:
 

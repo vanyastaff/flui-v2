@@ -3647,7 +3647,7 @@ impl ScrollAnchor {
     pub fn scroll_to(&self, window: &mut Window, _cx: &mut App) {
         let this = self.clone();
 
-        window.on_next_frame(move |_, _| {
+        window.on_pre_frame(move |_, _| {
             let viewport_bounds = this.handle.bounds();
             let self_bounds = *this.last_origin.borrow();
             this.handle.set_offset(viewport_bounds.origin - self_bounds);

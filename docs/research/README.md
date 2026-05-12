@@ -6,8 +6,8 @@ contracts must hold to avoid repeating upstream pain.
 
 ## How this folder fits together
 
-```
-gpui-issues.md            ← snapshot (43 open + 199 closed)
+```text
+gpui-issues.md            ← snapshot (~42 open + ~200 closed; live upstream count drifts)
 gpui-issues-overlay.yaml  ← per-issue triage (source of truth)
 gpui-adr-candidates.md    ← theme groupings derived from triage
 
@@ -67,7 +67,10 @@ debug guard in `crates/flui-core/src/window.rs`).
    itself**. Code changes happen in their own commits.
 8. **References** — upstream issues + internal cross-links.
 
-## Triage status snapshot (43 open GPUI issues)
+## Triage status snapshot
+
+(Counts from the regenerated snapshot at PR time — upstream is live, so
+re-running the fetch script may shift them by ±1–2 as issues open/close.)
 
 | repro | count |
 |-------|-------|
@@ -94,7 +97,7 @@ moved 9 of the previously-`unknown` items to a resolved category.
 
 ## Author note
 
-The 19 ADRs in this folder do **not** implement fixes — they fix the
+The 20 ADRs in this folder do **not** implement fixes — they fix the
 **contracts** that the fixes must satisfy. Action items inside each
 ADR are the concrete code work. Each action item is intentionally
 small and scoped so future implementation sessions can pick one off

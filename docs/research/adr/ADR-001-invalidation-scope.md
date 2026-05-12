@@ -85,11 +85,13 @@ The invalidation contract for `flui-core` as of this ADR is:
    insert ancestors manually as a "shortcut" — that breaks the
    already-dirty short-circuit.
 
-4. **`on_next_frame` runs after the frame is composited.** Its callback observes
-   the next frame, not the current one. Registering during `paint` is currently
-   permitted but **discouraged**; we will add a debug-only guard in a follow-up
-   (see _Action items_) so that pre-K-series Wayland-style 1 px shifts cannot
-   silently appear in flui-v2 apps.
+4. **`on_pre_frame` (formerly `on_next_frame`) runs at the start of the next
+   frame's `PreFrame` phase — before paint.** Its callback observes the
+   next frame, not the current one. Registering during `paint` is rejected
+   by a debug-only guard (`WindowInvalidator::debug_assert_not_paint`)
+   added together with this ADR, so pre-K-series Wayland-style 1 px shifts
+   cannot silently appear in flui-v2 apps. The deprecated `on_next_frame`
+   alias forwards to `on_pre_frame` and inherits the same guard.
 
 5. **`present()` is currently full-scene by design.** This ADR does not promise
    partial present. It promises that when partial present is introduced (likely

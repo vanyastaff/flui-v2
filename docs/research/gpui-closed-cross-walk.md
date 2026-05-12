@@ -3,7 +3,7 @@
 **Date:** 2026-05-12
 **Status:** Derived artifact. Sources:
 [`gpui-issues.md`](gpui-issues.md) Closed section (199 closed
-`area:gpui` issues) + [`adr/`](adr/) (ADRs 001–019).
+`area:gpui` issues) + [`adr/`](adr/) (ADRs 001–020).
 
 ## Why
 

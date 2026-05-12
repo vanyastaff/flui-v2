@@ -38,7 +38,7 @@ let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterO
 adapter and is allowed to fall through to a software backend if no
 hardware adapter is found. Without a Vulkan driver, on a Linux box
 with GL, wgpu happily accepts `llvmpipe` and we end up in the GPUI
-#45897 scenario.
+`#45897` scenario.
 
 The decision is not "should software rendering work" — it should — it
 is "what does the caller experience when it does, and how does the

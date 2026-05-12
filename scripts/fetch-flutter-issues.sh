@@ -5,8 +5,29 @@
 # by reactions to keep the artifact reviewable.
 #
 # Merges manual triage from docs/research/flutter-issues-overlay.yaml.
-# Requires: gh (authenticated), jq, python.
+# Requires: gh (authenticated), jq, python3 with PyYAML, bash 4+
+# (uses `declare -A`; on macOS the system /bin/bash is 3.2, install
+# a newer bash via Homebrew or run with `bash` from PATH).
+#
+# Install PyYAML with `pip install pyyaml` if missing.
 set -euo pipefail
+
+# Preflight: bash 4+ for `declare -A`, required tooling, PyYAML.
+if (( BASH_VERSINFO[0] < 4 )); then
+  echo "ERROR: bash 4+ required (this script uses associative arrays). Found: ${BASH_VERSION}" >&2
+  echo "  On macOS, install via 'brew install bash' and re-run with that bash on PATH." >&2
+  exit 1
+fi
+for cmd in gh jq python; do
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    echo "ERROR: required command '$cmd' not found on PATH" >&2
+    exit 1
+  fi
+done
+if ! python -c "import yaml" >/dev/null 2>&1; then
+  echo "ERROR: Python module 'yaml' (PyYAML) not installed. Run: pip install pyyaml" >&2
+  exit 1
+fi
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
@@ -58,7 +79,19 @@ for entry in "${LABELS[@]}"; do
   PAGE=1
   FETCHED=0
   while [[ $PAGE -le $MAX_PAGES ]]; do
-    RESP=$(gh api "search/issues?q=repo:flutter/flutter+is:issue+is:open+label:\"${ENC_LABEL}\"${SUFFIX}&per_page=100&page=${PAGE}" 2>/dev/null || echo '{"items":[]}')
+    if ! RESP=$(gh api "search/issues?q=repo:flutter/flutter+is:issue+is:open+label:\"${ENC_LABEL}\"${SUFFIX}&per_page=100&page=${PAGE}"); then
+      echo "ERROR: gh api failed for label '${LABEL}' (page ${PAGE}); aborting to avoid an incomplete snapshot" >&2
+      exit 1
+    fi
+    if [[ $PAGE -eq 1 && "$MODE" == "all" ]]; then
+      # GitHub Search API caps pagination at ~1000 results regardless of
+      # total_count. Warn when a label exceeds that — the snapshot
+      # cannot claim completeness in that case.
+      TOTAL_COUNT=$(echo "$RESP" | jq -r '.total_count // 0')
+      if [[ $TOTAL_COUNT -gt 1000 ]]; then
+        echo "WARN: label '${LABEL}' has ${TOTAL_COUNT} open issues; Search API caps at 1000 — snapshot will be truncated." >&2
+      fi
+    fi
     COUNT=$(echo "$RESP" | jq '.items | length')
     if [[ "$COUNT" == "0" ]]; then break; fi
     echo "$RESP" | jq -c --arg label "$LABEL" '
@@ -107,7 +140,7 @@ fi
 
 ROW_FILTER="${TMP_DIR}/row.jq"
 cat > "$ROW_FILTER" <<'JQ'
-def clean(x): (x // "") | tostring | gsub("\r"; "") | gsub("\n"; " ") | gsub("\\|"; "\\|");
+def clean(x): (x // "") | tostring | gsub("\r"; "") | gsub("\n"; " ") | gsub("\\|"; "\\|") | gsub("\\["; "\\[") | gsub("\\]"; "\\]");
 def lookup($n): ($overlay[0].issues // {})[$n | tostring] // {};
 def adr_cell($n):   (lookup($n).adr   // "");
 def repro_cell($n): (lookup($n).repro // "");
