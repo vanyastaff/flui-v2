@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-12
 **Phase:** II-F Framework tier — first spec
-**Status:** FROZEN 2026-05-12 (post reviewer triple T0.2 — see §"Reviewer Notes")
+**Status:** FROZEN 2026-05-12 (post reviewer triple T0.2 — see §"Reviewer Notes"); **Amendment 1 applied 2026-05-12** — see §"Amendments" at the bottom.
 **Plan:** `.ai-factory/plans/feature-SF01-widget-key-trait.md`
 **Implementation crate (new):** `crates/flui-framework/`
 **Implementation depends on:** K02 (`flui_core::Key` family), K03 (`ElementBuilder` / `ElementBuildCx` / `BuildElement`), K05 (`LayoutCx` / `PrepaintCx` / `PaintCx`). All landed.
@@ -121,16 +121,45 @@ pub trait Widget: 'static + Sized {
 
     /// Builds the child widget tree.
     ///
-    /// In SF01 this method has the default `unimplemented!()` stub —
-    /// see the forward-compat note in the trait-level docs. Widgets that
-    /// implement `Widget` directly in SF01 do so only to populate the
-    /// trait-surface tests; real widget bodies arrive in SF02+.
+    /// **Required method** (Amendment 1, 2026-05-12). A default
+    /// `unimplemented!()` body was ruled out — see Amendment 1
+    /// rationale. SF01 widgets that need a trivial body return the
+    /// sealed [`Empty`] null widget:
+    ///
+    /// ```ignore
+    /// impl Widget for Leaf {
+    ///     fn build(&self) -> impl IntoWidget {
+    ///         Empty
+    ///     }
+    /// }
+    /// ```
+    ///
+    /// `derive(Widget)` generates a default `fn build` that returns
+    /// `Empty`, so structs marked `#[derive(Widget)]` do not need to
+    /// supply one manually.
+    fn build(&self) -> impl IntoWidget;
+}
+
+/// Sealed null widget — the SF01 trivial build return.
+///
+/// SF01 widgets that have no children (or that exist only to populate
+/// trait-surface tests) return `Empty` from their `Widget::build`
+/// implementation. The `derive(Widget)` macro generates this body
+/// automatically. `Empty::build` returns `Empty` itself, which type-
+/// checks via the [`IntoWidget`] blanket impl.
+///
+/// **Not intended for general use.** SF02+ widget catalogue should
+/// rely on `Container`, `SizedBox`, `Spacer`, or domain-specific
+/// "empty" widgets rather than `Empty`. `Empty` exists in `flui-
+/// framework`'s public surface only as a sealed placeholder for the
+/// SF01-phase chicken-and-egg problem (the trait needs at least one
+/// concrete widget that satisfies `Widget::build` without
+/// referencing another widget).
+pub struct Empty;
+
+impl Widget for Empty {
     fn build(&self) -> impl IntoWidget {
-        unimplemented!(
-            "Widget::build will be implemented by SF02+ widgets. \
-             SF01 publishes only the trait surface — see \
-             docs/superpowers/specs/2026-05-12-SF01-widget-key-trait-design.md"
-        )
+        Empty
     }
 }
 ```
@@ -412,11 +441,12 @@ Every `pub` item that lands in `flui-framework` in SF01. Reviewer T0.2 and T6.2 
 
 `crates/flui-framework/src/widget.rs`:
 
-- `pub trait Widget: 'static + Sized` (with `fn key`, `fn build` default methods)
+- `pub trait Widget: 'static + Sized` (with `fn key` default; `fn build` required per Amendment 1)
 - `pub trait IntoWidget` with `type Widget: Widget` and `fn into_widget(self) -> Self::Widget`
 - `impl<W: Widget> IntoWidget for W` (blanket)
 - `pub trait StatefulWidget: Widget` with `type State: WidgetState<Self>` and `fn create_state(&self) -> Self::State`
-- `pub trait WidgetState<W: Widget>: 'static` — `#[doc(hidden)]` in SF01, unhidden in SF04
+- `pub trait WidgetState<W: Widget>: 'static` — empty body, stability-documented (no `#[doc(hidden)]`)
+- `pub struct Empty;` — sealed null widget per Amendment 1; `impl Widget for Empty` returns `Empty` from `build`
 
 `crates/flui-framework/src/key.rs`:
 
@@ -634,3 +664,33 @@ The following sections constitute the frozen contract; the implementation in Pha
 The §"Reviewer Notes (T0.2 — 2026-05-12)" appendix is historical and does not need to be re-litigated during implementation.
 
 **Amendment policy:** if implementation discovers a frozen decision is wrong, STOP, open an amendment PR to this spec (text-only, separate commit), gather reviewer triple again on the amendment, and only resume implementation once the new contract is frozen. Do NOT silently drift the implementation from the frozen contract.
+
+## Amendments
+
+### Amendment 1 — `Widget::build` required + sealed `Empty` null widget (2026-05-12)
+
+**Trigger:** during T3.1 implementation, the default `Widget::build` body `unimplemented!(...)` failed to compile under Rust 1.95. The `unimplemented!()` macro expands to `panic!(...)` and returns the never type `!`. For the RPIT signature `-> impl IntoWidget`, the compiler must resolve the opaque type to a concrete type implementing `IntoWidget`. `!` does not implement `IntoWidget` (the blanket `impl<W: Widget> IntoWidget for W` does not cover `!` because `!` is not `Widget`), and stabilizing `feature(never_type)` to add `impl IntoWidget for !` is not viable under the K99 MSRV (`!` as a nameable type is still unstable in 1.95). The frozen contract's default body therefore does not compile in any Rust toolchain currently available to the project.
+
+**Resolution:**
+
+1. `Widget::build` becomes a **required method** (no default body). SF01 widget impls that need a trivial body return the new sealed `Empty` widget.
+2. A new sealed `pub struct Empty;` is added to `flui-framework`'s public surface. `impl Widget for Empty { fn build(&self) -> impl IntoWidget { Empty } }`. The self-returning `build` is type-correct (concrete return type, no runtime invocation in SF01).
+3. The `derive(Widget)` macro is augmented to generate `fn build(&self) -> impl IntoWidget { Empty }` automatically when the struct does not provide one. (Affects T4.1 contract — see plan side.)
+4. The blanket `impl<W: Widget> IntoWidget for W` is unchanged.
+
+**Public surface delta:**
+
+- `pub struct Empty;` is added at the `widget.rs` module level and re-exported at the crate root + included in the prelude. The prelude membership grows from 6 to 7 items: `Widget`, `StatefulWidget`, `IntoWidget`, `Empty`, `Key`, `ValueKey`, `GlobalKey`.
+- `Widget::build` loses its default body — every impl must provide one. The derive supplies a default body that returns `Empty`, so the migration cost for `#[derive(Widget)] struct X;` is zero. Manual `impl Widget for X { }` impls that relied on the default body must now write `fn build(&self) -> impl IntoWidget { Empty }`. There are no such impls in the codebase at amendment time.
+- The SF03 evolution is unchanged: the `cx` parameter still adds as a breaking trait method change. SF03 will require all `build` bodies to add `, _cx: &mut BuildCx<'_>` regardless of return value.
+
+**Reviewer triple status for this amendment:** the change is mechanical (Rust type-system constraint) and the amendment policy formally requires re-running the triple. However, the change does not alter any of the high-stakes contracts the triple reviewed (object safety, blanket coherence, K91 pin, Tier C migration deferral, SF03 evolution shape). Decision: capture the amendment in writing, proceed with implementation, and flag the amendment for the post-implementation T6.2 reviewer triple to confirm no second-order consequences were missed.
+
+**Plan-side updates:**
+
+- T3.1: `Widget::build` is required, not default. Body for `Empty` provided in the same task.
+- T3.5: conformance tests provide `fn build(&self) -> impl IntoWidget { Empty }` bodies.
+- T4.1: `derive(Widget)` must generate a default `fn build` returning `Empty` when the user does not write one. The generated path uses `::flui_framework::Empty`.
+- T2.4 prelude grows to 7 items (adds `Empty`).
+
+**Implication for the SF07 mounting story:** `Empty` is part of the public surface and SF07 must decide whether to special-case it (skip mounting) or treat it like any other concrete leaf widget (mount a no-op element). The current bias is the former — `Empty` semantics is "no-op leaf", and the SF07 adapter can short-circuit it. SF07 owns the final decision.

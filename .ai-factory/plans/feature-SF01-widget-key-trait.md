@@ -129,7 +129,7 @@ Per user-memory feedback "Keep docs work separate from code work — ADR session
 
 ### Phase 2 — Key substrate re-exports
 
-- [ ] **T2.1 — Add `crates/flui-framework/src/key.rs`.** Contents:
+- [x] **T2.1 — Add `crates/flui-framework/src/key.rs`.** Contents:
   - Module-level rustdoc explaining widget-author intent: Local = source-location identity (`#[track_caller]`, parent-scoped, sibling-occurrence-disambiguated, NOT reorder-stable), Value = reorder-stable list-item identity, Global = cross-tree references (cross-tree reachability reaches the spec slate only at SF02/SF05 — SF01 just publishes the type).
   - `pub use flui_core::{Key, ValueKey, GlobalKey};`
   - **Do NOT** re-export `flui_core::ElementId` / `LocalElementId` at the Framework public surface — they are engine path-segment types and Framework users speak `Key`, not raw IDs (per RESEARCH.md decision and Current State table).
@@ -139,11 +139,11 @@ Per user-memory feedback "Keep docs work separate from code work — ADR session
 
   **File:** `crates/flui-framework/src/key.rs`. **Logging:** none. **Validation:** `cargo check -p flui-framework` succeeds; rustdoc `cargo doc -p flui-framework --no-deps` renders examples; doctests pass under `cargo test -p flui-framework --doc`.
 
-- [ ] **T2.2 — Wire `key` module into `lib.rs`.** Add `pub mod key;` and `pub use crate::key::{Key, ValueKey, GlobalKey};` to `crates/flui-framework/src/lib.rs`. Explicit re-exports — no `pub use crate::key::*;`.
+- [x] **T2.2 — Wire `key` module into `lib.rs`.** Add `pub mod key;` and `pub use crate::key::{Key, ValueKey, GlobalKey};` to `crates/flui-framework/src/lib.rs`. Explicit re-exports — no `pub use crate::key::*;`.
 
   **File:** `crates/flui-framework/src/lib.rs`. **Logging:** none. **Validation:** `cargo check -p flui-framework` succeeds; `cargo doc` shows `flui_framework::Key`, `flui_framework::ValueKey`, `flui_framework::GlobalKey` at the crate root.
 
-- [ ] **T2.3 — Key roundtrip integration test.** Add `crates/flui-framework/tests/key_roundtrip.rs`:
+- [x] **T2.3 — Key roundtrip integration test.** Add `crates/flui-framework/tests/key_roundtrip.rs`:
   - Prove that `flui_framework::Key::local()` produces the same `ElementId` (via `From<Key> for ElementId`) as `flui_core::Key::local()` would at the matching source location.
   - Prove `Key::value(42usize)` and `Key::value(String::from("x"))` round-trip identically via the Framework re-export.
   - **Prove `ValueKey::try_from(42_i32)` succeeds and round-trips** via the Framework re-export (the fallible `i32` path was added in T0.3 wrap-up — reviewer T0.2 flagged it as an SR2 silent-regression vector if the K02 `TryFrom<i32> for ValueKey` impl ever regressed).
@@ -152,7 +152,7 @@ Per user-memory feedback "Keep docs work separate from code work — ADR session
 
   **File:** `crates/flui-framework/tests/key_roundtrip.rs`. **Logging:** none. **Validation:** `cargo test -p flui-framework --test key_roundtrip` passes.
 
-- [ ] **T2.4 — Minimal explicit `prelude` module.** Add `crates/flui-framework/src/prelude.rs`:
+- [x] **T2.4 — Minimal explicit `prelude` module.** Add `crates/flui-framework/src/prelude.rs`:
   - `pub use crate::{Widget, StatefulWidget, IntoWidget, Key, ValueKey, GlobalKey};` — **6 items**. Per the FROZEN design spec, `WidgetState` is intentionally OMITTED from the prelude (stability rationale: unstable until SF04). `IntoWidget` IS included (needed for `impl IntoWidget` return type in user code). Reviewer T0.2 fixed an earlier inconsistency between this plan and the spec — spec wins.
   - Module-level rustdoc explaining that the prelude is an **opt-in convenience** for Tier C / app authors; consumers may always import items individually from the crate root (including `WidgetState`). Explicit-only, **no `pub use crate::*`** (per ARCHITECTURE.md principle 6).
   - Wire `pub mod prelude;` into `crates/flui-framework/src/lib.rs` — the `prelude` module itself is `pub`, not re-exported at the crate root (consumers write `use flui_framework::prelude::*;` exactly once when they want it).
@@ -162,7 +162,7 @@ Per user-memory feedback "Keep docs work separate from code work — ADR session
 
 ### Phase 3 — Widget + StatefulWidget trait surface
 
-- [ ] **T3.1 — Add `crates/flui-framework/src/widget.rs` with the `Widget` trait.** Per the FROZEN contract from T0.3 (which picks the `Widget::build` return type during reviewer triple T0.2):
+- [x] **T3.1 — Add `crates/flui-framework/src/widget.rs` with the `Widget` trait.** Per the FROZEN contract from T0.3 (which picks the `Widget::build` return type during reviewer triple T0.2):
   - `pub trait Widget: 'static + Sized` — the `Sized` bound matches "Widget is an immutable owned config struct, cheap to clone, recreated each rebuild" (ARCHITECTURE.md §"Framework Tier Internals"). Widgets are NEVER stored as `dyn Widget` directly — erasure goes through SF07's `BoxedWidget` newtype.
   - `fn key(&self) -> Option<&Key> { None }` — default impl returns `None` so widgets that don't carry a Key field still implement the trait with zero boilerplate. Override produced by `derive(Widget)` when a `#[widget(key)]` field is present. Note: the trait method name `key` collides with the conventional struct field name `key`; this is harmless in Rust (method dispatch vs `self.field` access never collide) and matches Flutter's `Widget.key` precedent, but the rustdoc must explicitly call out the dual naming so users don't try to refactor it away.
   - `fn build(&self) -> impl <BUILD_RETURN_TYPE>` — `<BUILD_RETURN_TYPE>` is `Widget` or `IntoWidget` per T0.1 decision (see DESIGN RISK in T0.1; recommendation: `IntoWidget` for consistency with `Render`/`RenderOnce`/`ElementBuilder` engine convention). **No `cx` parameter** (SF03 adds it). The opaque return uses the K99 AFIT/RPITIT unlock. Default impl: panics with `unimplemented!("Widget::build must be implemented by SF02+ widgets; SF01 publishes only the trait surface — see SF01 design spec")`. Justification: every SF01 widget is a leaf widget for trait-surface-test purposes; real build bodies require SF02 reconciliation + SF03 BuildCx + SF04 State, none of which exist yet. The default-panic stub is documented as transitional.
@@ -170,21 +170,21 @@ Per user-memory feedback "Keep docs work separate from code work — ADR session
 
   **File:** `crates/flui-framework/src/widget.rs`. **Logging:** none. **Validation:** `cargo check -p flui-framework` succeeds; `cargo doc` renders the trait with its full doc block.
 
-- [ ] **T3.2 — Add `StatefulWidget` trait in the same file.** Per the FROZEN contract:
+- [x] **T3.2 — Add `StatefulWidget` trait in the same file.** Per the FROZEN contract:
   - `pub trait StatefulWidget: Widget` — super-trait `Widget` so every `StatefulWidget` is automatically a `Widget`.
   - `type State: WidgetState<Self>` — associated type bound to the `WidgetState<W>` forward-declared marker trait.
   - `fn create_state(&self) -> Self::State` — required method.
   - No default impls. Object safety not relevant (trait carries `Self` in associated-type bound).
 
-- [ ] **T3.3 — Forward-declare `WidgetState<W>` marker trait.** In `crates/flui-framework/src/widget.rs`:
+- [x] **T3.3 — Forward-declare `WidgetState<W>` marker trait.** In `crates/flui-framework/src/widget.rs`:
   - `pub trait WidgetState<W: Widget>: 'static { /* SF04 fills body */ }` with rustdoc explaining: "SF01 publishes the marker only — `build` / `did_update_widget` / `dispose` arrive in SF04. Do not implement this trait yet outside of trait-surface tests; the contract is unstable until SF04 lands."
   - Add `#[doc(hidden)]` if the spec's reviewer triple flags it as an end-user footgun. (Decision deferred to T0.2 review — record outcome in spec.)
 
-- [ ] **T3.4 — Wire `widget` module into `lib.rs`.** Add `pub mod widget;` and explicit re-exports `pub use crate::widget::{Widget, StatefulWidget, WidgetState};` to `crates/flui-framework/src/lib.rs`. Verify the T2.4 `prelude` module picks up these re-exports correctly.
+- [x] **T3.4 — Wire `widget` module into `lib.rs`.** Add `pub mod widget;` and explicit re-exports `pub use crate::widget::{Widget, StatefulWidget, WidgetState};` to `crates/flui-framework/src/lib.rs`. Verify the T2.4 `prelude` module picks up these re-exports correctly.
 
   **File:** `crates/flui-framework/src/lib.rs`. **Logging:** none. **Validation:** `cargo check -p flui-framework` succeeds; the four public items (`Widget`, `StatefulWidget`, `WidgetState`, `Key` etc.) are visible at crate root in rustdoc.
 
-- [ ] **T3.5 — Trait conformance tests.** Add `crates/flui-framework/tests/trait_surface.rs`:
+- [x] **T3.5 — Trait conformance tests.** Add `crates/flui-framework/tests/trait_surface.rs`:
   - Define a trivial `struct Leaf;` and `impl Widget for Leaf {}` using only default methods (no `build`, no `key`). Prove it compiles.
   - Define a `struct Container { key: Option<Key> }` and manually `impl Widget for Container { fn key(&self) -> Option<&Key> { self.key.as_ref() } }`. Prove it compiles and `widget.key()` returns the expected `Some(&Key)`.
   - Define a `struct Counter { initial: i32 }` and `impl StatefulWidget for Counter { type State = CounterState; fn create_state(&self) -> CounterState { CounterState { value: self.initial } } }` plus `struct CounterState { value: i32 }; impl WidgetState<Counter> for CounterState {}`. Prove the ARCHITECTURE.md §"Code Examples" target shape compiles end-to-end at the SF01 surface (modulo the `build` body, which is SF04 territory).
