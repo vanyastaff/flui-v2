@@ -5,8 +5,8 @@ issues:
     notes: Wayland init panic — bug в платформенном бэкенде. Проверить наш crates/flui-core/src/platform/linux init на аналогичные `unreachable!`.
   56294:
     adr: 'yes'
-    repro: 'unknown'
-    notes: 'Архитектурный: жизненный цикл `on_next_frame`-регистраций во время `paint`. ADR по контракту scheduler/frame callbacks (см. flui-core/src/scheduler).'
+    repro: 'partial'
+    notes: 'Покрыто ADR-001 (docs/research/adr/ADR-001-invalidation-scope.md), пункт 4. У нас `on_next_frame` есть, но debug-guard на регистрацию из `paint` отсутствует — action item 2 этого ADR.'
   48103:
     adr: 'no'
     repro: 'unknown'
@@ -105,8 +105,8 @@ issues:
     notes: 'Z-index: picker за modal. Архитектурный: ordering overlay/portal-слоёв. Близко к #24405.'
   50392:
     adr: 'yes'
-    repro: 'unknown'
-    notes: 'Анимация триггерит full layout repaint. Архитектурный: invalidation scope. Мы строим element identity + render/build separation (K02/K03) — ADR по dirty-region propagation.'
+    repro: 'partial'
+    notes: 'Покрыто ADR-001 (docs/research/adr/ADR-001-invalidation-scope.md). Наш animation использует `request_animation_frame`, но `draw()` всё равно делает full `draw_roots`. ADR честно фиксирует gap; partial-layout subtree caching — отдельный future ADR.'
   49860:
     adr: 'yes'
     repro: 'unknown'
@@ -157,8 +157,8 @@ issues:
     notes: 'GPU device-loss graceful recovery. Большой архитектурный ADR — выживание при suspend/resume/driver-crash. Связано с #52085, #30469.'
   15166:
     adr: 'yes'
-    repro: 'unknown'
-    notes: 'Damage/present regions не указаны → display server перерисовывает всё окно. Архитектурный: API для invalidation regions / partial present. Связано с #50392, #37727.'
+    repro: 'yes'
+    notes: 'Подтверждено в ADR-001: `present()` зовёт `platform_window.draw(&scene)` без damage region. ADR-001 фиксирует это как known gap; partial present — отдельный future ADR (action item 4).'
   14110:
     adr: 'no'
     repro: 'unknown'
