@@ -55,7 +55,11 @@ impl WgpuContext {
             move |reason, message| {
                 log::error!("wgpu device lost: reason={reason:?}, message={message}");
                 if reason != wgpu::DeviceLostReason::Destroyed {
-                    device_lost.store(true, Ordering::Relaxed);
+                    // ADR-005 decision 4: cross-window observers use SeqCst so
+                    // the flag's "lost" transition becomes visible to other
+                    // windows / the recovery-coordinator thread without
+                    // depending on platform memory-model strength.
+                    device_lost.store(true, Ordering::SeqCst);
                 }
             }
         });
@@ -115,7 +119,11 @@ impl WgpuContext {
             move |reason, message| {
                 log::error!("wgpu device lost: reason={reason:?}, message={message}");
                 if reason != wgpu::DeviceLostReason::Destroyed {
-                    device_lost.store(true, Ordering::Relaxed);
+                    // ADR-005 decision 4: cross-window observers use SeqCst so
+                    // the flag's "lost" transition becomes visible to other
+                    // windows / the recovery-coordinator thread without
+                    // depending on platform memory-model strength.
+                    device_lost.store(true, Ordering::SeqCst);
                 }
             }
         });
@@ -389,7 +397,10 @@ impl WgpuContext {
     /// Returns true if the GPU device was lost (e.g., due to driver crash, suspend/resume).
     /// When this returns true, the context should be recreated.
     pub fn device_lost(&self) -> bool {
-        self.device_lost.load(Ordering::Relaxed)
+        // ADR-005 decision 4: SeqCst load to pair with the SeqCst stores
+        // from the device-lost callbacks. Other windows / the recovery
+        // coordinator observe a consistent "lost" timeline.
+        self.device_lost.load(Ordering::SeqCst)
     }
 
     /// Returns a clone of the device_lost flag for sharing with renderers.

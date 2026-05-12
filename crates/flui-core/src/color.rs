@@ -99,6 +99,19 @@ impl Rgba {
             return other;
         }
         if other.a <= 0.0 {
+            // ADR-003 decision 5: when BOTH alphas are zero, the
+            // canonical output is `(0,0,0,0)` — the fast path returning
+            // `*self` would otherwise preserve non-zero RGB on a
+            // zero-alpha destination, which violates the contract that
+            // a fully-transparent result has undefined-but-zeroed RGB.
+            if self.a <= 0.0 {
+                return Rgba {
+                    r: 0.0,
+                    g: 0.0,
+                    b: 0.0,
+                    a: 0.0,
+                };
+            }
             return *self;
         }
 
@@ -1044,6 +1057,16 @@ mod tests {
             return src;
         }
         if src.a <= 0.0 {
+            // Match production: both-alpha-zero composite canonicalizes
+            // to (0,0,0,0) per ADR-003 decision 5.
+            if dst.a <= 0.0 {
+                return Rgba {
+                    r: 0.0,
+                    g: 0.0,
+                    b: 0.0,
+                    a: 0.0,
+                };
+            }
             return dst;
         }
         let out_a = src.a + dst.a * (1.0 - src.a);
@@ -1161,25 +1184,22 @@ mod tests {
         // out_a == 0.0 exactly — see next test.)
     }
 
-    /// ADR-003 decision 5 — zero-alpha *inputs* are absorbed by the
-    /// fast paths (`other.a <= 0.0` → return `self`).
+    /// ADR-003 decision 5 — zero-alpha input behaviour.
     ///
-    /// The lower-level `out_a <= 0.0` early-return inside the canonical
-    /// formula is reachable only through floating-point rounding edge
-    /// cases (both inputs in `(0, 1)` AND the product summing to a
-    /// non-positive result — practically unreachable with normal float
-    /// values; the branch exists as defence against subnormals /
-    /// future numeric drift). This test exercises the **fast-path**
-    /// behaviour explicitly; the defensive branch is verified by
-    /// inspection alongside `reference_source_over` in the property
-    /// test.
+    /// Two cases:
+    ///   - `src.a <= 0` with a non-zero-alpha destination: fast-path
+    ///     returns `*self` unchanged (transparent source contributes
+    ///     nothing).
+    ///   - `src.a <= 0` AND `dst.a <= 0`: the canonical output is
+    ///     `(0,0,0,0)` per decision 5 (a fully-transparent composite
+    ///     has zeroed RGB, not the destination's stale RGB).
     #[test]
     fn adr_003_zero_alpha_input_fast_paths() {
-        let dst = Rgba {
+        let dst_opaque = Rgba {
             r: 0.5,
             g: 0.5,
             b: 0.5,
-            a: 0.0,
+            a: 1.0,
         };
         let zero_src = Rgba {
             r: 0.0,
@@ -1187,10 +1207,33 @@ mod tests {
             b: 0.0,
             a: 0.0,
         };
-        // src.a <= 0.0 → returns dst unchanged.
-        let out = dst.blend(zero_src);
-        assert_eq!(out, dst);
-        // src.a <= 0.0 → returns self (which here equals src structurally).
+        // `src.a <= 0` with non-zero `dst.a` → returns dst unchanged.
+        let out = dst_opaque.blend(zero_src);
+        assert_eq!(out, dst_opaque);
+
+        // `src.a <= 0` AND `dst.a <= 0` → returns canonical `(0,0,0,0)`
+        // per decision 5; the fast path must NOT preserve stale RGB on
+        // a zero-alpha destination.
+        let dst_zero = Rgba {
+            r: 0.5,
+            g: 0.5,
+            b: 0.5,
+            a: 0.0,
+        };
+        let out_both_zero = dst_zero.blend(zero_src);
+        assert_eq!(
+            out_both_zero,
+            Rgba {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 0.0
+            },
+            "ADR-003 decision 5: both-alpha-zero composite must canonicalize to (0,0,0,0)"
+        );
+
+        // Two zero-alpha colours blend to canonical zero (consistent
+        // with the case above).
         let out2 = zero_src.blend(zero_src);
         assert_eq!(out2, zero_src);
     }

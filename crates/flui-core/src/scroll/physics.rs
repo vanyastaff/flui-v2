@@ -16,6 +16,47 @@ use crate::{Pixels, Point, px};
 
 use super::{Axis, ScrollState};
 
+/// Per-axis clamp helper for [`ClampingPhysics::apply_delta`].
+///
+/// When `offset` is already past the `[min, max]` range, only motion
+/// toward the valid range is permitted (the user can "release" the
+/// overscroll but cannot push further out). When `offset` is in range,
+/// the returned delta is capped so the new offset does not cross the
+/// boundary.
+fn clamp_axis(offset: Pixels, min: Pixels, max: Pixels, delta: Pixels) -> Pixels {
+    if offset > max {
+        // Out of bounds on the positive side: only allow inward
+        // (negative-direction) motion, capped at returning to `max`.
+        if delta < px(0.0) {
+            let allowed = max - offset; // negative — moves inward
+            if delta < allowed { allowed } else { delta }
+        } else {
+            // User trying to push further out — zeroed.
+            px(0.0)
+        }
+    } else if offset < min {
+        // Out of bounds on the negative side: only allow inward
+        // (positive-direction) motion, capped at returning to `min`.
+        if delta > px(0.0) {
+            let allowed = min - offset; // positive — moves inward
+            if delta > allowed { allowed } else { delta }
+        } else {
+            px(0.0)
+        }
+    } else {
+        // In range: clamp so the resulting offset does not cross the
+        // boundary.
+        let next = offset + delta;
+        if next > max {
+            max - offset
+        } else if next < min {
+            min - offset
+        } else {
+            delta
+        }
+    }
+}
+
 /// ADR-019 — strategy object that converts pointer deltas and release
 /// velocities into a scrollable view's offset trajectory.
 ///
@@ -58,6 +99,22 @@ pub trait ScrollPhysics: Send + Sync + 'static {
     /// edges, gesture continues to track the cursor but the view
     /// stays still).
     fn allows_overscroll(&self) -> bool;
+
+    /// Slop threshold (in pixels) before the gesture-recognizer
+    /// commits to a dominant axis. Below this, motion is free-form
+    /// 2-D. Above this, the recognizer sets
+    /// [`ScrollState::axis_lock`] and `apply_delta` zeroes the
+    /// orthogonal component. Default `0.0` (no axis-lock) so impls
+    /// that do not care about axis-lock semantics need not override
+    /// the method; both `BouncingPhysics` and `ClampingPhysics`
+    /// override to expose their own configured threshold.
+    ///
+    /// Exposed on the trait so a future `Scrollable` widget composing
+    /// physics via `dyn ScrollPhysics` can query the threshold
+    /// without downcasting to the concrete impl.
+    fn axis_lock_slop(&self) -> f32 {
+        0.0
+    }
 }
 
 /// ADR-019 iOS / macOS-style scroll physics — rubber-band resistance
@@ -115,6 +172,10 @@ impl ScrollPhysics for BouncingPhysics {
     fn allows_overscroll(&self) -> bool {
         true
     }
+
+    fn axis_lock_slop(&self) -> f32 {
+        self.axis_lock_slop
+    }
 }
 
 /// ADR-019 Android / Windows / Linux-style scroll physics — offset
@@ -134,26 +195,27 @@ impl ScrollPhysics for ClampingPhysics {
             Some(Axis::Vertical) => Point::new(px(0.0), delta.y),
             None => delta,
         };
-        // Clamp at edges: if the proposed offset would push past the
-        // bound, zero the delta on that axis. The Scrollable widget
-        // does the actual clamping after applying the delta; here we
-        // just refuse to advance past the boundary.
-        let next_x = state.offset.x + delta.x;
-        let dx = if next_x > state.max_offset.x {
-            state.max_offset.x - state.offset.x
-        } else if next_x < state.min_offset.x {
-            state.min_offset.x - state.offset.x
-        } else {
-            delta.x
-        };
-        let next_y = state.offset.y + delta.y;
-        let dy = if next_y > state.max_offset.y {
-            state.max_offset.y - state.offset.y
-        } else if next_y < state.min_offset.y {
-            state.min_offset.y - state.offset.y
-        } else {
-            delta.y
-        };
+        // Clamp at edges. Two cases per axis:
+        //   1. Offset already past the boundary (state.offset > max
+        //      OR < min): only INWARD motion (toward the valid range)
+        //      is permitted. Outward motion is zeroed — otherwise a
+        //      drag past the edge would produce a negative-direction
+        //      delta that moves opposite to the user's drag, which
+        //      reads as a glitch.
+        //   2. Offset in range: clamp the delta so the resulting
+        //      offset does not cross the boundary.
+        let dx = clamp_axis(
+            state.offset.x,
+            state.min_offset.x,
+            state.max_offset.x,
+            delta.x,
+        );
+        let dy = clamp_axis(
+            state.offset.y,
+            state.min_offset.y,
+            state.max_offset.y,
+            delta.y,
+        );
         Point::new(dx, dy)
     }
 
@@ -169,6 +231,10 @@ impl ScrollPhysics for ClampingPhysics {
 
     fn allows_overscroll(&self) -> bool {
         false
+    }
+
+    fn axis_lock_slop(&self) -> f32 {
+        self.axis_lock_slop
     }
 }
 
@@ -222,6 +288,10 @@ mod tests {
 
     /// ADR-019 — `ClampingPhysics` truncates the delta at the maximum
     /// offset boundary; the offset never goes past `max_offset`.
+    /// Out-of-bounds states (e.g. via a programmatic
+    /// `scroll_to_offset` past the bound) permit only INWARD motion —
+    /// outward motion is zeroed instead of producing a reversed delta
+    /// (which would read as a glitch on the scrollable).
     #[test]
     fn adr_019_clamping_truncates_at_max_offset() {
         let physics = ClampingPhysics::default();
@@ -231,10 +301,23 @@ mod tests {
         state.offset = Point::new(px(190.0), px(0.0));
         let out = physics.apply_delta(&state, Point::new(px(30.0), px(0.0)));
         assert_eq!(out, Point::new(px(10.0), px(0.0)));
-        // Past max, delta is zero (cannot push further).
+        // At max, outward push is zeroed.
         state.offset = Point::new(px(200.0), px(0.0));
         let out = physics.apply_delta(&state, Point::new(px(30.0), px(0.0)));
         assert_eq!(out, Point::new(px(0.0), px(0.0)));
+        // ADR-019: past max with outward push → zero (NOT a reversed
+        // negative delta — that was the pre-fix bug).
+        state.offset = Point::new(px(210.0), px(0.0));
+        let out = physics.apply_delta(&state, Point::new(px(30.0), px(0.0)));
+        assert_eq!(out, Point::new(px(0.0), px(0.0)));
+        // Past max with inward push: capped at returning to max
+        // (delta of -10 here moves 210 → 200).
+        let out = physics.apply_delta(&state, Point::new(px(-30.0), px(0.0)));
+        assert_eq!(out, Point::new(px(-10.0), px(0.0)));
+        // Past min with inward (positive) push: capped at returning to min.
+        state.offset = Point::new(px(-15.0), px(0.0));
+        let out = physics.apply_delta(&state, Point::new(px(30.0), px(0.0)));
+        assert_eq!(out, Point::new(px(15.0), px(0.0)));
     }
 
     /// ADR-019 — `BouncingPhysics` applies rubber-band resistance

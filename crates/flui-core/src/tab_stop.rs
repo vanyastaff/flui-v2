@@ -6,9 +6,16 @@
 // depth differences fall through the `SumTree`'s `Bias::Right` semantics.
 //
 // `tab_index = 0` means "default" (document order within the group).
-// Negative values come after every non-negative entry in the same group
-// (web `tabindex="-1"` semantics, except `tab_stop = false` is the way
-// to disable the stop entirely).
+//
+// IMPLEMENTATION NOTE: the current code orders by lexicographic
+// comparison of `TabStopPath`, so a negative `tab_index` sorts
+// BEFORE non-negative entries in the same group (`-2 < -1 < 0 < 1`).
+// This differs from the web `tabindex="-1"` "behind everyone else"
+// reading; the divergence is documented and locked under test (see
+// `tests::adr_010_negative_tab_index_locked_to_lexicographic_order`).
+// A future ADR-update PR may flip this — until then,
+// `tab_stop = false` remains the right way to make a focus handle
+// receive only programmatic focus.
 //
 // `tab_stop: bool` on `FocusHandle` is independent of `tab_index`: a
 // focus handle may participate in the map (so it can receive programmatic

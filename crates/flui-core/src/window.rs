@@ -1908,7 +1908,18 @@ impl Window {
     }
 
     /// Start a window resize operation (Wayland)
+    ///
+    /// ADR-008 decision 6: gated on the `WindowOptions::is_resizable`
+    /// invariant. A non-resizable window must reject resize gestures
+    /// from any source — same contract as `minimize_window` below.
     pub fn start_window_resize(&self, edge: ResizeEdge) {
+        if !self.is_resizable {
+            log::warn!(
+                "ADR-008: ignored programmatic start_window_resize() on a \
+                 window created with `is_resizable = false`."
+            );
+            return;
+        }
         self.platform_window.start_window_resize(edge);
     }
 
@@ -2366,7 +2377,20 @@ impl Window {
     }
 
     /// Toggle zoom on the window.
+    ///
+    /// ADR-008 decision 3: a non-resizable window is also non-
+    /// maximizable (Cocoa conflates resize + maximize via
+    /// `NSResizableWindowMask`; Win32 via `WS_THICKFRAME`). This gate
+    /// matches `start_window_resize` so callers cannot bypass the
+    /// invariant through the zoom path.
     pub fn zoom_window(&self) {
+        if !self.is_resizable {
+            log::warn!(
+                "ADR-008: ignored programmatic zoom_window() on a window \
+                 created with `is_resizable = false`."
+            );
+            return;
+        }
         self.platform_window.zoom();
     }
 
@@ -2379,7 +2403,19 @@ impl Window {
     /// Tells the compositor to take control of window movement (Wayland and X11)
     ///
     /// Events may not be received during a move operation.
+    ///
+    /// ADR-008 decision 6: gated on the `WindowOptions::is_movable`
+    /// invariant. A non-movable window must reject drag-to-move
+    /// gestures from any source — including this programmatic
+    /// compositor handoff.
     pub fn start_window_move(&self) {
+        if !self.is_movable {
+            log::warn!(
+                "ADR-008: ignored programmatic start_window_move() on a \
+                 window created with `is_movable = false`."
+            );
+            return;
+        }
         self.platform_window.start_window_move()
     }
 
@@ -4808,12 +4844,20 @@ impl Window {
             // payload variants (Urls, Text, Html, Mime, Mixed) currently fall
             // through without a drag preview — wider preview rendering is a
             // future-work item tracked in the rollout plan.
+            //
+            // The pre-existing pipeline (also pre-ADR) converts `Entered`/
+            // `Pending`/`Submit` into synthetic mouse events for downstream
+            // hit-test / listener dispatch (the typed payload is consumed
+            // here in the `Entered` branch only, to set up `cx.active_drag`
+            // for the drag-preview painter). Wiring `on_drop` listeners to
+            // observe the original typed `ExternalDropEvent` directly is a
+            // follow-up that would replace this conversion with a typed
+            // dispatch path.
             PlatformInput::FileDrop(file_drop) => match file_drop {
                 ExternalDropEvent::Entered { position, payload } => {
                     self.mouse_position = position;
                     if cx.active_drag.is_none() {
-                        if let ExternalDropPayload::Paths(paths) = &payload {
-                            let paths = paths.clone();
+                        if let ExternalDropPayload::Paths(paths) = payload {
                             cx.active_drag = Some(AnyDrag {
                                 value: Arc::new(paths.clone()),
                                 view: cx.new(|_| paths).into(),
@@ -4824,7 +4868,6 @@ impl Window {
                         // Non-Paths variants: no engine-side drag preview
                         // yet; widgets can paint their own on `Entered`.
                     }
-                    let _ = payload; // payload also flows downstream via event echo when handlers care.
                     PlatformInput::MouseMove(MouseMoveEvent {
                         position,
                         pressed_button: Some(MouseButton::Left),

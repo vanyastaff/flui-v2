@@ -53,8 +53,10 @@ jobs:
           shared-key: wasm
 
       - name: cargo check (default features, wasm32 target)
-        # `|| true` makes this step advisory — the check still runs and
-        # its full log is captured, but a wasm-incompatibility does not
-        # turn the PR check red. First green run will flip this to a
-        # blocking step (drop the `|| true`). Per ADR-016 #1.
-        run: cargo check --target wasm32-unknown-unknown -p flui-core || true
+        # The step is allowed to surface its real exit code; the job-level
+        # `continue-on-error: true` above keeps the PR check advisory while
+        # preserving step-level outcome visibility (so `steps.<id>.outcome`
+        # still reports `failure` when the wasm build breaks). Per ADR-016 #1
+        # the first green run will flip the job to blocking by removing the
+        # `continue-on-error` line.
+        run: cargo check --target wasm32-unknown-unknown -p flui-core
