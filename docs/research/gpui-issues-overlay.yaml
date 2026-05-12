@@ -89,8 +89,8 @@ issues:
     notes: 'Покрыто ADR-013 (docs/research/adr/ADR-013-text-rasterization-strategy.md). Mac forces subpixel+AA (text_system.rs:442); нет выбора bi-level/hinted. Контракт: TextRasterMode enum + поле в TextStyle + per-platform fallback.'
   52715:
     adr: 'yes'
-    repro: 'unknown'
-    notes: 'wasm regression: closure recursive, proptest tянет imp. ADR по wasm target gating (dev-deps + feature flags). Мы тоже целимся в web — критично.'
+    repro: 'partial'
+    notes: 'Покрыто ADR-016 (docs/research/adr/ADR-016-wasm-target-gating.md). Sub-bug 2 (proptest pulls imp) НЕ повторяется — у нас `dep:proptest` в `test-support`. Sub-bug 1 (closure recursion) — статус unknown до wasm hello_world аудита.'
   52110:
     adr: 'yes'
     repro: 'yes'
