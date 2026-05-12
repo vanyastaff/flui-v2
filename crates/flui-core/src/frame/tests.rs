@@ -86,10 +86,8 @@ fn k04_phase_order_single_frame() {
                 let log = log.clone();
                 move |cx| record(&log, cx.current_phase())
             });
-            cx.on_post_frame({
-                let log = log.clone();
-                move |cx| record(&log, cx.current_phase())
-            });
+            // Last use of outer-closure `log` — move directly, no clone.
+            cx.on_post_frame(move |cx| record(&log, cx.current_phase()));
         }
     });
 
@@ -131,18 +129,15 @@ fn k04_defer_placements_drain_in_matching_phase() {
     app.update({
         let log = log.clone();
         move |cx| {
-            cx.on_pre_frame({
-                let log = log.clone();
-                move |cx| {
-                    cx.defer_to(DeferPlacement::PostFrame, {
-                        let log = log.clone();
-                        move |cx| record(&log, cx.current_phase())
-                    });
-                    cx.defer_to(DeferPlacement::NextFrameStart, {
-                        let log = log.clone();
-                        move |cx| record(&log, cx.current_phase())
-                    });
-                }
+            cx.on_pre_frame(move |cx| {
+                cx.defer_to(DeferPlacement::PostFrame, {
+                    let log = log.clone();
+                    move |cx| record(&log, cx.current_phase())
+                });
+                // Last use of `log` from the on_pre_frame closure — move it.
+                cx.defer_to(DeferPlacement::NextFrameStart, move |cx| {
+                    record(&log, cx.current_phase())
+                });
             });
         }
     });
@@ -272,16 +267,10 @@ fn k04_k15_defer_next_frame_start_carries_one_frame() {
     app.update({
         let fired = fired.clone();
         move |cx| {
-            cx.on_pre_frame({
-                let fired = fired.clone();
-                move |cx| {
-                    cx.defer_to(DeferPlacement::NextFrameStart, {
-                        let fired = fired.clone();
-                        move |_cx| {
-                            *fired.borrow_mut() += 1;
-                        }
-                    });
-                }
+            cx.on_pre_frame(move |cx| {
+                cx.defer_to(DeferPlacement::NextFrameStart, move |_cx| {
+                    *fired.borrow_mut() += 1;
+                });
             });
         }
     });
