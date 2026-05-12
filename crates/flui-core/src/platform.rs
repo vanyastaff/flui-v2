@@ -243,8 +243,50 @@ pub trait Platform: 'static {
     fn hide_other_apps(&self);
     fn unhide_other_apps(&self);
 
+    // CONTRACT (ADR-007 — Display lifecycle):
+    //
+    // `displays()` returns a SNAPSHOT, not a subscription. Callers MUST
+    // NOT rely on the result staying valid; the snapshot is good for the
+    // current message-loop turn only.
+    //
+    // `displays()` MUST be callable before any window exists. If a
+    // platform needs an event-loop tick to populate the output list, it
+    // MUST drive that tick on demand here rather than return an empty
+    // list. Brief blocking is acceptable to satisfy this contract
+    // (closes the pre-window-empty-list pattern on Wayland).
+    //
+    // `PlatformDisplay::id` is stable across the lifetime of that
+    // display. Reconnect after disconnect yields a new id — identity is
+    // by connection, not by physical hardware.
+    //
+    // For subscription semantics see `Platform::on_displays_changed` and
+    // `Window::observe_display_change` (added together with this ADR).
+    //
+    // See: `docs/research/adr/ADR-007-display-lifecycle.md`.
     fn displays(&self) -> Vec<Rc<dyn PlatformDisplay>>;
     fn primary_display(&self) -> Option<Rc<dyn PlatformDisplay>>;
+
+    /// ADR-007: subscribe to display add/remove events.
+    ///
+    /// Fires whenever the snapshot returned by [`Platform::displays`] would
+    /// differ from the previous snapshot — output attach (monitor plugged
+    /// in, virtual display added) or detach (monitor unplugged, AirPlay
+    /// disconnected). The default implementation never fires; backends opt
+    /// in by overriding it. Wayland binds `wl_registry::global_remove` /
+    /// `wl_output`; X11 binds XRandR notification events.
+    ///
+    /// Callers receive no payload — they re-read [`Platform::displays`] to
+    /// observe the change. Coarse but composable; multiple callbacks can
+    /// be registered and the platform implementation broadcasts.
+    ///
+    /// Distinct from [`Window::observe_display_change`] which fires when
+    /// one window's bound display changes (different identity or different
+    /// scale factor).
+    ///
+    /// See: `docs/research/adr/ADR-007-display-lifecycle.md` — decision 3.
+    fn on_displays_changed(&self, _callback: Box<dyn FnMut()>) {
+        // Default: never fires. Backends override.
+    }
     fn active_window(&self) -> Option<AnyWindowHandle>;
     fn window_stack(&self) -> Option<Vec<AnyWindowHandle>> {
         None
@@ -1611,6 +1653,33 @@ pub enum WindowAppearance {
     /// On macOS, this corresponds to the `NSAppearanceNameVibrantDark` appearance.
     VibrantDark,
 }
+
+// CONTRACT (ADR-017 — Window background blur):
+//
+// `WindowBackgroundAppearance::Blurred` is BEST-EFFORT, not guaranteed.
+// Callers MUST NOT assume the value they set is the value they get; on
+// an unsupported compositor the visual result falls through to
+// `Transparent` (or `Opaque`, per the surface config).
+// `background_appearance()` reflects the ACTUALLY APPLIED state, not the
+// requested one.
+//
+// Per-platform capability matrix:
+//   | Platform               | Mechanism                                  | Status |
+//   |------------------------|--------------------------------------------|--------|
+//   | macOS                  | `NSVisualEffectView`                       | impl   |
+//   | Windows 10+            | `DwmEnableBlurBehindWindow` / Mica         | impl   |
+//   | Wayland (KDE)          | `org.kde.kwin.blur` protocol               | TODO   |
+//   | Wayland (GNOME/wlroots)| (no portable protocol)                     | n/a    |
+//   | X11 + KDE              | `_KDE_NET_WM_BLUR_BEHIND_REGION` xprop     | TODO   |
+//   | X11 + Deepin           | `_NET_WM_DEEPIN_BLUR_REGION_ROUNDED` xprop | TODO   |
+//   | X11 + i3 / GNOME-on-X  | (no standard)                              | n/a    |
+//   | Web                    | CSS `backdrop-filter: blur()`              | future |
+//
+// Blur region is the entire window (single-region). A future
+// `WindowBackgroundAppearance::PartialBlur { region }` is out of scope
+// here — single-region is the contract today.
+//
+// See: `docs/research/adr/ADR-017-window-background-blur.md`.
 
 /// The appearance of the background of the window itself, when there is
 /// no content or the content is transparent.

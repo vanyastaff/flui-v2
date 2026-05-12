@@ -436,4 +436,78 @@ mod tests {
             parse_pci_id(&format!("{:#X}", 0x1234)).unwrap(),
         );
     }
+
+    /// ADR-005 regression test for `device_lost()` as the single source
+    /// of truth.
+    ///
+    /// Locks two ADR-005 contract points:
+    /// 1. Decision 1 — `WgpuContext::device_lost()` is the canonical
+    ///    "is the GPU currently usable" probe. The atomic flag returned
+    ///    by `device_lost_flag()` must be the same `Arc<AtomicBool>` the
+    ///    callback at construction writes to, so external observers
+    ///    (renderers, atlases) and the public probe agree.
+    /// 2. Decision 4 — the flag uses `Ordering::SeqCst` for cross-window
+    ///    observation. We exercise SeqCst by writing in one thread and
+    ///    reading from another, asserting visibility.
+    ///
+    /// Gated on `test-support` because `WgpuContext::new_headless` itself
+    /// is gated there — without a wgpu adapter, the test is a no-op on
+    /// CI runners that lack lavapipe. Skips gracefully (returns early
+    /// with a `log::info!`) when no adapter is available; this keeps the
+    /// `cargo test -p flui-core --features test-support` matrix green on
+    /// every host the project actually runs on (macOS, Linux+wgpu,
+    /// Windows-via-wgpu, headless+lavapipe).
+    ///
+    /// Note: this test does NOT drive `Renderer::recover()` — that path
+    /// requires a real window handle and is verified by manual smoke
+    /// (see ADR-005 action item 4 / plan task 5 verification).
+    /// See `docs/research/adr/ADR-005-gpu-device-loss.md`.
+    #[cfg(all(feature = "test-support", not(target_family = "wasm")))]
+    #[test]
+    fn adr_005_device_lost_flag_is_canonical_and_shared() {
+        use super::WgpuContext;
+        use std::sync::atomic::Ordering;
+
+        let context = match WgpuContext::new_headless() {
+            Ok(c) => c,
+            Err(e) => {
+                log::info!(
+                    "ADR-005 test skipped: no headless wgpu adapter on this host ({e:?}). \
+                     Manual smoke on a wgpu-capable host is required per plan task 5 verification."
+                );
+                return;
+            }
+        };
+
+        // Decision 1: fresh context is not in a lost state.
+        assert!(
+            !context.device_lost(),
+            "ADR-005: fresh WgpuContext::new_headless must report device_lost == false"
+        );
+
+        // Decision 1 + 4: `device_lost_flag()` returns the same Arc that
+        // `device_lost()` reads. Toggling through the shared Arc must be
+        // immediately observable via the canonical probe.
+        let flag = context.device_lost_flag();
+        flag.store(true, Ordering::SeqCst);
+        assert!(
+            context.device_lost(),
+            "ADR-005: device_lost_flag() must alias the same AtomicBool that \
+             device_lost() reads — toggling one MUST be visible through the other"
+        );
+
+        // Cross-thread observation: write in a spawned thread, read on
+        // this one. SeqCst ordering guarantees visibility after thread
+        // join completes.
+        flag.store(false, Ordering::SeqCst);
+        let flag_for_thread = std::sync::Arc::clone(&flag);
+        let join = std::thread::spawn(move || {
+            flag_for_thread.store(true, Ordering::SeqCst);
+        });
+        join.join().expect("thread did not panic");
+        assert!(
+            context.device_lost(),
+            "ADR-005: cross-thread store-via-shared-Arc must be visible to device_lost() reads"
+        );
+    }
 }

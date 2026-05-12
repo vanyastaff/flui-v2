@@ -1046,6 +1046,10 @@ pub struct Window {
     capslock: Capslock,
     scale_factor: f32,
     pub(crate) bounds_observers: SubscriberSet<(), AnyObserver>,
+    /// ADR-007: observers fired when this window's bound display id changes
+    /// (window moves between outputs) or when that display's scale factor
+    /// changes. Distinct from `bounds_observers` which fires on size only.
+    pub(crate) display_change_observers: SubscriberSet<(), AnyObserver>,
     appearance: WindowAppearance,
     pub(crate) appearance_observers: SubscriberSet<(), AnyObserver>,
     active: Rc<Cell<bool>>,
@@ -1607,6 +1611,7 @@ impl Window {
             capslock,
             scale_factor,
             bounds_observers: SubscriberSet::new(),
+            display_change_observers: SubscriberSet::new(),
             appearance,
             appearance_observers: SubscriberSet::new(),
             active,
@@ -1691,6 +1696,43 @@ impl Window {
         mut callback: impl FnMut(&mut Window, &mut App) + 'static,
     ) -> Subscription {
         let (subscription, activate) = self.appearance_observers.insert(
+            (),
+            Box::new(move |window, cx| {
+                callback(window, cx);
+                true
+            }),
+        );
+        activate();
+        subscription
+    }
+
+    /// ADR-007: observe display changes for *this* window.
+    ///
+    /// The callback fires when:
+    /// - this window's bound display id changes (the window moved between
+    ///   outputs, or its output was disconnected and the window was
+    ///   reattached to the primary display — see ADR-007 decision 5), OR
+    /// - that display's scale factor changes (DPI shift on the current
+    ///   output, e.g. user switched scaling in System Settings).
+    ///
+    /// This is *distinct* from `bounds_observers` (window-size-only) and
+    /// from `Platform::on_displays_changed` (app-wide: a display was
+    /// added or removed somewhere, not necessarily affecting this window).
+    ///
+    /// The eventually-consistent guarantee from ADR-007 decision 4: between
+    /// any two consecutive frames, `Window::scale_factor()` reflects what
+    /// the platform currently reports for the window's display. Observers
+    /// run synchronously inside `bounds_changed`; ordering relative to
+    /// `bounds_observers` is `bounds_observers` first, then
+    /// `display_change_observers` — callers chaining the two should not
+    /// assume the reverse.
+    ///
+    /// See: `docs/research/adr/ADR-007-display-lifecycle.md` — decision 3.
+    pub fn observe_display_change(
+        &self,
+        mut callback: impl FnMut(&mut Window, &mut App) + 'static,
+    ) -> Subscription {
+        let (subscription, activate) = self.display_change_observers.insert(
             (),
             Box::new(move |window, cx| {
                 callback(window, cx);
@@ -2204,16 +2246,33 @@ impl Window {
     /// This updates internal state like `viewport_size` and `scale_factor` from
     /// the platform window, then notifies observers. Normally called automatically
     /// by the platform's resize callback, but exposed publicly for test infrastructure.
+    ///
+    /// ADR-007: when the window's `display_id` or `scale_factor` changes,
+    /// `display_change_observers` fires *in addition to* `bounds_observers`.
+    /// The latter is kept window-size-focused; the former is the dedicated
+    /// "external display state changed for this window" hook.
     pub fn bounds_changed(&mut self, cx: &mut App) {
+        let prev_scale_factor = self.scale_factor;
+        let prev_display_id = self.display_id;
+
         self.scale_factor = self.platform_window.scale_factor();
         self.viewport_size = self.platform_window.content_size();
         self.display_id = self.platform_window.display().map(|display| display.id());
 
         self.refresh();
 
+        let display_changed = self.display_id != prev_display_id
+            || (self.scale_factor - prev_scale_factor).abs() > f32::EPSILON;
+
         self.bounds_observers
             .clone()
             .retain(&(), |callback| callback(self, cx));
+
+        if display_changed {
+            self.display_change_observers
+                .clone()
+                .retain(&(), |callback| callback(self, cx));
+        }
     }
 
     /// Returns the bounds of the current window in the global coordinate space, which could span across multiple displays.

@@ -100,6 +100,31 @@ impl TestWindow {
         self.0.lock().resize_callback = Some(callback);
     }
 
+    /// ADR-007 test hook: swap the display this window is attached to and
+    /// drive a resize callback to surface the change through
+    /// `Window::bounds_changed` → `display_change_observers`.
+    ///
+    /// Used by the ADR-007 regression test in `window.rs::tests` to lock the
+    /// "window survives output disconnect" contract (decision 5). The
+    /// test simulates the platform reattaching the window to a different
+    /// display (e.g. primary, when the previous output went away).
+    pub fn simulate_display_change(&self, new_display: Rc<dyn PlatformDisplay>) {
+        let scale_factor = self.scale_factor();
+        let mut lock = self.0.lock();
+        lock.display = new_display;
+        let size = lock.bounds.size;
+        // Mirror the resize-callback dispatch from `simulate_resize` so the
+        // platform glue routes through `Window::bounds_changed` with the
+        // new display attached. `bounds_changed` re-reads
+        // `platform_window.display()` and detects the id change.
+        let Some(mut callback) = lock.resize_callback.take() else {
+            return;
+        };
+        drop(lock);
+        callback(size, scale_factor);
+        self.0.lock().resize_callback = Some(callback);
+    }
+
     pub(crate) fn simulate_active_status_change(&self, active: bool) {
         let mut lock = self.0.lock();
         let Some(mut callback) = lock.active_status_change_callback.take() else {

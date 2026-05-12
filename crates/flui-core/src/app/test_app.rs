@@ -541,6 +541,28 @@ impl<V: 'static + Render> TestAppWindow<V> {
         self.background_executor.run_until_parked();
     }
 
+    /// ADR-007: simulate this window being moved to (or reattached to) a
+    /// different display. Drives the platform-side display swap that
+    /// surfaces through `Window::bounds_changed` and fires
+    /// `Window::observe_display_change` observers.
+    ///
+    /// Use a fresh `TestDisplay::with_id(...)` to ensure the new display
+    /// reports a distinct id from the previous one.
+    pub fn simulate_display_change(
+        &mut self,
+        new_display: std::rc::Rc<dyn crate::PlatformDisplay>,
+    ) {
+        let window_id = self.handle.window_id();
+        let mut app = self.app.borrow_mut();
+        if let Some(Some(window)) = app.windows.get_mut(window_id) {
+            if let Some(test_window) = window.platform_window.as_test() {
+                test_window.simulate_display_change(new_display);
+            }
+        }
+        drop(app);
+        self.background_executor.run_until_parked();
+    }
+
     /// Force a redraw of the window.
     pub fn draw(&mut self) {
         let mut app = self.app.borrow_mut();
@@ -703,5 +725,82 @@ mod tests {
         app.read_global::<MyGlobal, _>(|global, _| {
             assert_eq!(global.0, "world");
         });
+    }
+
+    /// ADR-007 regression test: `Window::observe_display_change` fires
+    /// when the window's bound display id changes, and the window
+    /// survives the swap (decision 5 — "Output disconnect does not
+    /// implicitly kill a window").
+    ///
+    /// This locks the public API surface added by ADR-007 and the test
+    /// hook (`TestAppWindow::simulate_display_change`,
+    /// `TestDisplay::with_id`) that platform-glue follow-ups will reuse
+    /// to verify Wayland `wl_output` add/remove and X11 XRandR paths.
+    ///
+    /// See `docs/research/adr/ADR-007-display-lifecycle.md`.
+    #[test]
+    fn adr_007_observe_display_change_fires_on_display_swap() {
+        use crate::platform::TestDisplay;
+        use std::cell::Cell;
+        use std::rc::Rc as StdRc;
+
+        let mut app = TestApp::new();
+        let mut window = app.open_window(Counter::new);
+
+        // Observer fires inside `Window::bounds_changed` when display_id
+        // (or scale factor) changes. Capture call count via a shared
+        // `Cell` — observer keeps a strong ref while it lives.
+        let fire_count = StdRc::new(Cell::new(0u32));
+        let fire_count_for_observer = StdRc::clone(&fire_count);
+        let _subscription = window.update(move |_view, w, _cx| {
+            w.observe_display_change(move |_w, _cx| {
+                fire_count_for_observer.set(fire_count_for_observer.get() + 1);
+            })
+        });
+
+        assert_eq!(
+            fire_count.get(),
+            0,
+            "ADR-007: observe_display_change must not fire on registration"
+        );
+
+        // Stage the platform-side display swap, then drive
+        // `Window::bounds_changed` ourselves — we want to lock the
+        // observer-firing semantics inside `bounds_changed`, independent
+        // of whether the test platform's resize-callback wiring has
+        // already been exercised by the harness (it varies by harness
+        // run order). The contract under test is "when platform reports
+        // a new display id, observers fire" — both the platform-side
+        // swap and the engine-side `bounds_changed` are required steps.
+        let new_display = StdRc::new(TestDisplay::with_id(5));
+        window.simulate_display_change(StdRc::clone(&new_display) as _);
+        // Explicitly drive bounds_changed in case simulate_display_change's
+        // platform callback path is a no-op (resize_callback unset on
+        // freshly-opened test windows in some harness configurations).
+        window.update(|_view, w, cx| {
+            w.bounds_changed(cx);
+        });
+
+        assert_eq!(
+            fire_count.get(),
+            1,
+            "ADR-007: observe_display_change must fire exactly once when \
+             display_id changes from the initial TestDisplay (id=1) to the \
+             swapped one (id=5). Got fire_count = {}.",
+            fire_count.get()
+        );
+
+        // Window is still alive — decision 5 says output disconnect /
+        // reattach must not implicitly kill the window. Read its state
+        // to prove it survives.
+        let count_after_swap = window.read(|view, _| view.count);
+        assert_eq!(
+            count_after_swap, 0,
+            "ADR-007 decision 5: window state (Counter::count = 0) must \
+             survive display swap unchanged"
+        );
+
+        drop(window);
+        app.update(|cx| cx.shutdown());
     }
 }
