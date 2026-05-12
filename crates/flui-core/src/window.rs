@@ -3872,6 +3872,15 @@ impl Window {
             y: (glyph_origin.y.0.fract() * SUBPIXEL_VARIANTS_Y as f32).floor() as u8,
         };
         let subpixel_rendering = self.should_use_subpixel_rendering(font_id, font_size);
+        // ADR-013: cache key includes the raster mode. The text style
+        // cascade plumbs `raster_mode` through; the resolved mode here
+        // is the one actually drawn after the per-platform fallback
+        // chain (see `TextRasterMode::resolve_with_fallback`). Wiring
+        // the live style → mode resolution is a per-paint-call
+        // follow-up; for now the engine defaults to `Subpixel` which
+        // matches pre-ADR cache identity (no atlas churn from this
+        // commit).
+        let raster_mode = crate::TextRasterMode::Subpixel;
         let params = RenderGlyphParams {
             font_id,
             glyph_id,
@@ -3880,6 +3889,7 @@ impl Window {
             scale_factor,
             is_emoji: false,
             subpixel_rendering,
+            raster_mode,
         };
 
         let raster_bounds = self.text_system().raster_bounds(&params)?;
@@ -4062,6 +4072,10 @@ impl Window {
             subpixel_variant: Default::default(),
             scale_factor,
             is_emoji: true,
+            // ADR-013: emoji raster mode is fixed to `Subpixel` (the
+            // default) — bi-level / hinted modes only apply to outline
+            // glyphs, not colour-bitmap emoji.
+            raster_mode: crate::TextRasterMode::Subpixel,
             subpixel_rendering: false,
         };
 

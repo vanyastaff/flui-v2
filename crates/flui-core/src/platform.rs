@@ -229,6 +229,36 @@ pub fn guess_compositor() -> &'static str {
     }
 }
 
+/// ADR-014: classifies the active rendering adapter.
+///
+/// Pre-ADR the engine accepted any wgpu adapter without exposing
+/// whether it was hardware or a software fallback (e.g. Mesa
+/// `llvmpipe`). Software adapters paint correctly but at much higher
+/// CPU cost; without classification, an `AnimationController` running
+/// at 60 fps on a software-only host pegs every core to 100 %.
+///
+/// `RendererKind::Software` is the documented signal for downstream
+/// callers to tighten frame budgets, skip expensive visual effects, or
+/// alert the user. The default frame-budget heuristic per ADR-014
+/// decision 3 is 60 fps on hardware, 30 fps on software — wiring this
+/// into the per-platform event-loop pacing is tracked as a
+/// per-platform follow-up.
+///
+/// Marked `#[non_exhaustive]` so a future `Headless` variant (no
+/// surface, golden-test path) can be added without breaking matchers.
+///
+/// See `docs/research/adr/ADR-014-software-rendering-fallback.md`.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Default)]
+#[non_exhaustive]
+pub enum RendererKind {
+    /// Discrete or integrated GPU. Frame budget target: 60 fps.
+    #[default]
+    Hardware,
+    /// CPU-side software rasterizer (Mesa `llvmpipe`, WARP on Windows,
+    /// CoreImage software fallback). Frame budget target: 30 fps.
+    Software,
+}
+
 #[expect(missing_docs)]
 pub trait Platform: 'static {
     fn background_executor(&self) -> BackgroundExecutor;
@@ -265,6 +295,19 @@ pub trait Platform: 'static {
     // See: `docs/research/adr/ADR-007-display-lifecycle.md`.
     fn displays(&self) -> Vec<Rc<dyn PlatformDisplay>>;
     fn primary_display(&self) -> Option<Rc<dyn PlatformDisplay>>;
+
+    /// ADR-014: classify the active renderer. Default implementation
+    /// returns [`RendererKind::Hardware`]; the wgpu backend overrides
+    /// this to inspect `Adapter::get_info().device_type` and return
+    /// [`RendererKind::Software`] when running on Mesa `llvmpipe` /
+    /// other CPU rasterizers. macOS Metal / Windows DirectX never
+    /// surface software adapters and keep the default.
+    ///
+    /// Callers consume this via [`App::renderer_kind`] — see the type
+    /// for the contract.
+    fn renderer_kind(&self) -> RendererKind {
+        RendererKind::Hardware
+    }
 
     /// ADR-007: subscribe to display add/remove events.
     ///
@@ -1347,6 +1390,13 @@ pub struct UTF16Selection {
 /// See `docs/research/adr/ADR-009-input-ime-contract.md`.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 #[non_exhaustive]
+// Variant docs deliberately omitted — the enum-level docblock above and
+// the per-section `// ──` separators (caret motion / selection-extending
+// / deletion / structural / etc.) carry the contract. Each variant
+// corresponds 1:1 to the same-named Cocoa selector
+// (`NSStandardKeyBindingResponding`); individual rustdoc would just
+// repeat the Apple documentation.
+#[expect(missing_docs)]
 pub enum EditorCommand {
     // ── Caret motion (logical direction) ───────────────────────────
     MoveForward,

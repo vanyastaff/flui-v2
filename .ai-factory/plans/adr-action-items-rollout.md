@@ -107,8 +107,12 @@ safely.
     - Sandbox example (`examples/dnd_payload`) with URL drag from Firefox/Chrome/Safari/Edge — requires cross-browser manual testing.
 
 ### Phase G — Text rasterization + software-rendering pacing
-- [ ] Task 12: ADR-013 `TextRasterMode` + per-style override.
-- [ ] Task 13: ADR-014 `RendererKind` + software-rendering frame budget.
+- [x] Task 12: ADR-013 `TextRasterMode` + per-style override.
+  - **Landed:** `TextRasterMode` enum (`#[non_exhaustive]`, 4 variants); `TextStyle::raster_mode` field with `Subpixel` default; `RenderGlyphParams::raster_mode` field so the per-glyph atlas key is mode-aware; `TextRasterMode::resolve_with_fallback` documented fallback chain (BiLevel→Grayscale, Hinted→Subpixel); 4 regression tests including the cascade through `Refineable`.
+  - **Deferred:** per-platform text systems (CoreText, DirectWrite, cosmic-text) honouring the resolved mode at glyph rasterization time — engine `paint_text` currently hard-codes `Subpixel` (matches pre-ADR cache identity, no churn) so wiring the live style cascade → platform rasterization is a per-platform follow-up.
+- [x] Task 13: ADR-014 `RendererKind` + software-rendering frame budget.
+  - **Landed:** `RendererKind` enum (`#[non_exhaustive]`, `Hardware`/`Software`, default `Hardware`); `Platform::renderer_kind` trait method with `Hardware` default; `App::renderer_kind()` public accessor; `WgpuContext::renderer_kind` override that maps `wgpu::DeviceType::Cpu` → `Software`; 1 regression test on the test platform; `EditorCommand` and `RendererKind` added to the explicit re-export list at crate root.
+  - **Deferred:** wiring `Platform::renderer_kind` on `LinuxPlatform<P>` to forward to `WgpuContext::renderer_kind` (requires touching `LinuxClient` trait); per-platform event-loop frame-budget pacing (60 fps hardware / 30 fps software per ADR decision 3 — needs touching `FrameClock` + each platform's event loop); `AnimationController` consulting the kind for per-frame tick interval; one-shot startup `log::info!` on Software detection.
 
 ### Phase H — Image clip-vs-corner + wasm gating
 - [ ] Task 14: ADR-015 `push_rounded_clip` + `img.rs` two-step paint.

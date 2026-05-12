@@ -1262,6 +1262,22 @@ impl App {
         self.platform.primary_display()
     }
 
+    /// ADR-014: classify the active renderer.
+    ///
+    /// Returns [`RendererKind::Software`] when the running platform's
+    /// adapter is a CPU-side rasterizer (Mesa `llvmpipe`, WARP, etc.),
+    /// otherwise [`RendererKind::Hardware`]. Apps may consume this to
+    /// tighten their own frame budgets, skip expensive visual effects,
+    /// or surface a one-shot diagnostic to the user. The engine's
+    /// internal frame-budget tightening is per-platform follow-up
+    /// work; this accessor lands the public surface so widget code can
+    /// branch on it today.
+    ///
+    /// See `docs/research/adr/ADR-014-software-rendering-fallback.md`.
+    pub fn renderer_kind(&self) -> crate::RendererKind {
+        self.platform.renderer_kind()
+    }
+
     /// Returns whether `screen_capture_sources` may work.
     pub fn is_screen_capture_supported(&self) -> bool {
         self.platform.is_screen_capture_supported()

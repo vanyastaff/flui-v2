@@ -207,8 +207,9 @@ pub use provider::{InheritedValue, Provider};
 
 // Core platform traits
 pub use platform::{
-    InputHandler, Platform, PlatformAtlas, PlatformDisplay, PlatformTextSystem, PlatformWindow,
-    ScreenCaptureFrame, ScreenCaptureSource, ScreenCaptureStream, SourceMetadata,
+    EditorCommand, InputHandler, Platform, PlatformAtlas, PlatformDisplay, PlatformTextSystem,
+    PlatformWindow, RendererKind, ScreenCaptureFrame, ScreenCaptureSource, ScreenCaptureStream,
+    SourceMetadata,
 };
 
 // Display, window, and input types

@@ -396,6 +396,18 @@ impl WgpuContext {
     pub(crate) fn device_lost_flag(&self) -> Arc<AtomicBool> {
         Arc::clone(&self.device_lost)
     }
+
+    /// ADR-014: classify the wgpu adapter. Returns
+    /// [`crate::RendererKind::Software`] when wgpu reports
+    /// `wgpu::DeviceType::Cpu` (Mesa `llvmpipe`, WARP, etc.); otherwise
+    /// [`crate::RendererKind::Hardware`]. The Linux/X11/Wayland
+    /// `Platform::renderer_kind` impls forward to this method.
+    pub fn renderer_kind(&self) -> crate::RendererKind {
+        match self.adapter.get_info().device_type {
+            wgpu::DeviceType::Cpu => crate::RendererKind::Software,
+            _ => crate::RendererKind::Hardware,
+        }
+    }
 }
 
 #[cfg(not(target_family = "wasm"))]

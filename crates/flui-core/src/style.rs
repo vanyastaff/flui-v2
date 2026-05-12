@@ -375,6 +375,91 @@ pub enum TextOverflow {
     TruncateStart(SharedString),
 }
 
+/// ADR-013: per-`TextStyle` text rasterization strategy.
+///
+/// The pre-ADR engine hard-coded subpixel positioning + grayscale AA
+/// everywhere; this enum surfaces the strategy as a style property so
+/// widgets can opt into bi-level (no AA, pixel-aligned) or hinted
+/// rendering. The per-glyph atlas key includes the mode — different
+/// modes do not share glyph slots.
+///
+/// Per-platform capability is documented in the matrix at the top of
+/// `text_system.rs`. When a backend does not support the requested
+/// mode the engine falls through to the next-best supported variant
+/// silently (`BiLevel` → `Grayscale`, `Hinted` → `Subpixel`). The
+/// caller sees a best-effort result, never a panic.
+///
+/// Marked `#[non_exhaustive]` so platform-specific modes (e.g. an
+/// `EmphasisMatte` variant for CoreText `kCTFontEmphasisAttributeName`)
+/// can be added without breaking matchers.
+///
+/// See `docs/research/adr/ADR-013-text-rasterization-strategy.md`.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[non_exhaustive]
+pub enum TextRasterMode {
+    /// Subpixel positioning + grayscale AA (engine default; matches
+    /// pre-ADR behaviour). Best for non-pixel-aligned UIs on high-DPI
+    /// displays.
+    #[default]
+    Subpixel,
+    /// Pixel-aligned positioning + grayscale AA. Sharper-looking on
+    /// 1× DPR while still anti-aliased.
+    Grayscale,
+    /// Pixel-aligned positioning + 1-bit alpha (no anti-aliasing).
+    /// For retro UIs, terminal-style text, and code editors at low
+    /// DPR. Falls through to `Grayscale` on backends without a
+    /// bi-level path.
+    BiLevel,
+    /// Metrics-hinted glyph dimensions + grayscale AA. Snaps glyph
+    /// metrics to integer pixel grids where the font's hint tables
+    /// indicate. Falls through to `Subpixel` on backends without
+    /// hinting (currently Linux/web until Skrifa
+    /// `Outlines::hinted_glyph` stabilises).
+    Hinted,
+}
+
+impl TextRasterMode {
+    /// ADR-013 — best-effort fallback chain. When the running backend
+    /// does not advertise support for the requested mode, falls
+    /// through to the next-best variant: `BiLevel` → `Grayscale`,
+    /// `Hinted` → `Subpixel`. `Subpixel` and `Grayscale` are always
+    /// supported (every backend in the matrix advertises both).
+    ///
+    /// The `is_supported` closure lets each platform implementation
+    /// supply its own capability check — typically reading a static
+    /// per-backend table.
+    pub fn resolve_with_fallback(self, is_supported: impl Fn(TextRasterMode) -> bool) -> Self {
+        let chain = match self {
+            TextRasterMode::BiLevel => &[
+                TextRasterMode::BiLevel,
+                TextRasterMode::Grayscale,
+                TextRasterMode::Subpixel,
+            ][..],
+            TextRasterMode::Hinted => &[
+                TextRasterMode::Hinted,
+                TextRasterMode::Subpixel,
+                TextRasterMode::Grayscale,
+            ][..],
+            TextRasterMode::Subpixel => &[
+                TextRasterMode::Subpixel,
+                TextRasterMode::Grayscale,
+            ][..],
+            TextRasterMode::Grayscale => &[
+                TextRasterMode::Grayscale,
+                TextRasterMode::Subpixel,
+            ][..],
+        };
+        for &mode in chain {
+            if is_supported(mode) {
+                return mode;
+            }
+        }
+        // Every backend supports at least Grayscale, but guard the
+        // contract just in case a future test platform reports nothing.
+        TextRasterMode::Grayscale
+    }
+}
+
 /// How to align text within the element
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub enum TextAlign {
@@ -437,6 +522,15 @@ pub struct TextStyle {
 
     /// The number of lines to display before truncating the text
     pub line_clamp: Option<usize>,
+
+    /// ADR-013: per-style text rasterization strategy (subpixel /
+    /// grayscale / bi-level / hinted). Defaults to `Subpixel` which
+    /// matches the pre-ADR engine behaviour. The per-glyph atlas key
+    /// includes this mode, so different modes do not share glyph
+    /// slots. Inheritance through the `Refineable` cascade applies
+    /// like any other field. See
+    /// `docs/research/adr/ADR-013-text-rasterization-strategy.md`.
+    pub raster_mode: TextRasterMode,
 }
 
 /// A workaround for Refineable macro expecting a Refinement of a Refinement
@@ -461,6 +555,7 @@ impl Default for TextStyle {
             text_overflow: None,
             text_align: TextAlign::default(),
             line_clamp: None,
+            raster_mode: TextRasterMode::default(),
         }
     }
 }
@@ -1539,5 +1634,79 @@ mod tests {
             Some(FontWeight::SEMIBOLD),
             style.text_style().unwrap().font_weight
         );
+    }
+
+    // ===== ADR-013 TextRasterMode tests ====================================
+
+    /// ADR-013 — `TextRasterMode::default()` is `Subpixel`, matching the
+    /// pre-ADR engine behaviour. New `TextStyle::default()` instances pick
+    /// up this default so the cache key for unspecified-mode draws stays
+    /// stable across the migration.
+    #[test]
+    fn adr_013_default_raster_mode_is_subpixel() {
+        assert_eq!(TextRasterMode::default(), TextRasterMode::Subpixel);
+        let style = TextStyle::default();
+        assert_eq!(style.raster_mode, TextRasterMode::Subpixel);
+    }
+
+    /// ADR-013 — `resolve_with_fallback` honours the documented chain:
+    /// `BiLevel → Grayscale → Subpixel`, `Hinted → Subpixel → Grayscale`.
+    /// `Subpixel` and `Grayscale` always resolve to themselves (every
+    /// backend in the matrix advertises both).
+    #[test]
+    fn adr_013_fallback_chain_bi_level_to_grayscale() {
+        // Backend that supports only Grayscale + Subpixel (cosmic-text
+        // on Linux per the capability matrix).
+        let supports_subpixel_and_grayscale = |m: TextRasterMode| {
+            matches!(m, TextRasterMode::Subpixel | TextRasterMode::Grayscale)
+        };
+        // BiLevel → falls through to Grayscale (next in chain that is
+        // supported).
+        assert_eq!(
+            TextRasterMode::BiLevel.resolve_with_fallback(supports_subpixel_and_grayscale),
+            TextRasterMode::Grayscale,
+        );
+        // Hinted → falls through to Subpixel.
+        assert_eq!(
+            TextRasterMode::Hinted.resolve_with_fallback(supports_subpixel_and_grayscale),
+            TextRasterMode::Subpixel,
+        );
+        // Subpixel and Grayscale resolve to themselves.
+        assert_eq!(
+            TextRasterMode::Subpixel.resolve_with_fallback(supports_subpixel_and_grayscale),
+            TextRasterMode::Subpixel,
+        );
+        assert_eq!(
+            TextRasterMode::Grayscale.resolve_with_fallback(supports_subpixel_and_grayscale),
+            TextRasterMode::Grayscale,
+        );
+    }
+
+    /// ADR-013 — backend that supports every mode resolves each variant
+    /// to itself (macOS CoreText, Windows DirectWrite per the matrix).
+    #[test]
+    fn adr_013_fallback_chain_full_support_is_identity() {
+        let supports_all = |_| true;
+        for mode in [
+            TextRasterMode::Subpixel,
+            TextRasterMode::Grayscale,
+            TextRasterMode::BiLevel,
+            TextRasterMode::Hinted,
+        ] {
+            assert_eq!(mode.resolve_with_fallback(supports_all), mode);
+        }
+    }
+
+    /// ADR-013 — `Refineable` cascade carries `raster_mode` like any
+    /// other field. A child refinement overrides the parent's value.
+    #[test]
+    fn adr_013_text_style_cascade_carries_raster_mode() {
+        let mut style = TextStyle::default();
+        let refinement = TextStyleRefinement {
+            raster_mode: Some(TextRasterMode::BiLevel),
+            ..Default::default()
+        };
+        style.refine(&refinement);
+        assert_eq!(style.raster_mode, TextRasterMode::BiLevel);
     }
 }

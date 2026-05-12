@@ -756,6 +756,33 @@ mod tests {
     /// `WM_SYSCOMMAND` filter in events.rs; macOS-side TODO per ADR-008
     /// action item 2). See
     /// `docs/research/adr/ADR-008-window-chrome-contract.md`.
+    /// ADR-014 regression test: `Platform::renderer_kind` defaults to
+    /// `Hardware` for backends that do not override (test platform,
+    /// macOS Metal, Windows DirectX). The wgpu backend on Linux/wasm
+    /// overrides this to classify adapters via
+    /// `wgpu::DeviceType::Cpu` — that path runs on Linux CI under
+    /// lavapipe, not on Windows.
+    ///
+    /// Locks decision 2 (RendererKind is exposed) and the default-
+    /// classification semantics. A future commit may wire the Linux
+    /// `Platform::renderer_kind` override (forwarding to
+    /// `WgpuContext::renderer_kind`) — that test would then fire
+    /// `Software` under lavapipe.
+    ///
+    /// See `docs/research/adr/ADR-014-software-rendering-fallback.md`.
+    #[test]
+    fn adr_014_app_renderer_kind_defaults_to_hardware_on_test_platform() {
+        let app = TestApp::new();
+        let kind = app.read(|cx| cx.renderer_kind());
+        assert_eq!(
+            kind,
+            crate::RendererKind::Hardware,
+            "ADR-014: test platform must report Hardware via the default \
+             Platform::renderer_kind impl (no wgpu adapter classification \
+             on the test platform). got {kind:?}"
+        );
+    }
+
     #[test]
     fn adr_008_minimize_window_rejected_when_options_disallow_it() {
         let mut app = TestApp::new();

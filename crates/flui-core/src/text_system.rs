@@ -1034,6 +1034,11 @@ pub struct RenderGlyphParams {
     pub scale_factor: f32,
     pub is_emoji: bool,
     pub subpixel_rendering: bool,
+    /// ADR-013: per-glyph atlas key includes the requested rasterization
+    /// strategy so the same `(font, size, glyph)` tuple is cached
+    /// independently for each mode. A `Subpixel` glyph and a `BiLevel`
+    /// glyph occupy distinct atlas slots — the underlying bitmaps differ.
+    pub raster_mode: crate::TextRasterMode,
 }
 
 impl Eq for RenderGlyphParams {}
@@ -1047,6 +1052,7 @@ impl Hash for RenderGlyphParams {
         self.scale_factor.to_bits().hash(state);
         self.is_emoji.hash(state);
         self.subpixel_rendering.hash(state);
+        self.raster_mode.hash(state);
     }
 }
 
