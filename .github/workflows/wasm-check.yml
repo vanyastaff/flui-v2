@@ -19,9 +19,16 @@ name: Wasm Check
 # link dep, transitively pulling `imp` which does not compile on
 # wasm32) would fail this job at the dependency-resolution step.
 #
-# Currently advisory: `continue-on-error: true` so a wasm break does
-# not block PRs while the contract is bedding in. Flip to blocking
-# once the first green run lands. See ADR-016 action item 1.
+# Currently advisory: the cargo-check STEP has
+# `continue-on-error: true` so the step's `conclusion` becomes
+# `success` even when the underlying check fails. The step's
+# `outcome` still records the real `failure` for any downstream
+# conditional that wants to react. Per ADR-016 #1 the first green
+# run will flip the step to blocking by removing that line.
+#
+# JOB-level `continue-on-error` does NOT make the PR check turn
+# green — it only prevents the WORKFLOW from failing overall.
+# Step-level is the right knob for "advisory PR check".
 
 on:
   push:
@@ -37,7 +44,6 @@ jobs:
   wasm-check:
     name: cargo check --target wasm32-unknown-unknown
     runs-on: ubuntu-latest
-    continue-on-error: true # ADR-016: advisory until first green run; flip after.
     steps:
       - uses: actions/checkout@v4
 
@@ -53,10 +59,10 @@ jobs:
           shared-key: wasm
 
       - name: cargo check (default features, wasm32 target)
-        # The step is allowed to surface its real exit code; the job-level
-        # `continue-on-error: true` above keeps the PR check advisory while
-        # preserving step-level outcome visibility (so `steps.<id>.outcome`
-        # still reports `failure` when the wasm build breaks). Per ADR-016 #1
-        # the first green run will flip the job to blocking by removing the
-        # `continue-on-error` line.
+        id: wasm_check
+        # ADR-016 #1: step-level `continue-on-error: true` turns the
+        # step's `conclusion` into `success` (the PR check goes green)
+        # while preserving `outcome=failure` for diagnostics. First
+        # green run flips this by removing the line.
+        continue-on-error: true
         run: cargo check --target wasm32-unknown-unknown -p flui-core
