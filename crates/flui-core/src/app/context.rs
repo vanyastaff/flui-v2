@@ -288,8 +288,11 @@ impl<'a, T: 'static> Context<'a, T> {
         window.focus(&view.focus_handle(self), self);
     }
 
-    /// Sets a given callback to be run on the next frame.
-    pub fn on_next_frame(
+    /// K04 Task 33: schedule a callback to run at the start of the next
+    /// frame's [`PreFrame`](crate::frame::FramePhase::PreFrame) phase, with
+    /// the view-typed entity available to the closure. Forwards to
+    /// [`Window::on_pre_frame`].
+    pub fn on_pre_frame(
         &self,
         window: &mut Window,
         f: impl FnOnce(&mut T, &mut Window, &mut Context<T>) + 'static,
@@ -297,7 +300,37 @@ impl<'a, T: 'static> Context<'a, T> {
         T: 'static,
     {
         let view = self.entity();
-        window.on_next_frame(move |window, cx| view.update(cx, |view, cx| f(view, window, cx)));
+        window.on_pre_frame(move |window, cx| view.update(cx, |view, cx| f(view, window, cx)));
+    }
+
+    /// K04 Task 33: deprecated alias for [`Self::on_pre_frame`].
+    #[deprecated(
+        since = "K04",
+        note = "renamed to `on_pre_frame` — the callback fires before the next frame's draw"
+    )]
+    pub fn on_next_frame(
+        &self,
+        window: &mut Window,
+        f: impl FnOnce(&mut T, &mut Window, &mut Context<T>) + 'static,
+    ) where
+        T: 'static,
+    {
+        self.on_pre_frame(window, f);
+    }
+
+    /// K04 Task 34: schedule a callback to run in the current frame's
+    /// [`PostFrame`](crate::frame::FramePhase::PostFrame) phase, with the
+    /// view-typed entity available to the closure. Forwards to
+    /// [`Window::on_post_frame`].
+    pub fn on_post_frame(
+        &self,
+        window: &mut Window,
+        f: impl FnOnce(&mut T, &mut Window, &mut Context<T>) + 'static,
+    ) where
+        T: 'static,
+    {
+        let view = self.entity();
+        window.on_post_frame(move |window, cx| view.update(cx, |view, cx| f(view, window, cx)));
     }
 
     /// Schedules the given function to be run at the end of the current effect cycle, allowing entities

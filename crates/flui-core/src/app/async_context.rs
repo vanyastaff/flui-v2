@@ -328,10 +328,27 @@ impl AsyncWindowContext {
         self.app.update_window(self.window, update)
     }
 
-    /// A convenience method for [`Window::on_next_frame`].
-    pub fn on_next_frame(&mut self, f: impl FnOnce(&mut Window, &mut App) + 'static) {
+    /// K04 Task 33: convenience method for [`Window::on_pre_frame`] (the
+    /// renamed `on_next_frame`).
+    pub fn on_pre_frame(&mut self, f: impl FnOnce(&mut Window, &mut App) + 'static) {
         self.app
-            .update_window(self.window, |_, window, _| window.on_next_frame(f))
+            .update_window(self.window, |_, window, _| window.on_pre_frame(f))
+            .ok();
+    }
+
+    /// K04 Task 33: deprecated alias for [`Self::on_pre_frame`].
+    #[deprecated(
+        since = "K04",
+        note = "renamed to `on_pre_frame` — the callback fires before the next frame's draw"
+    )]
+    pub fn on_next_frame(&mut self, f: impl FnOnce(&mut Window, &mut App) + 'static) {
+        self.on_pre_frame(f);
+    }
+
+    /// K04 Task 34: convenience method for [`Window::on_post_frame`].
+    pub fn on_post_frame(&mut self, f: impl FnOnce(&mut Window, &mut App) + 'static) {
+        self.app
+            .update_window(self.window, |_, window, _| window.on_post_frame(f))
             .ok();
     }
 

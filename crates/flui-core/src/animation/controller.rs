@@ -8,6 +8,7 @@
 
 #![allow(missing_docs)] // animation subsystem is pre-1.0; full rustdoc coverage tracked under S21 phase 7
 
+use std::cell::Cell;
 use std::time::Duration;
 
 use crate::animation::animation::{
@@ -20,6 +21,7 @@ use crate::animation::simulation::FrictionSimulation;
 use crate::animation::status::AnimationStatus;
 use crate::animation::ticker::Ticker;
 use crate::animation::{Curve, Simulation};
+use crate::frame::tick::{TickOutcome, TickTarget, TickTargetId};
 use crate::scheduler::Instant;
 use crate::{AppContext, Context, Entity};
 
@@ -100,6 +102,34 @@ pub struct AnimationController {
     /// Per-segment curve override. `None` means "use the controller's default
     /// `curve`". Cleared on `stop` / `reset`.
     style_curve: Option<Box<dyn Curve>>,
+
+    // K04 Task 29: stable [`TickTargetId`] for the animation-tick walker
+    // (Task 30 wires `App::active_animations: FxHashSet<TickTargetId>`).
+    // Allocated once in `new()` and never mutated.
+    tick_target_id: TickTargetId,
+
+    /// K04 Task 31: per-frame cache for [`Self::value()`].
+    ///
+    /// The [`AnimationTick`](crate::frame::FramePhase::AnimationTick) walker
+    /// records `Some(frame_now)` here at every tick. While set, the first
+    /// `value()` call in the frame computes the curve / simulation against
+    /// `frame_now` and caches the result in [`Self::value_cache`]; subsequent
+    /// reads return the cache. `None` outside a frame (pre-attach or after
+    /// the animation settles) — `value()` falls back to the legacy
+    /// ticker-based path.
+    ///
+    /// `Cell<Option<Instant>>` because `value()` is `&self`; the cache must
+    /// be set from a `&self` method on the tick path.
+    last_tick_instant: Cell<Option<Instant>>,
+
+    /// K04 Task 31: cached `value()` result keyed by the `Instant` at which
+    /// it was computed. Hits when the next `value()` call sees the same
+    /// `Instant` (per axiom P3: a single frame samples one `Instant`).
+    ///
+    /// Invalidated implicitly — every new `tick()` may overwrite
+    /// `last_tick_instant`, and any cached entry whose key no longer matches
+    /// is recomputed on the next read.
+    value_cache: Cell<Option<(Instant, f32)>>,
 }
 
 impl AnimationController {
@@ -127,6 +157,9 @@ impl AnimationController {
             behavior: AnimationBehavior::default(),
             style_duration: None,
             style_curve: None,
+            tick_target_id: TickTargetId::allocate(),
+            last_tick_instant: Cell::new(None),
+            value_cache: Cell::new(None),
         }
     }
 
@@ -226,18 +259,43 @@ impl AnimationController {
     // State reading
     // ========================================================================
 
-    /// Current animated value as `f32`. Recalculates from elapsed time on
-    /// each call. Renamed from `value()` in S21 phase 0 — the bare
-    /// `value()` method now belongs to the [`Animation<f64>`] trait impl
-    /// (returns `f64` for Flutter parity).
-    // TODO: consider per-frame caching if animated() is called multiple times.
+    /// Current animated value as `f32`. Renamed from `value()` in S21 phase 0
+    /// — the bare `value()` method now belongs to the [`Animation<f64>`] trait
+    /// impl (returns `f64` for Flutter parity).
+    ///
+    /// # K04 per-frame caching (Task 31, axiom P3)
+    ///
+    /// While the [`AnimationTick`](crate::frame::FramePhase::AnimationTick)
+    /// walker has set [`Self::last_tick_instant`] for the current frame, the
+    /// first `value()` call computes against that `Instant` and caches the
+    /// result; subsequent reads within the frame return the cache. This
+    /// makes multi-read sites (e.g. an animated view that reads `value()`
+    /// from both `prepaint` and `paint`) observably consistent and removes
+    /// the per-read `Clock::now()` cost.
+    ///
+    /// Outside a frame — pre-`attach`, or before the first tick of a new
+    /// segment — falls back to the legacy `self.now()` (ticker- or
+    /// wall-clock-based) read path with no caching.
     pub fn value(&self) -> f32 {
-        if let (Some(sim), Some(start)) = (&self.simulation, self.sim_start_time) {
-            let elapsed = self.now().saturating_duration_since(start).as_secs_f32();
-            return sim.x(elapsed).clamp(self.lower_bound, self.upper_bound);
+        // Resolve the "effective now". Prefer the AnimationTick-supplied
+        // `last_tick_instant` (K04 P3: identical for every consumer in the
+        // frame); fall back to the ticker for value() reads that happen
+        // outside an AnimationTick (e.g. PreFrame, between frames).
+        let now = self.last_tick_instant.get().unwrap_or_else(|| self.now());
+
+        // Cache fast path: same `Instant` ⇒ identical result. Skipped when
+        // no frame `Instant` is available (cache key would degenerate to a
+        // per-call wall-clock read).
+        if let Some((cached_at, val)) = self.value_cache.get()
+            && cached_at == now
+        {
+            return val;
         }
 
-        if let Some(start) = self.start_time {
+        let computed = if let (Some(sim), Some(start)) = (&self.simulation, self.sim_start_time) {
+            let elapsed = now.saturating_duration_since(start).as_secs_f32();
+            sim.x(elapsed).clamp(self.lower_bound, self.upper_bound)
+        } else if let Some(start) = self.start_time {
             // Resolve duration: per-segment override > reverse_duration (when
             // status is Reverse) > controller default.
             let duration = self.style_duration.unwrap_or_else(|| match self.status {
@@ -253,21 +311,27 @@ impl AnimationController {
             });
 
             if duration.is_zero() {
-                return target;
+                target
+            } else {
+                let elapsed = now.saturating_duration_since(start).as_secs_f32();
+                let raw_t = (elapsed / duration.as_secs_f32()).clamp(0.0, 1.0);
+                // Resolve curve: per-segment override > controller default.
+                let curved_t = match &self.style_curve {
+                    Some(c) => c.transform(raw_t),
+                    None => self.curve.transform(raw_t),
+                };
+                self.start_value + curved_t * (target - self.start_value)
             }
-
-            let elapsed = self.now().saturating_duration_since(start).as_secs_f32();
-            let raw_t = (elapsed / duration.as_secs_f32()).clamp(0.0, 1.0);
-            // Resolve curve: per-segment override > controller default.
-            let curved_t = match &self.style_curve {
-                Some(c) => c.transform(raw_t),
-                None => self.curve.transform(raw_t),
-            };
-
-            self.start_value + curved_t * (target - self.start_value)
         } else {
             self.value
+        };
+
+        // Only cache when we have a frame `Instant` — otherwise the cache
+        // would never hit (each call resamples wall-clock).
+        if self.last_tick_instant.get().is_some() {
+            self.value_cache.set(Some((now, computed)));
         }
+        computed
     }
 
     /// Whether the animation is currently running.
@@ -320,6 +384,28 @@ impl AnimationController {
         self.listeners.notify();
     }
 
+    /// K04 Task 30: register this controller in `App::active_animations` so
+    /// the next [`FramePhase::AnimationTick`](crate::frame::FramePhase::AnimationTick)
+    /// phase walks it. Called from every `forward` / `reverse` / `animate_*`
+    /// / `repeat` / `fling` entry.
+    ///
+    /// Idempotent: re-registering an already-active controller is a no-op
+    /// (the `HashMap::insert` overwrites the weak handle with an equivalent
+    /// one).
+    fn register_for_tick(&self, cx: &mut Context<Self>) {
+        let weak = cx.weak_entity();
+        cx.active_animations.insert(self.tick_target_id, weak);
+    }
+
+    /// K04 Task 30: drop this controller from `App::active_animations`. Called
+    /// from `stop` / `reset` so settled controllers stop costing one
+    /// `is_animating()` check per frame.
+    ///
+    /// Idempotent: removing an absent entry is a no-op.
+    fn unregister_for_tick(&self, cx: &mut Context<Self>) {
+        cx.active_animations.remove(&self.tick_target_id);
+    }
+
     // ========================================================================
     // Control methods (each calls cx.notify() so existing observe chains stay alive)
     // ========================================================================
@@ -349,6 +435,7 @@ impl AnimationController {
         self.start_time = Some(self.now());
         self.set_status(AnimationStatus::Forward);
         self.repeating = false;
+        self.register_for_tick(cx);
         self.notify_value();
         cx.notify();
     }
@@ -368,6 +455,7 @@ impl AnimationController {
         self.start_time = Some(self.now());
         self.set_status(AnimationStatus::Reverse);
         self.repeating = false;
+        self.register_for_tick(cx);
         self.notify_value();
         cx.notify();
     }
@@ -406,6 +494,7 @@ impl AnimationController {
         self.start_time = Some(self.now());
         self.set_status(next_status);
         self.repeating = false;
+        self.register_for_tick(cx);
         self.notify_value();
         cx.notify();
     }
@@ -436,6 +525,7 @@ impl AnimationController {
         self.start_time = Some(self.now());
         self.set_status(AnimationStatus::Reverse);
         self.repeating = false;
+        self.register_for_tick(cx);
         self.notify_value();
         cx.notify();
     }
@@ -549,6 +639,7 @@ impl AnimationController {
         self.start_time = Some(self.now());
         self.set_status(AnimationStatus::Forward);
         self.repeating = true;
+        self.register_for_tick(cx);
         self.notify_value();
         cx.notify();
     }
@@ -576,6 +667,7 @@ impl AnimationController {
             self.status
         };
         self.set_status(next_status);
+        self.unregister_for_tick(cx);
         self.notify_value();
         cx.notify();
     }
@@ -594,6 +686,7 @@ impl AnimationController {
         self.clear_segment_overrides();
         self.repeating = false;
         self.set_status(AnimationStatus::Dismissed);
+        self.unregister_for_tick(cx);
         self.notify_value();
         cx.notify();
     }
@@ -610,6 +703,7 @@ impl AnimationController {
         self.sim_start_time = Some(self.now());
         self.simulation = Some(Box::new(simulation));
         self.set_status(AnimationStatus::Forward);
+        self.register_for_tick(cx);
         self.notify_value();
         cx.notify();
     }
@@ -645,5 +739,40 @@ impl Animation<f64> for AnimationController {
 
     fn remove_status_listener(&self, id: ListenerId) {
         self.status_listeners.remove(id);
+    }
+}
+
+// K04 Task 29: sealed [`TickTarget`] impl. The `AnimationTick` phase walker
+// (Task 30) calls `tick(frame_clock.now())` once per frame for every active
+// target. The controller's `value()` recomputes from `now()` on demand
+// (Task 31 caches per-frame), so `tick` itself does not need to mutate the
+// stored value — it only reports whether the controller still wants to be
+// walked next frame.
+impl TickTarget for AnimationController {
+    fn tick(&mut self, now: Instant) -> TickOutcome {
+        // K04 Task 31: seed the per-frame cache key so subsequent `value()`
+        // reads within this frame return the cached result rather than
+        // resampling the wall clock. Per axiom P3, every consumer in the
+        // frame sees the same `Instant`.
+        self.last_tick_instant.set(Some(now));
+        // Invalidate the cached *value* so the next `value()` read computes
+        // fresh against the new frame's `Instant`. The cache will repopulate
+        // on first read; we don't recompute here to avoid paying for views
+        // that ignore the controller this frame.
+        self.value_cache.set(None);
+
+        // The controller is "still animating" while a curve or simulation is
+        // mid-flight. When neither is active, the active set drops this
+        // target via `TickOutcome::Done`.
+        if self.is_animating() {
+            TickOutcome::Continue
+        } else {
+            TickOutcome::Done
+        }
+    }
+
+    #[inline]
+    fn id(&self) -> TickTargetId {
+        self.tick_target_id
     }
 }

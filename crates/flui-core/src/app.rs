@@ -1,4 +1,5 @@
 use crate::frame::profile::{FrameProfile, FrameProfileDetailed};
+use crate::frame::tick::{TickOutcome, TickTarget, TickTargetId};
 use crate::frame::{DeferPlacement, FramePhase};
 use crate::scheduler::Instant;
 use std::{
@@ -638,6 +639,31 @@ pub struct App {
     /// `App::run_frame` skips per-phase `Duration` measurements — release
     /// builds default to `false` per `docs/promt.md` §3.1 hot-path discipline.
     pub(crate) profiling_enabled: bool,
+    /// K04 Task 30: active animation-tick targets.
+    ///
+    /// The [`FramePhase::AnimationTick`] phase walks this map once per
+    /// `run_frame`, leases each target, calls
+    /// [`TickTarget::tick`](crate::frame::tick::TickTarget::tick), emits an
+    /// `Effect::Notify` for [`TickOutcome::Continue`] entries, and removes
+    /// [`TickOutcome::Done`] entries from the set.
+    ///
+    /// Today (K04) only [`AnimationController`](crate::AnimationController)
+    /// implements the trait, so the value type is a typed
+    /// `WeakEntity<AnimationController>`. SF08 (async widgets) and follow-up
+    /// audio / spring / particle controllers will widen the value type
+    /// additively when the trait is unsealed.
+    pub(crate) active_animations: FxHashMap<TickTargetId, WeakEntity<crate::AnimationController>>,
+    /// K04 Task 35: App-level pre-frame callbacks. Fire at the top of
+    /// every `App::run_frame` (across all windows) AFTER per-window
+    /// `Window::on_pre_frame` callbacks. Use for cross-window pre-paint
+    /// work (input replay, telemetry seed, deferred focus changes that
+    /// span multiple windows).
+    pub(crate) app_pre_frame_callbacks: SmallVec<[Box<dyn FnOnce(&mut App)>; 4]>,
+    /// K04 Task 35: App-level post-frame callbacks. Fire at the bottom of
+    /// every `App::run_frame` (across all windows) AFTER per-window
+    /// `Window::on_post_frame` callbacks. Use for cross-window
+    /// post-paint work (input replay, telemetry export, profiler tick).
+    pub(crate) app_post_frame_callbacks: SmallVec<[Box<dyn FnOnce(&mut App)>; 4]>,
     /// K04 Task 21: test-mode auto-redraw flag.
     ///
     /// When `true` (the default under `cfg(test, feature = "test-support")`),
@@ -713,6 +739,15 @@ impl App {
                 // Production builds stay cold unless `set_profiling_enabled`
                 // is explicitly flipped on by the host.
                 profiling_enabled: cfg!(debug_assertions),
+                // K04 Task 30: active-animation set; populated by
+                // `AnimationController::forward` / `reverse` / `animate_*`
+                // and drained by [`Self::run_frame`]'s AnimationTick phase.
+                active_animations: FxHashMap::default(),
+                // K04 Task 35: App-level pre/post-frame callback queues;
+                // populated by `App::on_pre_frame` / `App::on_post_frame`,
+                // drained by `App::run_frame`.
+                app_pre_frame_callbacks: SmallVec::new(),
+                app_post_frame_callbacks: SmallVec::new(),
                 // K04 Task 21: default `true` under test-support to preserve
                 // pre-K04 test-suite behavior. Phase-order tests (Task 38) and
                 // future Framework-tier tests flip this to `false`.
@@ -1954,6 +1989,28 @@ impl App {
         self.profiling_enabled
     }
 
+    /// K04 Task 35: schedule an App-wide callback to run at the start of the
+    /// next [`Self::run_frame`]'s [`PreFrame`](crate::frame::FramePhase::PreFrame)
+    /// phase, AFTER per-window `Window::on_pre_frame` callbacks. Use this
+    /// for cross-window setup (input replay, telemetry seed, focus moves
+    /// across windows).
+    pub fn on_pre_frame(&mut self, callback: impl FnOnce(&mut App) + 'static) {
+        self.app_pre_frame_callbacks.push(Box::new(callback));
+    }
+
+    /// K04 Task 35: schedule an App-wide callback to run in the current
+    /// frame's [`PostFrame`](crate::frame::FramePhase::PostFrame) phase,
+    /// AFTER per-window `Window::on_post_frame` callbacks. Use for
+    /// cross-window post-paint work (telemetry export, observers that
+    /// span multiple windows).
+    ///
+    /// Per axiom P5, callbacks scheduled via this API MUST NOT mutate
+    /// elements directly. Queue mutations via
+    /// `cx.defer_to(DeferPlacement::NextFrameStart, ...)` instead.
+    pub fn on_post_frame(&mut self, callback: impl FnOnce(&mut App) + 'static) {
+        self.app_post_frame_callbacks.push(Box::new(callback));
+    }
+
     /// K04 Task 23: seven-phase frame entry.
     ///
     /// Walks the K04 phase pipeline for a single frame on the given window:
@@ -2021,15 +2078,21 @@ impl App {
         // every borrowed field is `&mut self` (single-threaded), and
         // `abort_frame_after_panic` restores the invariants downstream.
         let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
-            self.run_phase(
-                FramePhase::PreFrame,
-                |_app| { /* PreFrame body: callbacks land in Task 35 */ },
-            );
+            // K04 Tasks 32/33/35: PreFrame body —
+            //   (1) drain `request_next_frame` flags (Task 32),
+            //   (2) drain per-window `Window::on_pre_frame` callbacks (Task 33),
+            //   (3) drain App-level `App::on_pre_frame` callbacks (Task 35).
+            self.run_phase(FramePhase::PreFrame, |app| {
+                app.drain_request_next_frame_flags();
+                app.drain_pre_frame_callbacks();
+            });
 
-            self.run_phase(
-                FramePhase::AnimationTick,
-                |_app| { /* AnimationTick body lands in Task 30 */ },
-            );
+            // K04 Task 30: walk the active animation set, tick each target
+            // with the per-frame `FrameClock::now()`, and emit notifications
+            // for continuing targets so dependent views re-render.
+            self.run_phase(FramePhase::AnimationTick, |app| {
+                app.drive_animation_tick();
+            });
 
             // Build is reserved as a no-op slot for SF05 (`BuildOwner::flush_dirty()`).
             // Enter and exit immediately; no effects drain because phase-boundary
@@ -2070,10 +2133,13 @@ impl App {
             self.current_phase = FramePhase::Paint;
             self.flush_effects_at(FlushScope::Phase(FramePhase::Paint), None);
 
-            self.run_phase(
-                FramePhase::PostFrame,
-                |_app| { /* PostFrame callbacks land in Task 35 */ },
-            );
+            // K04 Tasks 34/35: drain Window-level post-frame callbacks for
+            // every open window. App-level App::on_post_frame callbacks
+            // also drain here (added by Task 35 alongside the Window-level
+            // variant).
+            self.run_phase(FramePhase::PostFrame, |app| {
+                app.drain_post_frame_callbacks();
+            });
 
             primitive_count
         }));
@@ -2152,6 +2218,162 @@ impl App {
                 self.frame_profile_detailed.per_phase[idx] = dur;
             }
         }
+    }
+
+    /// K04 Task 32 internal: drain every open window's `request_next_frame`
+    /// flag and mark the invalidator dirty for any window that had the flag
+    /// set. Called from the `PreFrame` phase body so the test-driven
+    /// `App::run_frame` path (which bypasses the platform `on_request_frame`
+    /// callback) still observes `request_animation_frame` requests.
+    ///
+    /// Idempotent: a window with the flag already cleared is a no-op.
+    fn drain_request_next_frame_flags(&mut self) {
+        // Collect window IDs to avoid borrowing `self.windows` while we
+        // mutate the invalidator. `windows` is `SlotMap` — small in practice.
+        let ids: Vec<WindowId> = self
+            .windows
+            .iter()
+            .filter_map(|(id, slot)| slot.as_ref().map(|_| id))
+            .collect();
+        for id in ids {
+            if let Some(Some(window)) = self.windows.get(id)
+                && window.request_next_frame.replace(false)
+            {
+                window.invalidator.set_dirty(true);
+            }
+        }
+    }
+
+    /// K04 Tasks 33/35 internal: drain per-window pre-frame callbacks
+    /// (`Window::on_pre_frame`) and then App-level pre-frame callbacks
+    /// (`App::on_pre_frame`). Per-window first so App-level callbacks can
+    /// observe the resolved per-window state.
+    fn drain_pre_frame_callbacks(&mut self) {
+        // Per-window pre-frame callbacks. The legacy storage is
+        // `Rc<RefCell<Vec<FrameCallback>>>` — drain by taking the vec.
+        let ids: Vec<WindowId> = self
+            .windows
+            .iter()
+            .filter_map(|(id, slot)| slot.as_ref().map(|_| id))
+            .collect();
+        for id in ids {
+            let drained: Vec<_> = match self.windows.get(id) {
+                Some(Some(window)) => RefCell::borrow_mut(&window.next_frame_callbacks)
+                    .drain(..)
+                    .collect(),
+                _ => continue,
+            };
+            if drained.is_empty() {
+                continue;
+            }
+            let _ = self.update_window_id(id, |_, window, cx| {
+                for callback in drained {
+                    callback(window, cx);
+                }
+            });
+        }
+
+        // App-level pre-frame callbacks. `mem::take` ensures callbacks that
+        // re-queue (push a new `on_pre_frame`) fire in the NEXT frame, not
+        // this one — avoids an unbounded same-frame loop.
+        let pending = std::mem::take(&mut self.app_pre_frame_callbacks);
+        for cb in pending {
+            cb(self);
+        }
+    }
+
+    /// K04 Tasks 34/35 internal: drain per-window post-frame callbacks
+    /// (`Window::on_post_frame`) followed by App-level post-frame callbacks
+    /// (`App::on_post_frame`).
+    fn drain_post_frame_callbacks(&mut self) {
+        let ids: Vec<WindowId> = self
+            .windows
+            .iter()
+            .filter_map(|(id, slot)| slot.as_ref().map(|_| id))
+            .collect();
+        for id in ids {
+            let drained: SmallVec<[_; 4]> = match self.windows.get(id) {
+                Some(Some(window)) => RefCell::borrow_mut(&window.post_frame_callbacks)
+                    .drain(..)
+                    .collect(),
+                _ => continue,
+            };
+            if drained.is_empty() {
+                continue;
+            }
+            let _ = self.update_window_id(id, |_, window, cx| {
+                for callback in drained {
+                    callback(window, cx);
+                }
+            });
+        }
+
+        let pending = std::mem::take(&mut self.app_post_frame_callbacks);
+        for cb in pending {
+            cb(self);
+        }
+    }
+
+    /// K04 Task 30 internal: walk [`Self::active_animations`], tick each
+    /// target with the per-frame [`FrameClock::now()`](crate::frame::clock::FrameClock::now),
+    /// emit `Effect::Notify` for continuing targets, and drop `Done` entries.
+    ///
+    /// Called only from [`Self::run_frame`] inside the `AnimationTick` phase.
+    /// Bypasses `update_entity` / `start_update` to avoid triggering a legacy
+    /// effect flush mid-phase — phase-aware drains are owned by `run_phase`.
+    ///
+    /// Updates [`FrameProfile::active_animations`] with the number of targets
+    /// visited (after dropping dead weaks).
+    fn drive_animation_tick(&mut self) {
+        // Early-out: most frames have no active animations, and we want this
+        // path to be cheap. `is_empty` is O(1) on `FxHashMap`.
+        if self.active_animations.is_empty() {
+            return;
+        }
+
+        let now = self.frame_clock.now();
+        // Take the map so we can lease individual entities (lease holds
+        // `&mut self.entities`, which conflicts with iterating
+        // `self.active_animations` borrowed from `self`). Re-insert at the
+        // end with only the continuing targets.
+        let active = std::mem::take(&mut self.active_animations);
+        let mut keep: FxHashMap<TickTargetId, WeakEntity<crate::AnimationController>> =
+            FxHashMap::default();
+        keep.reserve(active.len());
+
+        let mut visited: usize = 0;
+
+        for (id, weak) in active {
+            let Some(entity) = weak.upgrade() else {
+                // Entity dropped between frames — silently evict.
+                continue;
+            };
+            visited += 1;
+
+            let mut lease = self.entities.lease(&entity);
+            let outcome: TickOutcome = lease.tick(now);
+            self.entities.end_lease(lease);
+
+            match outcome {
+                TickOutcome::Continue => {
+                    // Notify so observers (animated views, listener
+                    // subscriptions) re-render on the next phase boundary.
+                    // Effect::Notify is deduplicated on insert, so repeat
+                    // notifies in the same frame collapse to one observable
+                    // event per entity.
+                    let emitter = entity.entity_id();
+                    self.push_effect(Effect::Notify { emitter });
+                    keep.insert(id, entity.downgrade());
+                }
+                TickOutcome::Done => {
+                    // Drop the entry; the controller can re-register itself
+                    // when a new segment starts (forward / reverse / animate_*).
+                }
+            }
+        }
+
+        self.active_animations = keep;
+        self.frame_profile.active_animations = visited;
     }
 
     /// K04 Task 25: panic-safe phase wind-down.

@@ -272,7 +272,7 @@ impl RetainAllImageCache {
             .spawn(cx, {
                 async move |cx| {
                     _ = task.await;
-                    cx.on_next_frame(move |_, cx| {
+                    cx.on_pre_frame(move |_, cx| {
                         cx.notify(entity);
                     });
                 }

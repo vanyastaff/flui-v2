@@ -957,7 +957,40 @@ pub struct Window {
     next_hitbox_id: HitboxId,
     pub(crate) next_tooltip_id: TooltipId,
     pub(crate) tooltip_bounds: Option<TooltipBounds>,
-    next_frame_callbacks: Rc<RefCell<Vec<FrameCallback>>>,
+    /// K04 Task 36: per-window pre-frame callbacks. Migrated from
+    /// `Rc<RefCell<Vec<FrameCallback>>>` to `RefCell<SmallVec<[_; 4]>>`
+    /// directly on the `Window`. The `Rc` clone was needed before K04
+    /// because the platform `on_request_frame` callback held one; with
+    /// `App::run_frame` and the platform callback both reaching `Window`
+    /// via `handle.update(...)`, the indirection is unnecessary.
+    ///
+    /// Sized to 4 inline because typical pre-frame queues are short
+    /// (animation-frame requests, deferred focus, scroll restore) —
+    /// frames that queue more than 4 callbacks already spill to the heap.
+    pub(crate) next_frame_callbacks: RefCell<SmallVec<[FrameCallback; 4]>>,
+    /// K04 Task 34: post-frame callbacks anchored at `complete_frame`.
+    ///
+    /// Drained by the [`PostFrame`](crate::frame::FramePhase::PostFrame)
+    /// phase of [`App::run_frame`], AFTER `window.draw()` has produced the
+    /// scene. Use for telemetry export, inspector readout, deferred
+    /// post-paint settle work.
+    ///
+    /// Storage is `SmallVec<[_; 4]>` (per Task 36 hot-path rule) wrapped in
+    /// `RefCell` for interior mutability — the platform / `run_frame` path
+    /// has shared access to `&Window`.
+    pub(crate) post_frame_callbacks: RefCell<SmallVec<[FrameCallback; 4]>>,
+    /// K04 Task 32: idempotent next-frame request flag.
+    ///
+    /// [`Window::request_animation_frame`] sets this to `true`; the platform
+    /// `on_request_frame` callback drains the flag at the start of each
+    /// frame by setting [`Self::invalidator`] dirty. Multiple calls in the
+    /// same frame coalesce — there is exactly one observable frame request
+    /// regardless of how many callers hit the API.
+    ///
+    /// Coexists with `request_frame_options.force_render` (`window.rs:~1290`)
+    /// — both paths lead to the same `if invalidator.is_dirty()
+    /// || request_frame_options.force_render` predicate.
+    pub(crate) request_next_frame: Cell<bool>,
     pub(crate) dirty_views: FxHashSet<EntityId>,
     focus_listeners: SubscriberSet<(), AnyWindowFocusListener>,
     pub(crate) focus_lost_listeners: SubscriberSet<(), AnyObserver>,
@@ -1223,7 +1256,6 @@ impl Window {
         let active = Rc::new(Cell::new(platform_window.is_active()));
         let hovered = Rc::new(Cell::new(platform_window.is_hovered()));
         let needs_present = Rc::new(Cell::new(false));
-        let next_frame_callbacks: Rc<RefCell<Vec<FrameCallback>>> = Default::default();
         let input_rate_tracker = Rc::new(RefCell::new(InputRateTracker::default()));
         let last_frame_time = Rc::new(Cell::new(None));
 
@@ -1252,7 +1284,10 @@ impl Window {
             let invalidator = invalidator.clone();
             let active = active.clone();
             let needs_present = needs_present.clone();
-            let next_frame_callbacks = next_frame_callbacks.clone();
+            // K04 Task 36: `next_frame_callbacks` now lives on `Window`
+            // directly as `RefCell<SmallVec<...>>`. The platform callback
+            // reaches it via `handle.update(...)` rather than holding a
+            // separate `Rc` clone.
             let input_rate_tracker = input_rate_tracker.clone();
             move |request_frame_options| {
                 let thermal_state = handle
@@ -1272,16 +1307,34 @@ impl Window {
                     }
                 }
 
-                let next_frame_callbacks = next_frame_callbacks.take();
-                if !next_frame_callbacks.is_empty() {
-                    handle
-                        .update(&mut cx, |_, window, cx| {
-                            for callback in next_frame_callbacks {
-                                callback(window, cx);
-                            }
-                        })
-                        .log_err();
-                }
+                // K04 Tasks 33/36: drain pre-frame callbacks (the renamed
+                // `on_next_frame` queue). `take` the storage so callbacks
+                // queueing more pre-frame work fire next frame, not this one.
+                handle
+                    .update(&mut cx, |_, window, cx| {
+                        let drained: SmallVec<[FrameCallback; 4]> =
+                            RefCell::borrow_mut(&window.next_frame_callbacks)
+                                .drain(..)
+                                .collect();
+                        for callback in drained {
+                            callback(window, cx);
+                        }
+                    })
+                    .log_err();
+
+                // K04 Task 32: drain the `request_next_frame` flag. Any
+                // caller that hit `Window::request_animation_frame` since
+                // the last frame set the flag; the act of clearing it now
+                // marks the invalidator dirty so the `if is_dirty()
+                // || force_render` predicate below redraws. Multiple
+                // pending calls collapse to a single redraw.
+                handle
+                    .update(&mut cx, |_, window, _| {
+                        if window.request_next_frame.replace(false) {
+                            window.invalidator.set_dirty(true);
+                        }
+                    })
+                    .log_err();
 
                 // Keep presenting if input was recently arriving at a high rate (>= 60fps).
                 // Once high-rate input is detected, we sustain presentation for 1 second
@@ -1476,7 +1529,20 @@ impl Window {
             inherited_registry: InheritedRegistry::default(),
             rendered_frame: Frame::new(DispatchTree::new(cx.keymap.clone(), cx.actions.clone())),
             next_frame: Frame::new(DispatchTree::new(cx.keymap.clone(), cx.actions.clone())),
-            next_frame_callbacks,
+            // K04 Task 36: pre-frame callback storage, directly on the
+            // Window (no `Rc<RefCell<...>>` indirection). Populated by
+            // `Window::on_pre_frame`; drained by `App::run_frame`'s
+            // PreFrame phase and (in production) the platform
+            // `on_request_frame` callback.
+            next_frame_callbacks: RefCell::new(SmallVec::new()),
+            // K04 Task 34: post-frame callback storage; populated by
+            // `Window::on_post_frame`, drained in `App::run_frame`'s
+            // PostFrame phase.
+            post_frame_callbacks: RefCell::new(SmallVec::new()),
+            // K04 Task 32: idempotent next-frame request flag — default
+            // off; set by `request_animation_frame`, drained by the
+            // platform `on_request_frame` callback.
+            request_next_frame: Cell::new(false),
             next_hitbox_id: HitboxId(0),
             next_tooltip_id: TooltipId::default(),
             tooltip_bounds: None,
@@ -1939,20 +2005,83 @@ impl Window {
         AsyncWindowContext::new_context(cx.to_async(), self.handle)
     }
 
-    /// Schedule the given closure to be run directly after the current frame is rendered.
-    pub fn on_next_frame(&self, callback: impl FnOnce(&mut Window, &mut App) + 'static) {
+    /// K04 Task 33: schedule the given closure to be run at the start of the
+    /// next frame's [`PreFrame`](crate::frame::FramePhase::PreFrame) phase —
+    /// BEFORE `window.draw()` paints the next frame.
+    ///
+    /// Use this for layout-affecting work that wants the upcoming frame's
+    /// `FrameClock::now()` (axiom P3) but must run before paint (e.g. seeding
+    /// a scroll position, finalizing a deferred focus change).
+    ///
+    /// For work that wants to observe the painted scene before running
+    /// (telemetry export, inspector readout, post-frame settle), use
+    /// [`Self::on_post_frame`] (K04 Task 34) instead.
+    ///
+    /// # Deprecated alias
+    ///
+    /// [`Self::on_next_frame`] continues to forward to this method with a
+    /// `#[deprecated]` warning until the K04+1 release cycle removes it.
+    pub fn on_pre_frame(&self, callback: impl FnOnce(&mut Window, &mut App) + 'static) {
         RefCell::borrow_mut(&self.next_frame_callbacks).push(Box::new(callback));
+    }
+
+    /// K04 Task 33: deprecated alias for [`Self::on_pre_frame`]. The name
+    /// `on_next_frame` was misleading — callbacks fire BEFORE the next
+    /// frame's draw, not after. Use `on_pre_frame` going forward.
+    #[deprecated(
+        since = "K04",
+        note = "renamed to `on_pre_frame` — the callback fires before the next frame's draw"
+    )]
+    pub fn on_next_frame(&self, callback: impl FnOnce(&mut Window, &mut App) + 'static) {
+        self.on_pre_frame(callback);
+    }
+
+    /// K04 Task 34: schedule the given closure to run in the current frame's
+    /// [`PostFrame`](crate::frame::FramePhase::PostFrame) phase — AFTER
+    /// `window.draw()` has produced the scene and `window.complete_frame()`
+    /// has fired.
+    ///
+    /// Use this for work that needs to observe the resolved layout / painted
+    /// scene before running: telemetry export, inspector readout, future
+    /// post-frame settle (Flutter's `addPostFrameCallback` analogue).
+    ///
+    /// # K04 contract
+    ///
+    /// Per axiom P5, callbacks scheduled via this API MUST NOT mutate
+    /// elements directly. To mutate, queue via
+    /// `cx.defer_to(DeferPlacement::NextFrameStart, ...)` instead — the
+    /// PostFrame phase is read-only for the in-flight frame's scene state.
+    pub fn on_post_frame(&self, callback: impl FnOnce(&mut Window, &mut App) + 'static) {
+        RefCell::borrow_mut(&self.post_frame_callbacks).push(Box::new(callback));
     }
 
     /// Schedule a frame to be drawn on the next animation frame.
     ///
-    /// This is useful for elements that need to animate continuously, such as a video player or an animated GIF.
-    /// It will cause the window to redraw on the next frame, even if no other changes have occurred.
+    /// This is useful for elements that need to animate continuously, such as
+    /// a video player or an animated GIF. It causes the window to redraw on
+    /// the next frame even if no other changes have occurred.
     ///
-    /// If called from within a view, it will notify that view on the next frame. Otherwise, it will refresh the entire window.
+    /// # K04 Task 32: idempotence
+    ///
+    /// Multiple calls in the same frame coalesce — a single `Cell<bool>` flag
+    /// (`Window::request_next_frame`) is set on each call; the platform
+    /// `on_request_frame` callback drains the flag exactly once at the start
+    /// of the next frame by marking the window's invalidator dirty. Cost is
+    /// `O(1)` per call regardless of caller frequency, which is the desired
+    /// shape for tight-loop animation drivers (e.g.
+    /// `elements/animation.rs::request_animation_frame` fires every layout
+    /// pass while an animation is in flight).
+    ///
+    /// # Behavior change vs. pre-K04
+    ///
+    /// Previously, each call appended a closure to `next_frame_callbacks`
+    /// that notified the current view on the next frame. The view-targeted
+    /// notify is replaced by an invalidator-dirty mark — the entire window
+    /// redraws. The existing callers (`elements/animation.rs:210`,
+    /// `elements/img.rs:371`, `animation/animated.rs:30`) want exactly
+    /// "redraw next frame" semantics and are unaffected.
     pub fn request_animation_frame(&self) {
-        let entity = self.current_view();
-        self.on_next_frame(move |_, cx| cx.notify(entity));
+        self.request_next_frame.set(true);
     }
 
     /// Spawn the future returned by the given closure on the application thread pool.
@@ -3087,7 +3216,7 @@ impl Window {
                     async move |cx| {
                         task.await;
 
-                        cx.on_next_frame(move |_, cx| {
+                        cx.on_pre_frame(move |_, cx| {
                             cx.notify(entity_id);
                         });
                     }
@@ -5349,7 +5478,7 @@ impl Window {
 
     /// Updates the IME panel position suggestions for languages like japanese, chinese.
     pub fn invalidate_character_coordinates(&self) {
-        self.on_next_frame(|window, cx| {
+        self.on_pre_frame(|window, cx| {
             if let Some(mut input_handler) = window.platform_window.take_input_handler() {
                 if let Some(bounds) = input_handler.selected_bounds(window, cx) {
                     window.platform_window.update_ime_position(bounds);

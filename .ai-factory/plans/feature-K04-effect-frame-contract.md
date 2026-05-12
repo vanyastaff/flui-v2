@@ -311,47 +311,47 @@ Before PR merge:
 
 ### Phase 3: Animation Tick, Pre/Post-Frame, Telemetry
 
-- [ ] Task 29: Implement sealed `trait TickTarget`.
+- [x] Task 29: Implement sealed `trait TickTarget`.
   - Deliverable: `pub trait TickTarget: sealed::Sealed { fn tick(&mut self, now: Instant) -> TickOutcome; fn id(&self) -> TickTargetId; }`. `TickOutcome { Continue, Done }` signals whether the target stays in the active set after this tick. `AnimationController` implements it. Sealed via private supertrait so Tier-C cannot add impls in K04 (future opening is additive).
   - Files: `crates/flui-core/src/frame/tick.rs`, `crates/flui-core/src/animation/controller.rs`.
   - Logging requirements: none.
 
-- [ ] Task 30: Land the active-animation-controller set.
+- [x] Task 30: Land the active-animation-controller set.
   - Deliverable: `App::active_animations: FxHashSet<TickTargetId>` populated by `AnimationController::start` / `stop`. The `AnimationTick` phase walks the set, calls `TickTarget::tick(frame_clock.now())`, removes `Done` entries, emits `Effect::Notify` for `Continue` entries that changed. Sequential dependency on Task 17 (`FrameClock`) and Task 29 (`TickTarget`). References existing callers at `animation/animated.rs:30`, `elements/animation.rs:210`, `elements/img.rs:371` for compat verification. `assets.rs::ImageFrame::frame_index` is an animated-image data concept, distinct from the scheduler frame index.
   - Files: `crates/flui-core/src/animation/controller.rs`, `crates/flui-core/src/animation/ticker.rs`, `crates/flui-core/src/animation/animated.rs`, `crates/flui-core/src/elements/animation.rs`, `crates/flui-core/src/app.rs`.
   - Logging requirements: no per-tick logs.
 
-- [ ] Task 31: Make `AnimationController::value()` `FrameClock`-aware via per-frame cache.
+- [x] Task 31: Make `AnimationController::value()` `FrameClock`-aware via per-frame cache.
   - Deliverable: `AnimationController` adds `cached_at_frame: Option<(u64, f32)>`. First `value()` call in frame N computes and caches; subsequent reads in frame N return the cache. Public signature unchanged. Closes the TODO at `animation/controller.rs:233` and `docs/promt.md` §5 item 1.
   - Files: `crates/flui-core/src/animation/controller.rs`.
   - Logging requirements: none.
 
-- [ ] Task 32: Make `Window::request_animation_frame` idempotent via `Cell<bool>`.
+- [x] Task 32: Make `Window::request_animation_frame` idempotent via `Cell<bool>`.
   - Deliverable: `Window::request_next_frame: Cell<bool>` replaces the per-call closure push. `request_animation_frame()` sets the flag; the platform `on_request_frame` callback drains it. Multiple calls coalesce. Coexists with `request_frame_options.force_render` (`window.rs:1289-1293`). Existing callers at `elements/animation.rs:210`, `elements/img.rs:371`, `animation/animated.rs:30` keep working.
   - Files: `crates/flui-core/src/window.rs`, `crates/flui-core/src/app.rs`.
   - Logging requirements: none.
 
-- [ ] Task 33: Rename `Window::on_next_frame` → `Window::on_pre_frame` with deprecated alias.
+- [x] Task 33: Rename `Window::on_next_frame` → `Window::on_pre_frame` with deprecated alias.
   - Deliverable: rename across all three wrappers — `Window::on_pre_frame` (`window.rs:1911`), `Context::on_pre_frame` (`app/context.rs:292`), `AsyncWindowContext::on_pre_frame` (`app/async_context.rs:311`). Keep `Window::on_next_frame` as `#[deprecated(since = "K04 release", note = "renamed to on_pre_frame")]` alias forwarding to the new name. Update the misleading comment at `animation/animated.rs:10`.
   - Files: `crates/flui-core/src/window.rs`, `crates/flui-core/src/app/context.rs`, `crates/flui-core/src/app/async_context.rs`, `crates/flui-core/src/animation/animated.rs`.
   - Logging requirements: none.
 
-- [ ] Task 34: Add `Window::on_post_frame` anchored at `Window::complete_frame`.
+- [x] Task 34: Add `Window::on_post_frame` anchored at `Window::complete_frame`.
   - Deliverable: new `Window::on_post_frame(callback)` (and mirror wrappers on `Context`, `AsyncWindowContext`). Stored in a per-Window `SmallVec<[FrameCallback; 4]>`. Drained in the `PostFrame` phase of `run_frame`, after `window.complete_frame()` (`window.rs:2372`).
   - Files: `crates/flui-core/src/window.rs`, `crates/flui-core/src/app/context.rs`, `crates/flui-core/src/app/async_context.rs`.
   - Logging requirements: none.
 
-- [ ] Task 35: Add App-level `App::on_pre_frame` / `App::on_post_frame`.
+- [x] Task 35: Add App-level `App::on_pre_frame` / `App::on_post_frame`.
   - Deliverable: `App::on_pre_frame(FnOnce(&mut App))` and `App::on_post_frame(FnOnce(&mut App))`. Fire at the top / bottom of any `run_frame` (across all windows). Storage per Task 7 design. Multi-window apps use these for cross-window callbacks.
   - Files: `crates/flui-core/src/app.rs`.
   - Logging requirements: none.
 
-- [ ] Task 36: Replace `next_frame_callbacks: Rc<RefCell<Vec<FrameCallback>>>` with `SmallVec<[FrameCallback; 4]>`.
+- [x] Task 36: Replace `next_frame_callbacks: Rc<RefCell<Vec<FrameCallback>>>` with `SmallVec<[FrameCallback; 4]>`.
   - Deliverable: on `Window`, replace the `Rc<RefCell<Vec<...>>>` (`window.rs:960`) with `SmallVec<[FrameCallback; 4]>`. The `Rc<RefCell<…>>` was needed only because the platform callback drained from a clone; the new `run_frame` path owns the drain. Satisfies `docs/promt.md` §3.1 / §5 item 7 hot-path rule.
   - Files: `crates/flui-core/src/window.rs`.
   - Logging requirements: none.
 
-- [ ] Task 37: Land `FrameProfile` + `FrameProfileDetailed` telemetry.
+- [x] Task 37: Land `FrameProfile` + `FrameProfileDetailed` telemetry.
   - Deliverable:
     ```rust
     #[non_exhaustive]
