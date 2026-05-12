@@ -65,8 +65,8 @@ issues:
     notes: Window drag flaky на macOS — platform bug.
   27500:
     adr: 'yes'
-    repro: 'unknown'
-    notes: 'Архитектурный: drag-region API на title bar. Кнопка внутри drag-region всё равно драгает окно. ADR по window decorations / drag-zone semantics.'
+    repro: 'partial'
+    notes: 'Покрыто ADR-008 (docs/research/adr/ADR-008-window-chrome-contract.md), decision 4: drag-region вычисляется после per-child hit-test. Action item 3.'
   52448:
     adr: 'maybe'
     repro: 'unknown'
@@ -96,9 +96,9 @@ issues:
     repro: 'unknown'
     notes: 'External drag-and-drop в standalone-apps. Архитектурный: API контракт DnD на всех платформах. У нас сейчас drop-API нет.'
   52067:
-    adr: 'maybe'
-    repro: 'unknown'
-    notes: is_minimizable / is_resizable не уважаются. Контракт WindowOptions. Локально починить, но стоит зафиксировать инвариант в спеке Window.
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Покрыто ADR-008 (docs/research/adr/ADR-008-window-chrome-contract.md). WS_MINIMIZEBOX устанавливает кнопку, но WM_SYSCOMMAND/SC_MINIMIZE не фильтруется. Контракт: invariant, а не hint. Action item 1.'
   52013:
     adr: 'maybe'
     repro: 'unknown'
