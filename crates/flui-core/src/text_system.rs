@@ -1,3 +1,26 @@
+// CONTRACT (ADR-013 — Text rasterization strategy):
+//
+// `TextStyle::raster_mode: TextRasterMode` is the per-style strategy
+// (variants: `Subpixel` [default], `Grayscale`, `BiLevel`, `Hinted`). The
+// per-glyph atlas key includes the mode — distinct modes do not share
+// glyph slots.
+//
+// Per-platform capability matrix (rendering — not the mode enum itself):
+//   | Backend             | Subpixel | Grayscale | BiLevel | Hinted |
+//   |---------------------|:--------:|:---------:|:-------:|:------:|
+//   | macOS CoreText      |    ✓     |     ✓     |    ✓    |   ✓    |
+//   | Windows DirectWrite |    ✓     |     ✓     |    ✓    |   ✓    |
+//   | Linux cosmic-text   |    ✓     |     ✓     |    -    |   *    |
+//   | Web (wgpu)          |    ✓¹    |     ✓     |    -    |   -    |
+// `-` = falls through to the next-best supported variant silently
+//       (`BiLevel → Grayscale`, `Hinted → Subpixel`); never panics.
+// `*` = pending Skrifa `Outlines::hinted_glyph` stabilisation.
+// `¹` = honoured only when the WebGPU/WebGL adapter advertises it.
+//
+// See: `docs/research/adr/ADR-013-text-rasterization-strategy.md`.
+//      `docs/research/adr/ADR-004-text-slicing-utf8-safety.md` (slicing
+//      safety; orthogonal but co-located on the same code path).
+
 mod font_fallbacks;
 mod font_features;
 mod line;

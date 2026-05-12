@@ -1,3 +1,24 @@
+# CONTRACT (ADR-016 — Wasm target dependency gating):
+#
+# 1. Dev-dependencies NEVER become production dependencies on any target.
+#    `dev-dependencies` host test-only crates (`proptest`, `criterion`,
+#    `tempfile`, ...). The opt-in exception is `dep:foo` in a feature
+#    (e.g. `proptest` gated behind `test-support` below).
+# 2. A dependency that does not compile on `wasm32-unknown-unknown` is
+#    gated by `[target.'cfg(not(target_family = "wasm"))'.dependencies]`
+#    at the Cargo.toml level — NOT only inside `lib.rs`. The compile
+#    error must surface at dependency resolution.
+# 3. The `default` feature set is wasm-buildable.
+#    `cargo check --target wasm32-unknown-unknown -p flui-core` with no
+#    feature overrides MUST succeed.
+# 4. Wasm-specific dependencies (`web-sys`, `js-sys`, `wasm-bindgen`)
+#    live under `[target.'cfg(target_family = "wasm")'.dependencies]` —
+#    NOT under the cross-target `[dependencies]` block.
+# 5. `Renderer::recover` is non-wasm by `#[cfg(not(target_family = "wasm"))]`
+#    — the web platform handles GPU loss through page reload (see ADR-005).
+#
+# See: `docs/research/adr/ADR-016-wasm-target-gating.md`.
+
 [package]
 name = "flui-core"
 version = "0.1.0"

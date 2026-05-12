@@ -1,3 +1,30 @@
+// CONTRACT (ADR-010 — Local tab-index, hierarchical order):
+//
+// Tab order is hierarchical. A focus handle's effective order is the
+// lexicographic comparison of its `TabStopPath` (a `SmallVec<[TabIndex; 6]>`
+// with `isize` per level). Siblings compare by per-level `tab_index`;
+// depth differences fall through the `SumTree`'s `Bias::Right` semantics.
+//
+// `tab_index = 0` means "default" (document order within the group).
+// Negative values come after every non-negative entry in the same group
+// (web `tabindex="-1"` semantics, except `tab_stop = false` is the way
+// to disable the stop entirely).
+//
+// `tab_stop: bool` on `FocusHandle` is independent of `tab_index`: a
+// focus handle may participate in the map (so it can receive programmatic
+// focus) without participating in keyboard navigation.
+//
+// Group boundaries are NOT absorbing. Tab from the last element of a
+// group lands on the next element in the parent's order, not on a group
+// sentinel. Reverse tab is symmetric. `next`/`prev` wrap.
+//
+// Public sugar is `cx.tab_group(tab_index, |cx| { ... })`. Widget authors
+// MUST NOT reason about `TabStopPath` directly; the path is an internal
+// representation. `TabStopMap::iter()` will be exposed for `flui-a11y`
+// AT traversal — do not duplicate the store.
+//
+// See: `docs/research/adr/ADR-010-local-tab-index.md`.
+
 use std::fmt::Debug;
 
 use ::sum_tree::SumTree;

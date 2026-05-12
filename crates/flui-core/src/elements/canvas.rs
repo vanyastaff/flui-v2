@@ -1,3 +1,27 @@
+// CONTRACT (ADR-012 — Custom canvas paint):
+//
+// `canvas(prepaint, paint)` is the public low-level paint surface.
+//
+// `prepaint(bounds, window, app) -> T` runs during the prepaint phase and
+// produces a `T` that is private to this element instance for this frame.
+// `paint(bounds, T, window, app)` runs during `DrawPhase::Paint` and may
+// call any `Window::paint_*` method (`paint_quad`, `paint_text`,
+// `paint_path`, `paint_image`, …) any number of times.
+//
+// `canvas` does NOT compile shaders. Authors that need a custom shader
+// compose pre-built effects via the styled API. A future "custom shader"
+// element is a separate ADR with a distinct lifecycle.
+//
+// `canvas` participates in invalidation like any other element: its
+// `prepaint`/`paint` re-runs when the owning view notifies. There is no
+// per-`canvas` redraw request distinct from `Window::refresh()` /
+// `cx.notify(view)` (ADR-001 / ADR-002 contracts).
+//
+// The `T` between `prepaint` and `paint` is private; authors MUST NOT
+// depend on it surviving across frames.
+//
+// See: `docs/research/adr/ADR-012-custom-canvas-paint.md`.
+
 use refineable::Refineable as _;
 
 use crate::{
