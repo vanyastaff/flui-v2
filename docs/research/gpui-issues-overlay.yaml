@@ -26,7 +26,7 @@ issues:
   30469:
     adr: 'no'
     repro: 'unknown'
-    notes: 'Wayland: монитор выкл → app закрывается. Нужен device-lost / output-disconnect hook (см. также #23288).'
+    notes: 'Output-disconnect, не device-loss — ADR-005 явно дисамбигуирует и кладёт в out-of-scope. Отдельный future ADR (Wayland wl_output lifecycle), сиблинг #46378.'
   21851:
     adr: 'yes'
     repro: 'unknown'
@@ -73,8 +73,8 @@ issues:
     notes: Modal в одном окне блокирует навигацию в других. Архитектурный вопрос модальности (scoped vs app-global). У нас несколько окон поддерживаются — критично проверить.
   52085:
     adr: 'no'
-    repro: 'unknown'
-    notes: 'Crash во время обновления GPU driver. Симптом device-lost — связан с #23288 (полноценный ADR именно там).'
+    repro: 'no'
+    notes: 'Покрыто DirectX recovery path (windows/platform.rs:318, directx_renderer.rs:227, try_to_recover_from_device_lost) — см. ADR-005. Контракт зафиксирован; реальный driver-update сценарий — action item 4 ADR-005.'
   37727:
     adr: 'yes'
     repro: 'unknown'
@@ -153,8 +153,8 @@ issues:
     notes: 'Частично покрыто ADR-002 (docs/research/adr/ADR-002-hover-active-invalidation.md) — scoped invalidation cuts the per-hover full-window repaint that amplifies the symptom. Сама причина (hit-test layering) — отдельный future ADR. Связано с #52013.'
   23288:
     adr: 'yes'
-    repro: 'unknown'
-    notes: 'GPU device-loss graceful recovery. Большой архитектурный ADR — выживание при suspend/resume/driver-crash. Связано с #52085, #30469.'
+    repro: 'partial'
+    notes: 'Покрыто ADR-005 (docs/research/adr/ADR-005-gpu-device-loss.md). У нас уже есть detection (wgpu_context.rs), surface reconfigure (wgpu_renderer.rs:1068), full recovery (wgpu_renderer.rs:1639), multi-window coordination, и отдельный DirectX path. 6 явных gaps — action items 2-5 ADR-005.'
   15166:
     adr: 'yes'
     repro: 'yes'
