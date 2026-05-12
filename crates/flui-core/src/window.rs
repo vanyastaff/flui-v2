@@ -10,20 +10,20 @@ use crate::{
     AsyncWindowContext, AvailableSpace, Background, BorderStyle, Bounds, BoxShadow, Capslock,
     Context, Corners, CursorStyle, Decorations, DevicePixels, DispatchActionListener,
     DispatchNodeId, DispatchTree, DisplayId, Edges, Effect, ElementId, ElementIdStack, Entity,
-    EntityId, EventEmitter, FileDropEvent, FontId, Global, GlobalElementId, GlyphId, GpuSpecs,
-    Hsla, InputHandler, IsZero, KeyBinding, KeyContext, KeyDownEvent, KeyEvent, Keystroke,
-    KeystrokeEvent, LayoutId, LineLayoutIndex, MediaQueryData, Modifiers, ModifiersChangedEvent,
-    MonochromeSprite, MouseButton, MouseEvent, MouseMoveEvent, MouseUpEvent, Path, Pixels,
-    PlatformAtlas, PlatformDisplay, PlatformInput, PlatformInputHandler, PlatformWindow, Point,
-    PolychromeSprite, Priority, PromptButton, PromptLevel, Quad, Render, RenderGlyphParams,
-    RenderImage, RenderImageParams, RenderSvgParams, Replay, ResizeEdge, SMOOTH_SVG_SCALE_FACTOR,
-    SUBPIXEL_VARIANTS_X, SUBPIXEL_VARIANTS_Y, ScaledPixels, Scene, Shadow, SharedString, Size,
-    StrikethroughStyle, Style, SubpixelSprite, SubscriberSet, Subscription, SystemWindowTab,
-    SystemWindowTabController, TabStopMap, TaffyLayoutEngine, Task, TextRenderingMode, TextStyle,
-    TextStyleRefinement, ThermalState, TransformationMatrix, Underline, UnderlineStyle,
-    WindowAppearance, WindowBackgroundAppearance, WindowBounds, WindowControls, WindowDecorations,
-    WindowOptions, WindowParams, WindowTextSystem, point, prelude::*, px, rems, size,
-    transparent_black,
+    EntityId, EventEmitter, ExternalDropEvent, ExternalDropPayload, FontId, Global,
+    GlobalElementId, GlyphId, GpuSpecs, Hsla, InputHandler, IsZero, KeyBinding, KeyContext,
+    KeyDownEvent, KeyEvent, Keystroke, KeystrokeEvent, LayoutId, LineLayoutIndex, MediaQueryData,
+    Modifiers, ModifiersChangedEvent, MonochromeSprite, MouseButton, MouseEvent, MouseMoveEvent,
+    MouseUpEvent, Path, Pixels, PlatformAtlas, PlatformDisplay, PlatformInput,
+    PlatformInputHandler, PlatformWindow, Point, PolychromeSprite, Priority, PromptButton,
+    PromptLevel, Quad, Render, RenderGlyphParams, RenderImage, RenderImageParams, RenderSvgParams,
+    Replay, ResizeEdge, SMOOTH_SVG_SCALE_FACTOR, SUBPIXEL_VARIANTS_X, SUBPIXEL_VARIANTS_Y,
+    ScaledPixels, Scene, Shadow, SharedString, Size, StrikethroughStyle, Style, SubpixelSprite,
+    SubscriberSet, Subscription, SystemWindowTab, SystemWindowTabController, TabStopMap,
+    TaffyLayoutEngine, Task, TextRenderingMode, TextStyle, TextStyleRefinement, ThermalState,
+    TransformationMatrix, Underline, UnderlineStyle, WindowAppearance, WindowBackgroundAppearance,
+    WindowBounds, WindowControls, WindowDecorations, WindowOptions, WindowParams, WindowTextSystem,
+    point, prelude::*, px, rems, size, transparent_black,
 };
 use anyhow::{Context as _, Result, anyhow};
 use collections::{FxHashMap, FxHashSet};
@@ -563,6 +563,24 @@ pub(crate) struct HitTest {
 }
 
 /// A type of window control area that corresponds to the platform window.
+///
+/// # ADR-008 contract for callers (custom title-bar implementations)
+///
+/// Implementations of [`Platform::on_hit_test_window_control`] consult
+/// the flui-side hit-test BEFORE returning [`WindowControlArea::Drag`].
+/// Concretely: when a pointer-down lands within the title-bar bounds,
+/// the callback must first walk the gesture hit-tree at that point; if
+/// any child element with a `mouse_down` listener (close button, tab
+/// strip tab, dropdown trigger) claims the point, the callback returns
+/// the matching control area (`Close` / `Max` / `Min`) or `None` so the
+/// click reaches the child. Only the *bare* title-bar surface — with no
+/// child claiming the point — yields [`WindowControlArea::Drag`].
+///
+/// This is decision 4 of `docs/research/adr/ADR-008-window-chrome-contract.md`:
+/// "Drag-region is computed *after* the per-child hit-test, not instead
+/// of it." Programmatic opt-in (a child element explicitly declaring
+/// `.window_drag()`) re-enables the move gesture on that child by
+/// returning `Drag` from inside the child's bounds.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WindowControlArea {
     /// An area that allows dragging of the platform window.
@@ -1046,6 +1064,17 @@ pub struct Window {
     capslock: Capslock,
     scale_factor: f32,
     pub(crate) bounds_observers: SubscriberSet<(), AnyObserver>,
+    /// ADR-007: observers fired when this window's bound display id changes
+    /// (window moves between outputs) or when that display's scale factor
+    /// changes. Distinct from `bounds_observers` which fires on size only.
+    pub(crate) display_change_observers: SubscriberSet<(), AnyObserver>,
+    /// ADR-008: `WindowOptions` invariants kept on the Window so the
+    /// programmatic gates on `minimize_window` / future maximize/resize
+    /// APIs can reject mutations that violate the requested invariants
+    /// even when the platform layer would allow them.
+    pub(crate) is_movable: bool,
+    pub(crate) is_resizable: bool,
+    pub(crate) is_minimizable: bool,
     appearance: WindowAppearance,
     pub(crate) appearance_observers: SubscriberSet<(), AnyObserver>,
     active: Rc<Cell<bool>>,
@@ -1607,6 +1636,10 @@ impl Window {
             capslock,
             scale_factor,
             bounds_observers: SubscriberSet::new(),
+            display_change_observers: SubscriberSet::new(),
+            is_movable,
+            is_resizable,
+            is_minimizable,
             appearance,
             appearance_observers: SubscriberSet::new(),
             active,
@@ -1691,6 +1724,43 @@ impl Window {
         mut callback: impl FnMut(&mut Window, &mut App) + 'static,
     ) -> Subscription {
         let (subscription, activate) = self.appearance_observers.insert(
+            (),
+            Box::new(move |window, cx| {
+                callback(window, cx);
+                true
+            }),
+        );
+        activate();
+        subscription
+    }
+
+    /// ADR-007: observe display changes for *this* window.
+    ///
+    /// The callback fires when:
+    /// - this window's bound display id changes (the window moved between
+    ///   outputs, or its output was disconnected and the window was
+    ///   reattached to the primary display — see ADR-007 decision 5), OR
+    /// - that display's scale factor changes (DPI shift on the current
+    ///   output, e.g. user switched scaling in System Settings).
+    ///
+    /// This is *distinct* from `bounds_observers` (window-size-only) and
+    /// from `Platform::on_displays_changed` (app-wide: a display was
+    /// added or removed somewhere, not necessarily affecting this window).
+    ///
+    /// The eventually-consistent guarantee from ADR-007 decision 4: between
+    /// any two consecutive frames, `Window::scale_factor()` reflects what
+    /// the platform currently reports for the window's display. Observers
+    /// run synchronously inside `bounds_changed`; ordering relative to
+    /// `bounds_observers` is `bounds_observers` first, then
+    /// `display_change_observers` — callers chaining the two should not
+    /// assume the reverse.
+    ///
+    /// See: `docs/research/adr/ADR-007-display-lifecycle.md` — decision 3.
+    pub fn observe_display_change(
+        &self,
+        mut callback: impl FnMut(&mut Window, &mut App) + 'static,
+    ) -> Subscription {
+        let (subscription, activate) = self.display_change_observers.insert(
             (),
             Box::new(move |window, cx| {
                 callback(window, cx);
@@ -1838,7 +1908,18 @@ impl Window {
     }
 
     /// Start a window resize operation (Wayland)
+    ///
+    /// ADR-008 decision 6: gated on the `WindowOptions::is_resizable`
+    /// invariant. A non-resizable window must reject resize gestures
+    /// from any source — same contract as `minimize_window` below.
     pub fn start_window_resize(&self, edge: ResizeEdge) {
+        if !self.is_resizable {
+            log::warn!(
+                "ADR-008: ignored programmatic start_window_resize() on a \
+                 window created with `is_resizable = false`."
+            );
+            return;
+        }
         self.platform_window.start_window_resize(edge);
     }
 
@@ -2204,16 +2285,33 @@ impl Window {
     /// This updates internal state like `viewport_size` and `scale_factor` from
     /// the platform window, then notifies observers. Normally called automatically
     /// by the platform's resize callback, but exposed publicly for test infrastructure.
+    ///
+    /// ADR-007: when the window's `display_id` or `scale_factor` changes,
+    /// `display_change_observers` fires *in addition to* `bounds_observers`.
+    /// The latter is kept window-size-focused; the former is the dedicated
+    /// "external display state changed for this window" hook.
     pub fn bounds_changed(&mut self, cx: &mut App) {
+        let prev_scale_factor = self.scale_factor;
+        let prev_display_id = self.display_id;
+
         self.scale_factor = self.platform_window.scale_factor();
         self.viewport_size = self.platform_window.content_size();
         self.display_id = self.platform_window.display().map(|display| display.id());
 
         self.refresh();
 
+        let display_changed = self.display_id != prev_display_id
+            || (self.scale_factor - prev_scale_factor).abs() > f32::EPSILON;
+
         self.bounds_observers
             .clone()
             .retain(&(), |callback| callback(self, cx));
+
+        if display_changed {
+            self.display_change_observers
+                .clone()
+                .retain(&(), |callback| callback(self, cx));
+        }
     }
 
     /// Returns the bounds of the current window in the global coordinate space, which could span across multiple displays.
@@ -2279,7 +2377,20 @@ impl Window {
     }
 
     /// Toggle zoom on the window.
+    ///
+    /// ADR-008 decision 3: a non-resizable window is also non-
+    /// maximizable (Cocoa conflates resize + maximize via
+    /// `NSResizableWindowMask`; Win32 via `WS_THICKFRAME`). This gate
+    /// matches `start_window_resize` so callers cannot bypass the
+    /// invariant through the zoom path.
     pub fn zoom_window(&self) {
+        if !self.is_resizable {
+            log::warn!(
+                "ADR-008: ignored programmatic zoom_window() on a window \
+                 created with `is_resizable = false`."
+            );
+            return;
+        }
         self.platform_window.zoom();
     }
 
@@ -2292,7 +2403,19 @@ impl Window {
     /// Tells the compositor to take control of window movement (Wayland and X11)
     ///
     /// Events may not be received during a move operation.
+    ///
+    /// ADR-008 decision 6: gated on the `WindowOptions::is_movable`
+    /// invariant. A non-movable window must reject drag-to-move
+    /// gestures from any source — including this programmatic
+    /// compositor handoff.
     pub fn start_window_move(&self) {
+        if !self.is_movable {
+            log::warn!(
+                "ADR-008: ignored programmatic start_window_move() on a \
+                 window created with `is_movable = false`."
+            );
+            return;
+        }
         self.platform_window.start_window_move()
     }
 
@@ -3531,6 +3654,21 @@ impl Window {
     }
 
     /// Executes the given closure within the context of a tab group.
+    ///
+    /// ADR-010: this is the stable public sugar for the engine's
+    /// `TabStopMap::{begin_group, end_group}` primitives. Widget authors
+    /// **must** use this helper (not the underlying `TabStopMap`, which
+    /// is `pub(crate)`) so a future change to the path representation
+    /// stays an internal refactor.
+    ///
+    /// When `index` is `None` the closure runs without entering a group
+    /// — convenient sugar for conditional grouping.
+    ///
+    /// Group boundaries are **not** absorbing (decision 4): tabbing out of
+    /// the last element of the group lands on the next sibling in the
+    /// parent's order, not on a group sentinel.
+    ///
+    /// See `docs/research/adr/ADR-010-local-tab-index.md`.
     #[inline]
     pub fn with_tab_group<R>(&mut self, index: Option<isize>, f: impl FnOnce(&mut Self) -> R) -> R {
         if let Some(index) = index {
@@ -3769,6 +3907,15 @@ impl Window {
             y: (glyph_origin.y.0.fract() * SUBPIXEL_VARIANTS_Y as f32).floor() as u8,
         };
         let subpixel_rendering = self.should_use_subpixel_rendering(font_id, font_size);
+        // ADR-013: cache key includes the raster mode. The text style
+        // cascade plumbs `raster_mode` through; the resolved mode here
+        // is the one actually drawn after the per-platform fallback
+        // chain (see `TextRasterMode::resolve_with_fallback`). Wiring
+        // the live style → mode resolution is a per-paint-call
+        // follow-up; for now the engine defaults to `Subpixel` which
+        // matches pre-ADR cache identity (no atlas churn from this
+        // commit).
+        let raster_mode = crate::TextRasterMode::Subpixel;
         let params = RenderGlyphParams {
             font_id,
             glyph_id,
@@ -3777,6 +3924,7 @@ impl Window {
             scale_factor,
             is_emoji: false,
             subpixel_rendering,
+            raster_mode,
         };
 
         let raster_bounds = self.text_system().raster_bounds(&params)?;
@@ -3959,6 +4107,10 @@ impl Window {
             subpixel_variant: Default::default(),
             scale_factor,
             is_emoji: true,
+            // ADR-013: emoji raster mode is fixed to `Subpixel` (the
+            // default) — bi-level / hinted modes only apply to outline
+            // glyphs, not colour-bitmap emoji.
+            raster_mode: crate::TextRasterMode::Subpixel,
             subpixel_rendering: false,
         };
 
@@ -4684,16 +4836,37 @@ impl Window {
             }
             // Translate dragging and dropping of external files from the operating system
             // to internal drag and drop events.
+            //
+            // ADR-011: `FileDropEvent` is now an alias for `ExternalDropEvent`
+            // and carries `payload: ExternalDropPayload` instead of `paths`.
+            // For the `Paths` variant the active_drag preview behaviour is
+            // unchanged (ExternalPaths still has its Render impl). Other
+            // payload variants (Urls, Text, Html, Mime, Mixed) currently fall
+            // through without a drag preview — wider preview rendering is a
+            // future-work item tracked in the rollout plan.
+            //
+            // The pre-existing pipeline (also pre-ADR) converts `Entered`/
+            // `Pending`/`Submit` into synthetic mouse events for downstream
+            // hit-test / listener dispatch (the typed payload is consumed
+            // here in the `Entered` branch only, to set up `cx.active_drag`
+            // for the drag-preview painter). Wiring `on_drop` listeners to
+            // observe the original typed `ExternalDropEvent` directly is a
+            // follow-up that would replace this conversion with a typed
+            // dispatch path.
             PlatformInput::FileDrop(file_drop) => match file_drop {
-                FileDropEvent::Entered { position, paths } => {
+                ExternalDropEvent::Entered { position, payload } => {
                     self.mouse_position = position;
                     if cx.active_drag.is_none() {
-                        cx.active_drag = Some(AnyDrag {
-                            value: Arc::new(paths.clone()),
-                            view: cx.new(|_| paths).into(),
-                            cursor_offset: position,
-                            cursor_style: None,
-                        });
+                        if let ExternalDropPayload::Paths(paths) = payload {
+                            cx.active_drag = Some(AnyDrag {
+                                value: Arc::new(paths.clone()),
+                                view: cx.new(|_| paths).into(),
+                                cursor_offset: position,
+                                cursor_style: None,
+                            });
+                        }
+                        // Non-Paths variants: no engine-side drag preview
+                        // yet; widgets can paint their own on `Entered`.
                     }
                     PlatformInput::MouseMove(MouseMoveEvent {
                         position,
@@ -4701,7 +4874,7 @@ impl Window {
                         modifiers: Modifiers::default(),
                     })
                 }
-                FileDropEvent::Pending { position } => {
+                ExternalDropEvent::Pending { position } => {
                     self.mouse_position = position;
                     PlatformInput::MouseMove(MouseMoveEvent {
                         position,
@@ -4709,7 +4882,7 @@ impl Window {
                         modifiers: Modifiers::default(),
                     })
                 }
-                FileDropEvent::Submit { position } => {
+                ExternalDropEvent::Submit { position } => {
                     cx.activate(true);
                     self.mouse_position = position;
                     PlatformInput::MouseUp(MouseUpEvent {
@@ -4719,12 +4892,21 @@ impl Window {
                         click_count: 1,
                     })
                 }
-                FileDropEvent::Exited => {
+                ExternalDropEvent::Exited => {
                     cx.active_drag.take();
-                    PlatformInput::FileDrop(FileDropEvent::Exited)
+                    PlatformInput::FileDrop(ExternalDropEvent::Exited)
                 }
             },
             PlatformInput::KeyDown(_) | PlatformInput::KeyUp(_) => event,
+            // ADR-009: pass-through. The downstream routing of
+            // `EditorCommand` to the focused widget's
+            // `InputHandler::handle_editor_command` is TODO — for now the
+            // event flows through the dispatch path unchanged, and a
+            // future commit wires the focused-handler lookup. The macOS
+            // bridge already falls back to the keystroke path when the
+            // command is unhandled, so user-visible behavior is unchanged
+            // until the routing lands.
+            PlatformInput::EditorCommand(_) => event,
         };
 
         // S07 T6 — Gesture-pass scaffold.
@@ -5544,8 +5726,48 @@ impl Window {
         self.platform_window.activate();
     }
 
+    /// ADR-008: query the `WindowOptions::is_movable` invariant the
+    /// window was created with. Callers can branch on this before
+    /// programmatic move attempts; the engine also rejects platform-side
+    /// move gestures when `false` (Windows `WM_SYSCOMMAND::SC_MOVE`
+    /// filter; macOS `NSWindow.setMovable_:` first line; system-menu /
+    /// titlebar drag second line is TODO per ADR-008 #2/#3).
+    pub fn is_movable(&self) -> bool {
+        self.is_movable
+    }
+
+    /// ADR-008: query the `WindowOptions::is_resizable` invariant. Also
+    /// implies `is_maximizable = false` per decision 3 (Cocoa and Win32
+    /// both conflate the two via `NSResizableWindowMask` and
+    /// `WS_THICKFRAME`/`WS_MAXIMIZEBOX`).
+    pub fn is_resizable(&self) -> bool {
+        self.is_resizable
+    }
+
+    /// ADR-008: query the `WindowOptions::is_minimizable` invariant.
+    /// `minimize_window` is the gated programmatic path on this Window.
+    pub fn is_minimizable(&self) -> bool {
+        self.is_minimizable
+    }
+
     /// Minimize the current window at the platform level.
+    ///
+    /// ADR-008 decision 6: gated on the `WindowOptions::is_minimizable`
+    /// invariant. If the window was created with `is_minimizable = false`,
+    /// this is a no-op and emits a `log::warn!`. Callers that need to
+    /// observe rejection without polling can wrap this in a higher-level
+    /// API that returns `Result`.
     pub fn minimize_window(&self) {
+        if !self.is_minimizable {
+            log::warn!(
+                "ADR-008: ignored programmatic minimize_window() on a window \
+                 created with `is_minimizable = false`. The invariant is \
+                 binding on programmatic callers — wrap the call in a flag \
+                 check or change `WindowOptions::is_minimizable` to true \
+                 if minimization should be permitted."
+            );
+            return;
+        }
         self.platform_window.minimize();
     }
 

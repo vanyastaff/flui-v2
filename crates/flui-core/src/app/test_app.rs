@@ -541,6 +541,28 @@ impl<V: 'static + Render> TestAppWindow<V> {
         self.background_executor.run_until_parked();
     }
 
+    /// ADR-007: simulate this window being moved to (or reattached to) a
+    /// different display. Drives the platform-side display swap that
+    /// surfaces through `Window::bounds_changed` and fires
+    /// `Window::observe_display_change` observers.
+    ///
+    /// Use a fresh `TestDisplay::with_id(...)` to ensure the new display
+    /// reports a distinct id from the previous one.
+    pub fn simulate_display_change(
+        &mut self,
+        new_display: std::rc::Rc<dyn crate::PlatformDisplay>,
+    ) {
+        let window_id = self.handle.window_id();
+        let mut app = self.app.borrow_mut();
+        if let Some(Some(window)) = app.windows.get_mut(window_id) {
+            if let Some(test_window) = window.platform_window.as_test() {
+                test_window.simulate_display_change(new_display);
+            }
+        }
+        drop(app);
+        self.background_executor.run_until_parked();
+    }
+
     /// Force a redraw of the window.
     pub fn draw(&mut self) {
         let mut app = self.app.borrow_mut();
@@ -703,5 +725,288 @@ mod tests {
         app.read_global::<MyGlobal, _>(|global, _| {
             assert_eq!(global.0, "world");
         });
+    }
+
+    /// ADR-007 regression test: `Window::observe_display_change` fires
+    /// when the window's bound display id changes, and the window
+    /// survives the swap (decision 5 — "Output disconnect does not
+    /// implicitly kill a window").
+    ///
+    /// This locks the public API surface added by ADR-007 and the test
+    /// hook (`TestAppWindow::simulate_display_change`,
+    /// `TestDisplay::with_id`) that platform-glue follow-ups will reuse
+    /// to verify Wayland `wl_output` add/remove and X11 XRandR paths.
+    ///
+    /// See `docs/research/adr/ADR-007-display-lifecycle.md`.
+    /// ADR-008 regression test: `Window::minimize_window` rejects the
+    /// programmatic call when the window was created with
+    /// `WindowOptions::is_minimizable = false`, and the public accessor
+    /// `Window::is_minimizable()` agrees.
+    ///
+    /// The test platform's `TestWindow::minimize()` is
+    /// `unimplemented!()` — i.e. it panics. The test passes only when the
+    /// engine-side gate in `Window::minimize_window` short-circuits
+    /// before reaching the platform call. A regression that drops the
+    /// gate (e.g. someone re-orders the early-return) would re-enter
+    /// `TestWindow::minimize()` and surface as a panic in this test.
+    ///
+    /// Locks decisions 1 and 6 of ADR-008. The system-menu / Win+Down /
+    /// Alt+Space / Dock-right-click / macOS View-menu paths are
+    /// platform-specific and covered separately (Windows-side by the
+    /// `WM_SYSCOMMAND` filter in events.rs; macOS-side TODO per ADR-008
+    /// action item 2). See
+    /// `docs/research/adr/ADR-008-window-chrome-contract.md`.
+    /// ADR-014 regression test: `Platform::renderer_kind` defaults to
+    /// `Hardware` for backends that do not override (test platform,
+    /// macOS Metal, Windows DirectX). The wgpu backend on Linux/wasm
+    /// overrides this to classify adapters via
+    /// `wgpu::DeviceType::Cpu` — that path runs on Linux CI under
+    /// lavapipe, not on Windows.
+    ///
+    /// Locks decision 2 (RendererKind is exposed) and the default-
+    /// classification semantics. A future commit may wire the Linux
+    /// `Platform::renderer_kind` override (forwarding to
+    /// `WgpuContext::renderer_kind`) — that test would then fire
+    /// `Software` under lavapipe.
+    ///
+    /// See `docs/research/adr/ADR-014-software-rendering-fallback.md`.
+    #[test]
+    fn adr_014_app_renderer_kind_defaults_to_hardware_on_test_platform() {
+        let app = TestApp::new();
+        let kind = app.read(|cx| cx.renderer_kind());
+        assert_eq!(
+            kind,
+            crate::RendererKind::Hardware,
+            "ADR-014: test platform must report Hardware via the default \
+             Platform::renderer_kind impl (no wgpu adapter classification \
+             on the test platform). got {kind:?}"
+        );
+    }
+
+    /// ADR-009 regression test for the
+    /// [`InputHandler::handle_editor_command`] default — implements
+    /// the full trait without overriding `handle_editor_command`, then
+    /// invokes the method via `&mut Window` / `&mut App` inside a
+    /// `window.update(...)` closure. Asserts the default body returns
+    /// `false` so the macOS bridge's keystroke-fallback path engages
+    /// when no widget claims the command.
+    ///
+    /// This is the trait-level companion to
+    /// `platform::tests::adr_009_editor_command_dispatch_pattern`,
+    /// which exercises the dispatch shape with a mock receiver — both
+    /// together cover the ADR-009 default + override contract.
+    #[test]
+    fn adr_009_input_handler_handle_editor_command_default_returns_false() {
+        use crate::{
+            App, Bounds, EditorCommand, InputHandler, Pixels, Point, UTF16Selection, Window,
+        };
+        use std::ops::Range;
+
+        struct DefaultInputHandler;
+
+        impl InputHandler for DefaultInputHandler {
+            fn selected_text_range(
+                &mut self,
+                _ignore_disabled_input: bool,
+                _window: &mut Window,
+                _cx: &mut App,
+            ) -> Option<UTF16Selection> {
+                None
+            }
+            fn marked_text_range(
+                &mut self,
+                _window: &mut Window,
+                _cx: &mut App,
+            ) -> Option<Range<usize>> {
+                None
+            }
+            fn text_for_range(
+                &mut self,
+                _range_utf16: Range<usize>,
+                _adjusted_range: &mut Option<Range<usize>>,
+                _window: &mut Window,
+                _cx: &mut App,
+            ) -> Option<String> {
+                None
+            }
+            fn replace_text_in_range(
+                &mut self,
+                _replacement_range: Option<Range<usize>>,
+                _text: &str,
+                _window: &mut Window,
+                _cx: &mut App,
+            ) {
+            }
+            fn replace_and_mark_text_in_range(
+                &mut self,
+                _range_utf16: Option<Range<usize>>,
+                _new_text: &str,
+                _new_selected_range: Option<Range<usize>>,
+                _window: &mut Window,
+                _cx: &mut App,
+            ) {
+            }
+            fn unmark_text(&mut self, _window: &mut Window, _cx: &mut App) {}
+            fn bounds_for_range(
+                &mut self,
+                _range_utf16: Range<usize>,
+                _window: &mut Window,
+                _cx: &mut App,
+            ) -> Option<Bounds<Pixels>> {
+                None
+            }
+            fn character_index_for_point(
+                &mut self,
+                _point: Point<Pixels>,
+                _window: &mut Window,
+                _cx: &mut App,
+            ) -> Option<usize> {
+                None
+            }
+            // Intentionally do NOT override `handle_editor_command` —
+            // we want the trait default to fire.
+        }
+
+        let mut app = TestApp::new();
+        let mut window = app.open_window(Counter::new);
+
+        let mut handler = DefaultInputHandler;
+        let observed = window.update(|_view, w, cx| {
+            // Default body returns `false` for every variant.
+            let any_returned_true = [
+                EditorCommand::DeleteWordBackward,
+                EditorCommand::MoveToBeginningOfLine,
+                EditorCommand::Transpose,
+                EditorCommand::SelectAll,
+            ]
+            .into_iter()
+            .any(|cmd| handler.handle_editor_command(cmd, w, cx));
+            any_returned_true
+        });
+
+        assert!(
+            !observed,
+            "ADR-009: InputHandler::handle_editor_command default impl must \
+             return false so the macOS bridge's keystroke-fallback path engages \
+             when no widget claims the command. A regression that flips the \
+             default to true would silently swallow every standard Cocoa binding."
+        );
+
+        drop(window);
+        app.update(|cx| cx.shutdown());
+    }
+
+    #[test]
+    fn adr_008_minimize_window_rejected_when_options_disallow_it() {
+        let mut app = TestApp::new();
+
+        let window = app.open_window_with_options(
+            WindowOptions {
+                is_minimizable: false,
+                ..Default::default()
+            },
+            Counter::new,
+        );
+
+        // Accessor surface — public API for callers to branch on.
+        let is_minimizable = window.read(|_, _app| {
+            // No direct read accessor on TestAppWindow for is_minimizable
+            // — query through the app to reach Window state. We assert via
+            // the Window-level accessor by funneling through `update`.
+            ()
+        });
+        let _ = is_minimizable; // silence
+
+        let observed_is_minimizable = {
+            let any_handle: AnyWindowHandle = window.handle().into();
+            let mut app_lock = window.app.borrow_mut();
+            app_lock
+                .update_window(any_handle, |_, w, _cx| w.is_minimizable())
+                .unwrap()
+        };
+        assert!(
+            !observed_is_minimizable,
+            "ADR-008: Window::is_minimizable() must reflect the \
+             WindowOptions::is_minimizable invariant (false here)"
+        );
+
+        // The critical call: if the gate fails, `TestWindow::minimize` is
+        // `unimplemented!()` and the test panics. If the gate works, this
+        // is a no-op + warn.
+        let any_handle: AnyWindowHandle = window.handle().into();
+        let mut app_lock = window.app.borrow_mut();
+        app_lock
+            .update_window(any_handle, |_, w, _cx| w.minimize_window())
+            .unwrap();
+        drop(app_lock);
+
+        drop(window);
+        app.update(|cx| cx.shutdown());
+    }
+
+    #[test]
+    fn adr_007_observe_display_change_fires_on_display_swap() {
+        use crate::platform::TestDisplay;
+        use std::cell::Cell;
+        use std::rc::Rc as StdRc;
+
+        let mut app = TestApp::new();
+        let mut window = app.open_window(Counter::new);
+
+        // Observer fires inside `Window::bounds_changed` when display_id
+        // (or scale factor) changes. Capture call count via a shared
+        // `Cell` — observer keeps a strong ref while it lives.
+        let fire_count = StdRc::new(Cell::new(0u32));
+        let fire_count_for_observer = StdRc::clone(&fire_count);
+        let _subscription = window.update(move |_view, w, _cx| {
+            w.observe_display_change(move |_w, _cx| {
+                fire_count_for_observer.set(fire_count_for_observer.get() + 1);
+            })
+        });
+
+        assert_eq!(
+            fire_count.get(),
+            0,
+            "ADR-007: observe_display_change must not fire on registration"
+        );
+
+        // Stage the platform-side display swap, then drive
+        // `Window::bounds_changed` ourselves — we want to lock the
+        // observer-firing semantics inside `bounds_changed`, independent
+        // of whether the test platform's resize-callback wiring has
+        // already been exercised by the harness (it varies by harness
+        // run order). The contract under test is "when platform reports
+        // a new display id, observers fire" — both the platform-side
+        // swap and the engine-side `bounds_changed` are required steps.
+        let new_display = StdRc::new(TestDisplay::with_id(5));
+        window.simulate_display_change(StdRc::clone(&new_display) as _);
+        // Explicitly drive bounds_changed in case simulate_display_change's
+        // platform callback path is a no-op (resize_callback unset on
+        // freshly-opened test windows in some harness configurations).
+        window.update(|_view, w, cx| {
+            w.bounds_changed(cx);
+        });
+
+        assert_eq!(
+            fire_count.get(),
+            1,
+            "ADR-007: observe_display_change must fire exactly once when \
+             display_id changes from the initial TestDisplay (id=1) to the \
+             swapped one (id=5). Got fire_count = {}.",
+            fire_count.get()
+        );
+
+        // Window is still alive — decision 5 says output disconnect /
+        // reattach must not implicitly kill the window. Read its state
+        // to prove it survives.
+        let count_after_swap = window.read(|view, _| view.count);
+        assert_eq!(
+            count_after_swap, 0,
+            "ADR-007 decision 5: window state (Counter::count = 0) must \
+             survive display swap unchanged"
+        );
+
+        drop(window);
+        app.update(|cx| cx.shutdown());
     }
 }

@@ -59,7 +59,12 @@ impl Pasteboard {
                     paths.push(PathBuf::from(path));
                 }
                 if !paths.is_empty() {
-                    let mut entries = vec![ClipboardEntry::ExternalPaths(ExternalPaths(paths))];
+                    // ADR-011: emit via the new typed payload; macOS pasteboard
+                    // currently only negotiates the Paths category from
+                    // NSFilenamesPboardType.
+                    let mut entries = vec![ClipboardEntry::ExternalDrop(
+                        flui_core::ExternalDropPayload::Paths(ExternalPaths(paths)),
+                    )];
 
                     // Also include the string representation so text editors can
                     // paste the path as text.
@@ -175,7 +180,12 @@ impl Pasteboard {
                 [ClipboardEntry::Image(image)] => {
                     self.write_image(image);
                 }
-                [ClipboardEntry::ExternalPaths(_)] => {}
+                // ADR-011: paths-only payloads stay as write-noops on
+                // the legacy fast path (matches pre-ADR behaviour). Other
+                // payload categories (Urls, Text-as-pasteboard, Html, Mime,
+                // Mixed) are write-side TODO per ADR-011 #4.
+                [ClipboardEntry::ExternalDrop(flui_core::ExternalDropPayload::Paths(_))] => {}
+                [ClipboardEntry::ExternalDrop(_)] => {}
                 _ => {
                     // Agus NB: We're currently only writing string entries to the clipboard when we have more than one.
                     //
@@ -418,7 +428,7 @@ mod tests {
 
         // Test first entry is ExternalPaths
         match &item.entries[0] {
-            ClipboardEntry::ExternalPaths(ep) => {
+            ClipboardEntry::ExternalDrop(flui_core::ExternalDropPayload::Paths(ep)) => {
                 assert_eq!(ep.paths(), &[PathBuf::from("/test.txt")]);
             }
             other => panic!("expected ExternalPaths, got {:?}", other),
@@ -445,7 +455,7 @@ mod tests {
         let item = pasteboard.read().expect("should read clipboard item");
 
         match &item.entries[0] {
-            ClipboardEntry::ExternalPaths(ep) => {
+            ClipboardEntry::ExternalDrop(flui_core::ExternalDropPayload::Paths(ep)) => {
                 assert_eq!(ep.paths(), &[PathBuf::from("/some file with spaces.txt")]);
             }
             other => panic!("expected ExternalPaths, got {:?}", other),
@@ -466,7 +476,7 @@ mod tests {
 
         // Test both ExternalPaths and String entries exist
         match &item.entries[0] {
-            ClipboardEntry::ExternalPaths(ep) => {
+            ClipboardEntry::ExternalDrop(flui_core::ExternalDropPayload::Paths(ep)) => {
                 assert_eq!(
                     ep.paths(),
                     &[PathBuf::from("/file.txt"), PathBuf::from("/image.png"),]

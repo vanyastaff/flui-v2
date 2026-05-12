@@ -1,3 +1,27 @@
+// CONTRACT (ADR-005 — GPU device-loss recovery):
+//
+// `Renderer::device_lost()` is the single source of truth for "is the GPU
+// currently usable from this renderer". The platform glue MUST consult it
+// once per frame, before issuing draw calls.
+//
+// Recovery is a `Renderer::recover(&window)` call. Callers MUST NOT try to
+// rebuild surfaces, devices, queues, or atlases by hand.
+//
+// User state survives device loss: `App`, `Window`, `Entity`, focus,
+// scroll positions, text selection, animation state are preserved across
+// `recover()`. Anything stored on `Renderer` or its atlas is rebuildable
+// from those.
+//
+// `SurfaceError::Lost`/`Outdated` is a normal frame (reconfigure + return).
+// `SurfaceError::OutOfMemory`/`Other` MUST trigger recovery — they signal
+// device loss as well as transient resource exhaustion, and silently
+// losing frames is not acceptable.
+//
+// Recovery on web (wasm) is handled by page reload, not by `recover()`
+// (gated by `#[cfg(not(target_family = "wasm"))]`).
+//
+// See: `docs/research/adr/ADR-005-gpu-device-loss.md`.
+
 use super::{CompositorGpuHint, WgpuAtlas, WgpuContext};
 use bytemuck::{Pod, Zeroable};
 use flui_core::{
@@ -1076,8 +1100,24 @@ impl WgpuRenderer {
             Err(wgpu::SurfaceError::Timeout) => {
                 return;
             }
-            Err(wgpu::SurfaceError::OutOfMemory | wgpu::SurfaceError::Other) => {
-                *self.last_error.lock().unwrap() = Some("Surface texture error".to_string());
+            Err(err @ (wgpu::SurfaceError::OutOfMemory | wgpu::SurfaceError::Other)) => {
+                // ADR-005 decision 5: `OutOfMemory` / `Other` may signal
+                // device loss as well as transient resource exhaustion.
+                // Pre-ADR behaviour was a silently-dropped frame; the
+                // contract now is to drive the existing `recover()` flow
+                // through `device_lost`.
+                let kind = match err {
+                    wgpu::SurfaceError::OutOfMemory => "OutOfMemory",
+                    wgpu::SurfaceError::Other => "Other",
+                    _ => unreachable!(),
+                };
+                log::warn!(
+                    "ADR-005: SurfaceError::{kind} treated as device loss; \
+                     setting device_lost and dropping frame for recovery."
+                );
+                self.device_lost
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                *self.last_error.lock().unwrap() = Some(format!("Surface texture error: {kind}"));
                 return;
             }
         };
@@ -1635,6 +1675,18 @@ impl WgpuRenderer {
     /// This method coordinates recovery across multiple windows:
     /// - The first window to call this will recreate the shared context
     /// - Subsequent windows will adopt the already-recovered context
+    //
+    // MAGIC (ADR-005): the post-loss sleep delay is empirically copied
+    // from the Windows DirectX path. Its 350 ms duration has no documented
+    // justification and no test that it is sufficient on a slower system
+    // or under load. The constant centralizes the value so a future
+    // empirical replacement (probe loop, driver-event signal) lands here
+    // and shows up at every callsite. Replacing the literal does not
+    // change behaviour — it only locks the contract for ADR-005 #3.
+    #[cfg(not(target_family = "wasm"))]
+    const POST_DEVICE_LOSS_STABILIZATION_DELAY: std::time::Duration =
+        std::time::Duration::from_millis(350);
+
     #[cfg(not(target_family = "wasm"))]
     pub fn recover<W>(&mut self, window: &W) -> anyhow::Result<()>
     where
@@ -1662,8 +1714,10 @@ impl WgpuRenderer {
             self.resources = None;
             *gpu_context.borrow_mut() = None;
 
-            // Wait for GPU driver to stabilize (350ms copied from windows :shrug:)
-            std::thread::sleep(std::time::Duration::from_millis(350));
+            // Wait for GPU driver to stabilize. See the named constant
+            // `POST_DEVICE_LOSS_STABILIZATION_DELAY` above for the
+            // `// MAGIC (ADR-005):` rationale and replacement plan.
+            std::thread::sleep(Self::POST_DEVICE_LOSS_STABILIZATION_DELAY);
 
             let instance = WgpuContext::instance(Box::new(window.clone()));
             let surface =

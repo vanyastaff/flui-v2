@@ -229,6 +229,36 @@ pub fn guess_compositor() -> &'static str {
     }
 }
 
+/// ADR-014: classifies the active rendering adapter.
+///
+/// Pre-ADR the engine accepted any wgpu adapter without exposing
+/// whether it was hardware or a software fallback (e.g. Mesa
+/// `llvmpipe`). Software adapters paint correctly but at much higher
+/// CPU cost; without classification, an `AnimationController` running
+/// at 60 fps on a software-only host pegs every core to 100 %.
+///
+/// `RendererKind::Software` is the documented signal for downstream
+/// callers to tighten frame budgets, skip expensive visual effects, or
+/// alert the user. The default frame-budget heuristic per ADR-014
+/// decision 3 is 60 fps on hardware, 30 fps on software — wiring this
+/// into the per-platform event-loop pacing is tracked as a
+/// per-platform follow-up.
+///
+/// Marked `#[non_exhaustive]` so a future `Headless` variant (no
+/// surface, golden-test path) can be added without breaking matchers.
+///
+/// See `docs/research/adr/ADR-014-software-rendering-fallback.md`.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Default)]
+#[non_exhaustive]
+pub enum RendererKind {
+    /// Discrete or integrated GPU. Frame budget target: 60 fps.
+    #[default]
+    Hardware,
+    /// CPU-side software rasterizer (Mesa `llvmpipe`, WARP on Windows,
+    /// CoreImage software fallback). Frame budget target: 30 fps.
+    Software,
+}
+
 #[expect(missing_docs)]
 pub trait Platform: 'static {
     fn background_executor(&self) -> BackgroundExecutor;
@@ -243,8 +273,63 @@ pub trait Platform: 'static {
     fn hide_other_apps(&self);
     fn unhide_other_apps(&self);
 
+    // CONTRACT (ADR-007 — Display lifecycle):
+    //
+    // `displays()` returns a SNAPSHOT, not a subscription. Callers MUST
+    // NOT rely on the result staying valid; the snapshot is good for the
+    // current message-loop turn only.
+    //
+    // `displays()` MUST be callable before any window exists. If a
+    // platform needs an event-loop tick to populate the output list, it
+    // MUST drive that tick on demand here rather than return an empty
+    // list. Brief blocking is acceptable to satisfy this contract
+    // (closes the pre-window-empty-list pattern on Wayland).
+    //
+    // `PlatformDisplay::id` is stable across the lifetime of that
+    // display. Reconnect after disconnect yields a new id — identity is
+    // by connection, not by physical hardware.
+    //
+    // For subscription semantics see `Platform::on_displays_changed` and
+    // `Window::observe_display_change` (added together with this ADR).
+    //
+    // See: `docs/research/adr/ADR-007-display-lifecycle.md`.
     fn displays(&self) -> Vec<Rc<dyn PlatformDisplay>>;
     fn primary_display(&self) -> Option<Rc<dyn PlatformDisplay>>;
+
+    /// ADR-014: classify the active renderer. Default implementation
+    /// returns [`RendererKind::Hardware`]; the wgpu backend overrides
+    /// this to inspect `Adapter::get_info().device_type` and return
+    /// [`RendererKind::Software`] when running on Mesa `llvmpipe` /
+    /// other CPU rasterizers. macOS Metal / Windows DirectX never
+    /// surface software adapters and keep the default.
+    ///
+    /// Callers consume this via [`App::renderer_kind`] — see the type
+    /// for the contract.
+    fn renderer_kind(&self) -> RendererKind {
+        RendererKind::Hardware
+    }
+
+    /// ADR-007: subscribe to display add/remove events.
+    ///
+    /// Fires whenever the snapshot returned by [`Platform::displays`] would
+    /// differ from the previous snapshot — output attach (monitor plugged
+    /// in, virtual display added) or detach (monitor unplugged, AirPlay
+    /// disconnected). The default implementation never fires; backends opt
+    /// in by overriding it. Wayland binds `wl_registry::global_remove` /
+    /// `wl_output`; X11 binds XRandR notification events.
+    ///
+    /// Callers receive no payload — they re-read [`Platform::displays`] to
+    /// observe the change. Coarse but composable; multiple callbacks can
+    /// be registered and the platform implementation broadcasts.
+    ///
+    /// Distinct from [`Window::observe_display_change`] which fires when
+    /// one window's bound display changes (different identity or different
+    /// scale factor).
+    ///
+    /// See: `docs/research/adr/ADR-007-display-lifecycle.md` — decision 3.
+    fn on_displays_changed(&self, _callback: Box<dyn FnMut()>) {
+        // Default: never fires. Backends override.
+    }
     fn active_window(&self) -> Option<AnyWindowHandle>;
     fn window_stack(&self) -> Option<Vec<AnyWindowHandle>> {
         None
@@ -1286,10 +1371,233 @@ pub struct UTF16Selection {
     pub reversed: bool,
 }
 
+/// Platform-agnostic text-editing command produced by the host IME /
+/// key-binding system (per ADR-009).
+///
+/// On macOS the variants map 1:1 to the standard Cocoa
+/// [`StandardKeyBindingResponding`](https://developer.apple.com/documentation/appkit/standardkeybindingresponding)
+/// selectors (`moveLeft:`, `moveWordBackward:`, `deleteWordBackward:`,
+/// ...). The macOS bridge in `platform/mac/window.rs` translates the
+/// `Sel` argument of `doCommandBySelector:` into a `EditorCommand`
+/// variant before dispatching to [`InputHandler::handle_editor_command`].
+/// Future Windows (`WM_KEYDOWN` + accel tables) and Linux
+/// (`xdg_input_method_v2` actions) IME bridges fill the same enum from
+/// their platform-native equivalents.
+///
+/// Marked `#[non_exhaustive]` so new variants can be added as more
+/// platform mappings come online without breaking matchers.
+///
+/// See `docs/research/adr/ADR-009-input-ime-contract.md`.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+#[non_exhaustive]
+// Variant docs deliberately omitted — the enum-level docblock above and
+// the per-section `// ──` separators (caret motion / selection-extending
+// / deletion / structural / etc.) carry the contract. Each variant
+// corresponds 1:1 to the same-named Cocoa selector
+// (`NSStandardKeyBindingResponding`); individual rustdoc would just
+// repeat the Apple documentation.
+#[expect(missing_docs)]
+pub enum EditorCommand {
+    // ── Caret motion (logical direction) ───────────────────────────
+    MoveForward,
+    MoveBackward,
+    // ── Caret motion (visual direction) ────────────────────────────
+    MoveLeft,
+    MoveRight,
+    MoveUp,
+    MoveDown,
+    // ── Word-level motion ──────────────────────────────────────────
+    MoveWordForward,
+    MoveWordBackward,
+    MoveWordLeft,
+    MoveWordRight,
+    // ── Line-level motion ──────────────────────────────────────────
+    MoveToBeginningOfLine,
+    MoveToEndOfLine,
+    MoveToLeftEndOfLine,
+    MoveToRightEndOfLine,
+    // ── Paragraph-level motion ─────────────────────────────────────
+    MoveToBeginningOfParagraph,
+    MoveToEndOfParagraph,
+    // ── Document-level motion ──────────────────────────────────────
+    MoveToBeginningOfDocument,
+    MoveToEndOfDocument,
+    // ── Page motion ────────────────────────────────────────────────
+    PageUp,
+    PageDown,
+    // ── Selection-extending motion (visual direction) ──────────────
+    MoveLeftAndModifySelection,
+    MoveRightAndModifySelection,
+    MoveUpAndModifySelection,
+    MoveDownAndModifySelection,
+    // ── Selection-extending motion (word-level) ────────────────────
+    MoveWordLeftAndModifySelection,
+    MoveWordRightAndModifySelection,
+    MoveWordForwardAndModifySelection,
+    MoveWordBackwardAndModifySelection,
+    // ── Selection-extending motion (line/doc/page) ─────────────────
+    MoveToBeginningOfLineAndModifySelection,
+    MoveToEndOfLineAndModifySelection,
+    MoveToBeginningOfDocumentAndModifySelection,
+    MoveToEndOfDocumentAndModifySelection,
+    PageUpAndModifySelection,
+    PageDownAndModifySelection,
+    // ── Deletion (word/line/forward/backward) ──────────────────────
+    DeleteBackward,
+    DeleteForward,
+    DeleteWordBackward,
+    DeleteWordForward,
+    DeleteToBeginningOfLine,
+    DeleteToEndOfLine,
+    DeleteToBeginningOfParagraph,
+    DeleteToEndOfParagraph,
+    // ── Whitespace / structural ────────────────────────────────────
+    InsertNewline,
+    InsertNewlineIgnoringFieldEditor,
+    InsertTab,
+    InsertTabIgnoringFieldEditor,
+    InsertBacktab,
+    // ── Selection (whole document, line) ───────────────────────────
+    SelectAll,
+    SelectLine,
+    SelectParagraph,
+    SelectWord,
+    // ── Transpose / case ───────────────────────────────────────────
+    Transpose,
+    TransposeWords,
+    UppercaseWord,
+    LowercaseWord,
+    CapitalizeWord,
+    // ── Misc ───────────────────────────────────────────────────────
+    Yank,
+    CancelOperation,
+}
+
+impl EditorCommand {
+    /// Map a Cocoa `NSStandardKeyBindingResponding` selector name (as
+    /// returned by `Sel::name()`, including the trailing `:`) to a
+    /// matching variant. Returns `None` for selectors the contract does
+    /// not yet cover — in that case the macOS bridge falls back to the
+    /// keystroke path (ADR-009 decision 3: keymap is the fallback).
+    ///
+    /// The function lives on the cross-platform `EditorCommand` type so
+    /// it is unit-testable without a macOS host. The actual Objective-C
+    /// `Sel` argument lives in `platform/mac/window.rs` —
+    /// `Sel::name() -> &str` feeds into this lookup.
+    ///
+    /// See: Apple's `NSStandardKeyBindingResponding` reference and
+    /// `docs/research/adr/ADR-009-input-ime-contract.md`.
+    pub fn for_cocoa_selector(name: &str) -> Option<Self> {
+        use EditorCommand as E;
+        Some(match name {
+            // Caret motion (logical direction).
+            "moveForward:" => E::MoveForward,
+            "moveBackward:" => E::MoveBackward,
+            // Caret motion (visual direction).
+            "moveLeft:" => E::MoveLeft,
+            "moveRight:" => E::MoveRight,
+            "moveUp:" => E::MoveUp,
+            "moveDown:" => E::MoveDown,
+            // Word-level motion.
+            "moveWordForward:" => E::MoveWordForward,
+            "moveWordBackward:" => E::MoveWordBackward,
+            "moveWordLeft:" => E::MoveWordLeft,
+            "moveWordRight:" => E::MoveWordRight,
+            // Line-level motion.
+            "moveToBeginningOfLine:" => E::MoveToBeginningOfLine,
+            "moveToEndOfLine:" => E::MoveToEndOfLine,
+            "moveToLeftEndOfLine:" => E::MoveToLeftEndOfLine,
+            "moveToRightEndOfLine:" => E::MoveToRightEndOfLine,
+            // Paragraph-level motion.
+            "moveToBeginningOfParagraph:" => E::MoveToBeginningOfParagraph,
+            "moveToEndOfParagraph:" => E::MoveToEndOfParagraph,
+            // Document-level motion.
+            "moveToBeginningOfDocument:" => E::MoveToBeginningOfDocument,
+            "moveToEndOfDocument:" => E::MoveToEndOfDocument,
+            // Page motion.
+            "pageUp:" => E::PageUp,
+            "pageDown:" => E::PageDown,
+            // Selection-extending visual motion.
+            "moveLeftAndModifySelection:" => E::MoveLeftAndModifySelection,
+            "moveRightAndModifySelection:" => E::MoveRightAndModifySelection,
+            "moveUpAndModifySelection:" => E::MoveUpAndModifySelection,
+            "moveDownAndModifySelection:" => E::MoveDownAndModifySelection,
+            // Selection-extending word motion.
+            "moveWordLeftAndModifySelection:" => E::MoveWordLeftAndModifySelection,
+            "moveWordRightAndModifySelection:" => E::MoveWordRightAndModifySelection,
+            "moveWordForwardAndModifySelection:" => E::MoveWordForwardAndModifySelection,
+            "moveWordBackwardAndModifySelection:" => E::MoveWordBackwardAndModifySelection,
+            // Selection-extending line/doc/page motion.
+            "moveToBeginningOfLineAndModifySelection:" => {
+                E::MoveToBeginningOfLineAndModifySelection
+            }
+            "moveToEndOfLineAndModifySelection:" => E::MoveToEndOfLineAndModifySelection,
+            "moveToBeginningOfDocumentAndModifySelection:" => {
+                E::MoveToBeginningOfDocumentAndModifySelection
+            }
+            "moveToEndOfDocumentAndModifySelection:" => E::MoveToEndOfDocumentAndModifySelection,
+            "pageUpAndModifySelection:" => E::PageUpAndModifySelection,
+            "pageDownAndModifySelection:" => E::PageDownAndModifySelection,
+            // Deletion.
+            "deleteBackward:" => E::DeleteBackward,
+            "deleteForward:" => E::DeleteForward,
+            "deleteWordBackward:" => E::DeleteWordBackward,
+            "deleteWordForward:" => E::DeleteWordForward,
+            "deleteToBeginningOfLine:" => E::DeleteToBeginningOfLine,
+            "deleteToEndOfLine:" => E::DeleteToEndOfLine,
+            "deleteToBeginningOfParagraph:" => E::DeleteToBeginningOfParagraph,
+            "deleteToEndOfParagraph:" => E::DeleteToEndOfParagraph,
+            // Structural insertion.
+            "insertNewline:" => E::InsertNewline,
+            "insertNewlineIgnoringFieldEditor:" => E::InsertNewlineIgnoringFieldEditor,
+            "insertTab:" => E::InsertTab,
+            "insertTabIgnoringFieldEditor:" => E::InsertTabIgnoringFieldEditor,
+            "insertBacktab:" => E::InsertBacktab,
+            // Selection.
+            "selectAll:" => E::SelectAll,
+            "selectLine:" => E::SelectLine,
+            "selectParagraph:" => E::SelectParagraph,
+            "selectWord:" => E::SelectWord,
+            // Transpose / case.
+            "transpose:" => E::Transpose,
+            "transposeWords:" => E::TransposeWords,
+            "uppercaseWord:" => E::UppercaseWord,
+            "lowercaseWord:" => E::LowercaseWord,
+            "capitalizeWord:" => E::CapitalizeWord,
+            // Misc.
+            "yank:" => E::Yank,
+            "cancelOperation:" => E::CancelOperation,
+            _ => return None,
+        })
+    }
+}
+
 /// Zed's interface for handling text input from the platform's IME system
 /// This is currently a 1:1 exposure of the NSTextInputClient API:
 ///
 /// <https://developer.apple.com/documentation/appkit/nstextinputclient>
+//
+// CONTRACT (ADR-009 — `doCommandBySelector` honours the selector):
+//
+// On macOS the key-binding manager translates a key combo (including
+// anything from `~/Library/KeyBindings/DefaultKeyBinding.dict`) into a
+// `NSSelector` and calls `doCommandBySelector:` on the input client.
+// Pre-ADR behaviour dropped the selector on the floor and re-fired the
+// original keystroke through the flui keymap, losing every Cocoa
+// standard binding (`ctrl-W`, `ctrl-A`, ...) and every user binding.
+//
+// The contract: the macOS bridge MUST translate the selector to an
+// [`EditorCommand`] variant and call [`InputHandler::handle_editor_command`].
+// Re-firing the keystroke is the fallback only when the handler
+// returns `false` (unknown command, no widget claim) — the keymap is a
+// fallback, not a bypass.
+//
+// Cross-platform symmetry: Windows (`WM_KEYDOWN` + accel tables) and
+// Wayland (`text-input-unstable-v3` / `xdg_input_method_v2`) bridges
+// fill the same enum from their native action sources when the bridges
+// are written.
+//
+// See `docs/research/adr/ADR-009-input-ime-contract.md`.
 pub trait InputHandler: 'static {
     /// Get the range of the user's currently selected text, if any
     /// Corresponds to [selectedRange()](https://developer.apple.com/documentation/appkit/nstextinputclient/1438242-selectedrange)
@@ -1385,7 +1693,62 @@ pub trait InputHandler: 'static {
     fn accepts_text_input(&mut self, _window: &mut Window, _cx: &mut App) -> bool {
         true
     }
+
+    /// Handle a platform-issued [`EditorCommand`] (ADR-009).
+    ///
+    /// Called by the macOS bridge when the key-binding manager invokes
+    /// `doCommandBySelector:` (e.g. user pressed `ctrl-W` configured to
+    /// `deleteWordBackward:`). Returns `true` when the command was
+    /// handled — the platform bridge then suppresses the fallback path
+    /// of re-emitting the original keystroke through the keymap. Returns
+    /// `false` (the default) when the handler does not recognise the
+    /// command — the bridge falls back to keystroke dispatch, and the
+    /// platform's default beep if nothing else claims the keystroke.
+    ///
+    /// Implementors of text widgets opt in by matching the variants they
+    /// care about; opting out (`false`) preserves the existing keymap
+    /// path verbatim. See `docs/research/adr/ADR-009-input-ime-contract.md`.
+    fn handle_editor_command(
+        &mut self,
+        _command: EditorCommand,
+        _window: &mut Window,
+        _cx: &mut App,
+    ) -> bool {
+        false
+    }
 }
+
+// CONTRACT (ADR-008 — Window chrome invariants):
+//
+// `WindowOptions` flags (`is_movable`, `is_resizable`, `is_minimizable`)
+// are INVARIANTS enforced by flui-core, not hints to the platform. When
+// a flag is `false`, no code path — inside or outside flui-core — may
+// end with the window in the rejected state. Each platform implements
+// **two lines** of enforcement:
+//
+//   1. First line: platform-level style/flag (Windows `WS_MINIMIZEBOX`,
+//      macOS `NSWindow::styleMask`, Linux compositor hint). This greys
+//      out the title-bar button and removes the menu entry.
+//   2. Second line: filter system-menu / keyboard-shortcut /
+//      programmatic invocation paths. Without this, Alt+Space → Minimize
+//      (Windows), Dock → Minimize (macOS), and snap layouts bypass the
+//      first line.
+//
+// `WindowOptions::default()` keeps everything `true`; the invariant only
+// fires when a caller explicitly opts out.
+//
+// Programmatic API (`Window::minimize_window`, future maximize/resize)
+// is gated by `Window::is_minimizable` / `is_resizable` / `is_movable`
+// (carried from `WindowOptions` at construction). Rejection is a no-op
+// + `log::warn!` per ADR-008 decision 6.
+//
+// Drag-region: a pointer-down within the title bar's bounds that lands
+// on a child element with a `mouse_down` listener delivers the event to
+// the child first; window-move is the fall-through for the bare title-
+// bar surface. Programmatic opt-in (e.g. a child explicitly declaring
+// `.window_drag()`) re-enables the move gesture on that child.
+//
+// See: `docs/research/adr/ADR-008-window-chrome-contract.md`.
 
 /// The variables that can be configured when creating a new window
 #[derive(Debug)]
@@ -1612,6 +1975,33 @@ pub enum WindowAppearance {
     VibrantDark,
 }
 
+// CONTRACT (ADR-017 — Window background blur):
+//
+// `WindowBackgroundAppearance::Blurred` is BEST-EFFORT, not guaranteed.
+// Callers MUST NOT assume the value they set is the value they get; on
+// an unsupported compositor the visual result falls through to
+// `Transparent` (or `Opaque`, per the surface config).
+// `background_appearance()` reflects the ACTUALLY APPLIED state, not the
+// requested one.
+//
+// Per-platform capability matrix:
+//   | Platform               | Mechanism                                  | Status |
+//   |------------------------|--------------------------------------------|--------|
+//   | macOS                  | `NSVisualEffectView`                       | impl   |
+//   | Windows 10+            | `DwmEnableBlurBehindWindow` / Mica         | impl   |
+//   | Wayland (KDE)          | `org.kde.kwin.blur` protocol               | TODO   |
+//   | Wayland (GNOME/wlroots)| (no portable protocol)                     | n/a    |
+//   | X11 + KDE              | `_KDE_NET_WM_BLUR_BEHIND_REGION` xprop     | TODO   |
+//   | X11 + Deepin           | `_NET_WM_DEEPIN_BLUR_REGION_ROUNDED` xprop | TODO   |
+//   | X11 + i3 / GNOME-on-X  | (no standard)                              | n/a    |
+//   | Web                    | CSS `backdrop-filter: blur()`              | future |
+//
+// Blur region is the entire window (single-region). A future
+// `WindowBackgroundAppearance::PartialBlur { region }` is out of scope
+// here — single-region is the contract today.
+//
+// See: `docs/research/adr/ADR-017-window-background-blur.md`.
+
 /// The appearance of the background of the window itself, when there is
 /// no content or the content is transparent.
 #[derive(Copy, Clone, Debug, Default, PartialEq)]
@@ -1827,14 +2217,28 @@ pub struct ClipboardItem {
 }
 
 /// Either a ClipboardString or a ClipboardImage
+///
+/// ADR-011: the historic `ClipboardEntry::ExternalPaths(ExternalPaths)`
+/// variant was renamed to `ClipboardEntry::ExternalDrop(ExternalDropPayload)`
+/// so the clipboard surface shares the same typed payload as drag-and-drop
+/// (decision 4: "Paste and drop carry the same shape; one ADR, one enum").
+/// Existing producers / consumers continue to work for the `Paths` variant
+/// via pattern-match against `ExternalDropPayload::Paths(...)`; the other
+/// payload categories (Urls, Text, Html, Mime, Mixed) become accessible to
+/// callers as platform clipboards advertise them.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum ClipboardEntry {
     /// A string entry
     String(ClipboardString),
     /// An image entry
     Image(Image),
-    /// A file entry
-    ExternalPaths(crate::ExternalPaths),
+    /// ADR-011: a typed cross-process payload (paths, URLs, text, HTML,
+    /// arbitrary MIME, or `Mixed`). Replaces the pre-ADR
+    /// `ExternalPaths` variant; current platform clipboards continue to
+    /// emit `ExternalDropPayload::Paths` until per-platform MIME
+    /// negotiation lands.
+    ExternalDrop(crate::ExternalDropPayload),
 }
 
 impl ClipboardItem {
@@ -1884,7 +2288,14 @@ impl ClipboardItem {
 
         if answer.is_empty() {
             for entry in self.entries.iter() {
-                if let ClipboardEntry::ExternalPaths(paths) = entry {
+                // ADR-011: fall back to the path category of the new
+                // typed payload; other variants don't have a path
+                // representation and are skipped here. A future
+                // overload could surface URL / text fallbacks if a
+                // user-visible reason emerges.
+                if let ClipboardEntry::ExternalDrop(crate::ExternalDropPayload::Paths(paths)) =
+                    entry
+                {
                     for path in &paths.0 {
                         use std::fmt::Write as _;
                         _ = write!(answer, "{}", path.display());
@@ -2198,5 +2609,109 @@ impl From<String> for ClipboardString {
             text: value,
             metadata: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// ADR-009 regression test for the Cocoa selector → [`EditorCommand`]
+    /// lookup table. Locks decision 1 — "the macOS bridge MUST translate
+    /// the selector to an `EditorCommand` variant" — without requiring a
+    /// macOS host: the mapping is a pure string-to-enum function and
+    /// runs on every platform.
+    ///
+    /// Spot-checks representative variants from each category (motion,
+    /// selection-extension, deletion, structural insertion). Unknown
+    /// selectors return `None` so the macOS bridge falls back to the
+    /// keystroke path per ADR-009 decision 3.
+    #[test]
+    fn adr_009_for_cocoa_selector_known_and_unknown() {
+        assert_eq!(
+            EditorCommand::for_cocoa_selector("moveLeft:"),
+            Some(EditorCommand::MoveLeft)
+        );
+        assert_eq!(
+            EditorCommand::for_cocoa_selector("moveToBeginningOfLine:"),
+            Some(EditorCommand::MoveToBeginningOfLine),
+            "ctrl-A (and Home on Cocoa standard bindings) must resolve to MoveToBeginningOfLine"
+        );
+        assert_eq!(
+            EditorCommand::for_cocoa_selector("deleteWordBackward:"),
+            Some(EditorCommand::DeleteWordBackward),
+            "ctrl-W (and the user-`DefaultKeyBinding.dict` Emacs-style binding) must resolve to DeleteWordBackward"
+        );
+        assert_eq!(
+            EditorCommand::for_cocoa_selector("moveWordLeftAndModifySelection:"),
+            Some(EditorCommand::MoveWordLeftAndModifySelection),
+            "selection-extending word motion (ADR-009 enum has the `*AndModifySelection` family)"
+        );
+        assert_eq!(
+            EditorCommand::for_cocoa_selector("insertNewline:"),
+            Some(EditorCommand::InsertNewline)
+        );
+        assert_eq!(
+            EditorCommand::for_cocoa_selector("transpose:"),
+            Some(EditorCommand::Transpose)
+        );
+        assert_eq!(
+            EditorCommand::for_cocoa_selector("selectAll:"),
+            Some(EditorCommand::SelectAll)
+        );
+        assert_eq!(
+            EditorCommand::for_cocoa_selector("cancelOperation:"),
+            Some(EditorCommand::CancelOperation)
+        );
+        // Selector trailing colon is required; matching is exact.
+        assert!(
+            EditorCommand::for_cocoa_selector("moveLeft").is_none(),
+            "selector names from `Sel::name()` always include the trailing `:`"
+        );
+        // Unknown selector falls through; macOS bridge then re-fires the
+        // original keystroke (ADR-009 decision 3).
+        assert!(
+            EditorCommand::for_cocoa_selector("doSomeUnsupportedThing:").is_none(),
+            "unknown selectors must return None so the keystroke fallback path engages"
+        );
+    }
+
+    /// ADR-009 — locks the *dispatch pattern* the macOS bridge expects
+    /// downstream: a mock receiver records observed [`EditorCommand`]
+    /// values and reports whether it claims each one. This is the
+    /// shape the bridge calls into; the actual
+    /// [`InputHandler::handle_editor_command`] default return (false)
+    /// is verified by a separate `TestApp`-based test in
+    /// `app::test_app::tests::adr_009_input_handler_handle_editor_command_default_returns_false`
+    /// where `&mut Window` / `&mut App` can be constructed.
+    ///
+    /// The two tests are split because the trait method requires
+    /// engine-level context (`&mut Window` / `&mut App`) which
+    /// `platform.rs::tests` cannot reach without crossing back into
+    /// the `app` module. This test stays focused on the variant-level
+    /// dispatch contract: a receiver can observe the variant and
+    /// return a boolean.
+    #[test]
+    fn adr_009_editor_command_dispatch_pattern() {
+        struct MockReceiver {
+            seen: Vec<EditorCommand>,
+        }
+        impl MockReceiver {
+            fn dispatch(&mut self, cmd: EditorCommand) -> bool {
+                self.seen.push(cmd);
+                matches!(
+                    cmd,
+                    EditorCommand::DeleteWordBackward | EditorCommand::MoveToBeginningOfLine
+                )
+            }
+        }
+
+        let mut handler = MockReceiver { seen: Vec::new() };
+        assert!(handler.dispatch(EditorCommand::DeleteWordBackward));
+        assert!(handler.dispatch(EditorCommand::MoveToBeginningOfLine));
+        assert!(!handler.dispatch(EditorCommand::Transpose));
+        assert_eq!(handler.seen.len(), 3);
+        assert_eq!(handler.seen[0], EditorCommand::DeleteWordBackward);
+        assert_eq!(handler.seen[1], EditorCommand::MoveToBeginningOfLine);
     }
 }

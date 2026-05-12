@@ -71,6 +71,10 @@ pub mod reentrancy;
 mod scene;
 /// The scheduler module provides task scheduling, execution, and timing primitives.
 pub mod scheduler;
+/// ADR-019: scroll-physics scaffolding (trait + reference impls) for
+/// the future `Scrollable` widget. Types-only; no widget consumer
+/// yet.
+pub mod scroll;
 mod shared_string;
 mod shared_uri;
 mod style;
@@ -81,6 +85,10 @@ mod tab_stop;
 mod taffy;
 #[cfg(any(test, feature = "test-support"))]
 pub mod test;
+/// ADR-018: named priority constants for [`Window::defer_draw`]
+/// (`Z_TOOLTIP`, `Z_DROPDOWN`, `Z_MODAL`, `Z_DRAG_PREVIEW`). See the
+/// module's own docs for the convention.
+pub mod z;
 
 #[cfg(test)]
 mod lock_tests;
@@ -207,8 +215,9 @@ pub use provider::{InheritedValue, Provider};
 
 // Core platform traits
 pub use platform::{
-    InputHandler, Platform, PlatformAtlas, PlatformDisplay, PlatformTextSystem, PlatformWindow,
-    ScreenCaptureFrame, ScreenCaptureSource, ScreenCaptureStream, SourceMetadata,
+    EditorCommand, InputHandler, Platform, PlatformAtlas, PlatformDisplay, PlatformTextSystem,
+    PlatformWindow, RendererKind, ScreenCaptureFrame, ScreenCaptureSource, ScreenCaptureStream,
+    SourceMetadata,
 };
 
 // Display, window, and input types

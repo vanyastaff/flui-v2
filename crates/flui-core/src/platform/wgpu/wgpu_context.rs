@@ -55,7 +55,11 @@ impl WgpuContext {
             move |reason, message| {
                 log::error!("wgpu device lost: reason={reason:?}, message={message}");
                 if reason != wgpu::DeviceLostReason::Destroyed {
-                    device_lost.store(true, Ordering::Relaxed);
+                    // ADR-005 decision 4: cross-window observers use SeqCst so
+                    // the flag's "lost" transition becomes visible to other
+                    // windows / the recovery-coordinator thread without
+                    // depending on platform memory-model strength.
+                    device_lost.store(true, Ordering::SeqCst);
                 }
             }
         });
@@ -115,7 +119,11 @@ impl WgpuContext {
             move |reason, message| {
                 log::error!("wgpu device lost: reason={reason:?}, message={message}");
                 if reason != wgpu::DeviceLostReason::Destroyed {
-                    device_lost.store(true, Ordering::Relaxed);
+                    // ADR-005 decision 4: cross-window observers use SeqCst so
+                    // the flag's "lost" transition becomes visible to other
+                    // windows / the recovery-coordinator thread without
+                    // depending on platform memory-model strength.
+                    device_lost.store(true, Ordering::SeqCst);
                 }
             }
         });
@@ -389,12 +397,32 @@ impl WgpuContext {
     /// Returns true if the GPU device was lost (e.g., due to driver crash, suspend/resume).
     /// When this returns true, the context should be recreated.
     pub fn device_lost(&self) -> bool {
-        self.device_lost.load(Ordering::Relaxed)
+        // ADR-005 decision 4: SeqCst load to pair with the SeqCst stores
+        // from the device-lost callbacks. Other windows / the recovery
+        // coordinator observe a consistent "lost" timeline.
+        self.device_lost.load(Ordering::SeqCst)
     }
 
     /// Returns a clone of the device_lost flag for sharing with renderers.
     pub(crate) fn device_lost_flag(&self) -> Arc<AtomicBool> {
         Arc::clone(&self.device_lost)
+    }
+
+    /// ADR-014: classify the wgpu adapter. Returns
+    /// [`crate::RendererKind::Software`] when wgpu reports
+    /// `wgpu::DeviceType::Cpu` (Mesa `llvmpipe`, WARP, etc.); otherwise
+    /// [`crate::RendererKind::Hardware`]. The Linux/X11/Wayland
+    /// `Platform::renderer_kind` impls forward to this method —
+    /// wiring is deferred per the rollout plan, so this method is
+    /// currently dead from the engine's POV but published as the
+    /// stable downstream surface for apps that hold a `WgpuContext`
+    /// directly (e.g. via the headless renderer).
+    #[allow(dead_code)] // ADR-014: pending LinuxPlatform forward.
+    pub fn renderer_kind(&self) -> crate::RendererKind {
+        match self.adapter.get_info().device_type {
+            wgpu::DeviceType::Cpu => crate::RendererKind::Software,
+            _ => crate::RendererKind::Hardware,
+        }
     }
 }
 
@@ -434,6 +462,80 @@ mod tests {
         assert_eq!(
             parse_pci_id(&format!("{:#x}", 0x1234)).unwrap(),
             parse_pci_id(&format!("{:#X}", 0x1234)).unwrap(),
+        );
+    }
+
+    /// ADR-005 regression test for `device_lost()` as the single source
+    /// of truth.
+    ///
+    /// Locks two ADR-005 contract points:
+    /// 1. Decision 1 — `WgpuContext::device_lost()` is the canonical
+    ///    "is the GPU currently usable" probe. The atomic flag returned
+    ///    by `device_lost_flag()` must be the same `Arc<AtomicBool>` the
+    ///    callback at construction writes to, so external observers
+    ///    (renderers, atlases) and the public probe agree.
+    /// 2. Decision 4 — the flag uses `Ordering::SeqCst` for cross-window
+    ///    observation. We exercise SeqCst by writing in one thread and
+    ///    reading from another, asserting visibility.
+    ///
+    /// Gated on `test-support` because `WgpuContext::new_headless` itself
+    /// is gated there — without a wgpu adapter, the test is a no-op on
+    /// CI runners that lack lavapipe. Skips gracefully (returns early
+    /// with a `log::info!`) when no adapter is available; this keeps the
+    /// `cargo test -p flui-core --features test-support` matrix green on
+    /// every host the project actually runs on (macOS, Linux+wgpu,
+    /// Windows-via-wgpu, headless+lavapipe).
+    ///
+    /// Note: this test does NOT drive `Renderer::recover()` — that path
+    /// requires a real window handle and is verified by manual smoke
+    /// (see ADR-005 action item 4 / plan task 5 verification).
+    /// See `docs/research/adr/ADR-005-gpu-device-loss.md`.
+    #[cfg(all(feature = "test-support", not(target_family = "wasm")))]
+    #[test]
+    fn adr_005_device_lost_flag_is_canonical_and_shared() {
+        use super::WgpuContext;
+        use std::sync::atomic::Ordering;
+
+        let context = match WgpuContext::new_headless() {
+            Ok(c) => c,
+            Err(e) => {
+                log::info!(
+                    "ADR-005 test skipped: no headless wgpu adapter on this host ({e:?}). \
+                     Manual smoke on a wgpu-capable host is required per plan task 5 verification."
+                );
+                return;
+            }
+        };
+
+        // Decision 1: fresh context is not in a lost state.
+        assert!(
+            !context.device_lost(),
+            "ADR-005: fresh WgpuContext::new_headless must report device_lost == false"
+        );
+
+        // Decision 1 + 4: `device_lost_flag()` returns the same Arc that
+        // `device_lost()` reads. Toggling through the shared Arc must be
+        // immediately observable via the canonical probe.
+        let flag = context.device_lost_flag();
+        flag.store(true, Ordering::SeqCst);
+        assert!(
+            context.device_lost(),
+            "ADR-005: device_lost_flag() must alias the same AtomicBool that \
+             device_lost() reads — toggling one MUST be visible through the other"
+        );
+
+        // Cross-thread observation: write in a spawned thread, read on
+        // this one. SeqCst ordering guarantees visibility after thread
+        // join completes.
+        flag.store(false, Ordering::SeqCst);
+        let flag_for_thread = std::sync::Arc::clone(&flag);
+        let join = std::thread::spawn(move || {
+            flag_for_thread.store(true, Ordering::SeqCst);
+        });
+        join.join().expect("thread did not panic");
+        assert!(
+            context.device_lost(),
+            "ADR-005: cross-thread store-via-shared-Arc must be visible to device_lost() reads"
         );
     }
 }

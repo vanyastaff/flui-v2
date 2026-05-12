@@ -62,7 +62,7 @@ use crate::platform::linux::{
 
 use crate::platform::wgpu::{CompositorGpuHint, GpuContext};
 use flui_core::{
-    AnyWindowHandle, Bounds, ClipboardItem, CursorStyle, DisplayId, FileDropEvent, Keystroke,
+    AnyWindowHandle, Bounds, ClipboardItem, CursorStyle, DisplayId, ExternalDropEvent, Keystroke,
     Modifiers, ModifiersChangedEvent, MouseButton, Pixels, PlatformDisplay, PlatformInput,
     PlatformKeyboardLayout, PlatformWindow, Point, RequestFrameOptions, ScrollDelta, Size,
     TouchPhase, WindowParams, point, px,
@@ -813,9 +813,10 @@ impl X11Client {
                 } else if event.type_ == state.atoms.XdndLeave {
                     let position = state.xdnd_state.position;
                     drop(state);
-                    window
-                        .handle_input(PlatformInput::FileDrop(FileDropEvent::Pending { position }));
-                    window.handle_input(PlatformInput::FileDrop(FileDropEvent::Exited {}));
+                    window.handle_input(PlatformInput::FileDrop(ExternalDropEvent::Pending {
+                        position,
+                    }));
+                    window.handle_input(PlatformInput::FileDrop(ExternalDropEvent::Exited {}));
                     self.0.borrow_mut().xdnd_state = Xdnd::default();
                 } else if event.type_ == state.atoms.XdndPosition {
                     if let Ok(pos) = get_reply(
@@ -847,8 +848,9 @@ impl X11Client {
                     );
                     let position = state.xdnd_state.position;
                     drop(state);
-                    window
-                        .handle_input(PlatformInput::FileDrop(FileDropEvent::Pending { position }));
+                    window.handle_input(PlatformInput::FileDrop(ExternalDropEvent::Pending {
+                        position,
+                    }));
                 } else if event.type_ == state.atoms.XdndDrop {
                     xdnd_send_finished(
                         &state.xcb_connection,
@@ -858,8 +860,9 @@ impl X11Client {
                     );
                     let position = state.xdnd_state.position;
                     drop(state);
-                    window
-                        .handle_input(PlatformInput::FileDrop(FileDropEvent::Submit { position }));
+                    window.handle_input(PlatformInput::FileDrop(ExternalDropEvent::Submit {
+                        position,
+                    }));
                     self.0.borrow_mut().xdnd_state = Xdnd::default();
                 }
             }
@@ -887,9 +890,16 @@ impl X11Client {
                         .filter_map(|path| Url::parse(path).log_err())
                         .filter_map(|url| url.to_file_path().log_err())
                         .collect();
-                    let input = PlatformInput::FileDrop(FileDropEvent::Entered {
+                    // ADR-011: X11 XDND currently only negotiates the
+                    // path/URI category. Wider MIME negotiation is a
+                    // per-platform follow-up tracked in the rollout
+                    // plan; for now this emits the legacy Paths-only
+                    // payload via the new typed enum.
+                    let input = PlatformInput::FileDrop(flui_core::ExternalDropEvent::Entered {
                         position: state.xdnd_state.position,
-                        paths: flui_core::ExternalPaths(paths),
+                        payload: flui_core::ExternalDropPayload::Paths(flui_core::ExternalPaths(
+                            paths,
+                        )),
                     });
                     drop(state);
                     window.handle_input(input);

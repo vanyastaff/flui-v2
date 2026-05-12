@@ -81,6 +81,14 @@ pub(crate) struct WindowsWindowInner {
     pub(crate) handle: AnyWindowHandle,
     pub(crate) hide_title_bar: bool,
     pub(crate) is_movable: bool,
+    // ADR-008: WindowOptions flags carried into the platform-window so the
+    // WM_SYSCOMMAND filter in events.rs can enforce them as INVARIANTS
+    // (second line of defense — the first line is the WS_* style bits set
+    // at CreateWindow time below, which only grey out the title-bar
+    // buttons). See `docs/research/adr/ADR-008-window-chrome-contract.md`.
+    pub(crate) is_minimizable: bool,
+    pub(crate) is_maximizable: bool,
+    pub(crate) is_resizable: bool,
     pub(crate) executor: ForegroundExecutor,
     pub(crate) validation_number: usize,
     pub(crate) main_receiver: PriorityQueueReceiver<RunnableVariant>,
@@ -240,6 +248,9 @@ impl WindowsWindowInner {
             handle: context.handle,
             hide_title_bar: context.hide_title_bar,
             is_movable: context.is_movable,
+            is_minimizable: context.is_minimizable,
+            is_maximizable: context.is_maximizable,
+            is_resizable: context.is_resizable,
             executor: context.executor.clone(),
             validation_number: context.validation_number,
             main_receiver: context.main_receiver.clone(),
@@ -362,6 +373,11 @@ struct WindowCreateContext {
     hide_title_bar: bool,
     display: WindowsDisplay,
     is_movable: bool,
+    // ADR-008: see `WindowsWindowInner` for the contract these fields
+    // carry from `WindowParams` into the per-window invariant filter.
+    is_minimizable: bool,
+    is_maximizable: bool,
+    is_resizable: bool,
     min_size: Option<Size<Pixels>>,
     executor: ForegroundExecutor,
     current_cursor: Option<HCURSOR>,
@@ -462,6 +478,16 @@ impl WindowsWindow {
             hide_title_bar,
             display,
             is_movable: params.is_movable,
+            is_minimizable: params.is_minimizable,
+            // `WindowParams` does not currently carry an `is_maximizable`
+            // flag (Win32 conflates max + resize via WS_THICKFRAME /
+            // WS_MAXIMIZEBOX). ADR-008 decision 3 treats a non-resizable
+            // window as also non-maximizable, so we derive the flag here
+            // from `is_resizable`. If `WindowOptions` later grows an
+            // explicit `is_maximizable`, pass it through and drop this
+            // derivation.
+            is_maximizable: params.is_resizable,
+            is_resizable: params.is_resizable,
             min_size: params.window_min_size,
             executor,
             current_cursor,
@@ -999,13 +1025,19 @@ impl IDropTarget_Impl for WindowsDragDropHandler_Impl {
                     .ok()
                     .log_err();
                 let scale_factor = self.0.state.scale_factor.get();
-                let input = PlatformInput::FileDrop(FileDropEvent::Entered {
+                // ADR-011: Windows currently only negotiates the
+                // `CF_HDROP` path category. Wider MIME negotiation
+                // (CF_INETURL, CF_UNICODETEXT, CF_HTML) is a
+                // Windows-side follow-up tracked in the rollout plan;
+                // for now this emits the legacy Paths-only payload via
+                // the new typed enum.
+                let input = PlatformInput::FileDrop(ExternalDropEvent::Entered {
                     position: logical_point(
                         cursor_position.x as f32,
                         cursor_position.y as f32,
                         scale_factor,
                     ),
-                    paths: ExternalPaths(paths),
+                    payload: ExternalDropPayload::Paths(ExternalPaths(paths)),
                 });
                 self.handle_drag_drop(input);
             } else {
@@ -1037,7 +1069,7 @@ impl IDropTarget_Impl for WindowsDragDropHandler_Impl {
                 .log_err();
         }
         let scale_factor = self.0.state.scale_factor.get();
-        let input = PlatformInput::FileDrop(FileDropEvent::Pending {
+        let input = PlatformInput::FileDrop(ExternalDropEvent::Pending {
             position: logical_point(
                 cursor_position.x as f32,
                 cursor_position.y as f32,
@@ -1053,7 +1085,7 @@ impl IDropTarget_Impl for WindowsDragDropHandler_Impl {
         unsafe {
             self.0.drop_target_helper.DragLeave().log_err();
         }
-        let input = PlatformInput::FileDrop(FileDropEvent::Exited);
+        let input = PlatformInput::FileDrop(ExternalDropEvent::Exited);
         self.handle_drag_drop(input);
 
         Ok(())
@@ -1079,7 +1111,7 @@ impl IDropTarget_Impl for WindowsDragDropHandler_Impl {
                 .log_err();
         }
         let scale_factor = self.0.state.scale_factor.get();
-        let input = PlatformInput::FileDrop(FileDropEvent::Submit {
+        let input = PlatformInput::FileDrop(ExternalDropEvent::Submit {
             position: logical_point(
                 cursor_position.x as f32,
                 cursor_position.y as f32,

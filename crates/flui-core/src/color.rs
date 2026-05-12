@@ -1,3 +1,22 @@
+// CONTRACT (ADR-003 — Color/alpha pipeline):
+//
+// `Rgba` and `Hsla` are **non-premultiplied (straight) alpha**. Conversions
+// to premultiplied happen only at the shader uniform / texture upload
+// boundary in `platform/wgpu`.
+//
+// `Rgba::blend` and `Hsla::blend` implement canonical source-over:
+//   out.a   = src.a + dst.a * (1 - src.a)
+//   out.rgb = (src.rgb * src.a + dst.rgb * dst.a * (1 - src.a)) / out.a
+// When `out.a == 0` the result is `(0,0,0,0)` (no NaN). A round-trip
+// "blend N layers on the CPU into one `Rgba`, then push that `Rgba` to
+// the GPU" must produce the same pixels as "let the GPU blend the N
+// layers itself", within float rounding.
+//
+// `opacity(f)` scales alpha multiplicatively; `alpha(f)` replaces it.
+// Neither composes layers — that is `blend`'s job.
+//
+// See: `docs/research/adr/ADR-003-color-alpha-pipeline.md`.
+
 use anyhow::{Context as _, bail};
 use schemars::{JsonSchema, json_schema};
 use serde::{
@@ -54,19 +73,69 @@ impl fmt::Debug for Rgba {
 }
 
 impl Rgba {
-    /// Create a new [`Rgba`] color by blending this and another color together
+    /// Compose `other` on top of `self` using canonical source-over alpha
+    /// blending (the formula every modern renderer uses; see the
+    /// `// CONTRACT (ADR-003)` block at the top of this file).
+    ///
+    /// `other` is the source (foreground), `self` is the destination
+    /// (background). The output is:
+    ///
+    /// ```text
+    /// out.a   = src.a + dst.a * (1 - src.a)
+    /// out.rgb = (src.rgb * src.a + dst.rgb * dst.a * (1 - src.a)) / out.a
+    /// ```
+    ///
+    /// Fast paths preserve the original semantics:
+    /// - `src.a >= 1.0` → returns `other` unchanged (fully opaque source).
+    /// - `src.a <= 0.0` → returns `*self` unchanged (fully transparent
+    ///   source contributes nothing).
+    ///
+    /// When `out.a == 0.0` the canonical RGB is `0/0` (undefined). Per
+    /// ADR-003 decision 5 the result is `(0.0, 0.0, 0.0, 0.0)` rather than
+    /// NaN — this is a contract, not an implementation detail; callers may
+    /// compare alphas to `<= 0.0` and short-circuit on it.
     pub fn blend(&self, other: Rgba) -> Self {
         if other.a >= 1.0 {
-            other
-        } else if other.a <= 0.0 {
-            *self
-        } else {
-            Rgba {
-                r: (self.r * (1.0 - other.a)) + (other.r * other.a),
-                g: (self.g * (1.0 - other.a)) + (other.g * other.a),
-                b: (self.b * (1.0 - other.a)) + (other.b * other.a),
-                a: self.a,
+            return other;
+        }
+        if other.a <= 0.0 {
+            // ADR-003 decision 5: when BOTH alphas are zero, the
+            // canonical output is `(0,0,0,0)` — the fast path returning
+            // `*self` would otherwise preserve non-zero RGB on a
+            // zero-alpha destination, which violates the contract that
+            // a fully-transparent result has undefined-but-zeroed RGB.
+            if self.a <= 0.0 {
+                return Rgba {
+                    r: 0.0,
+                    g: 0.0,
+                    b: 0.0,
+                    a: 0.0,
+                };
             }
+            return *self;
+        }
+
+        let src_a = other.a;
+        let dst_a = self.a;
+        let inv_src_a = 1.0 - src_a;
+        let out_a = src_a + dst_a * inv_src_a;
+
+        if out_a <= 0.0 {
+            // ADR-003 decision 5: zero-alpha output is (0,0,0,0); no NaN.
+            return Rgba {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 0.0,
+            };
+        }
+
+        let dst_weight = dst_a * inv_src_a;
+        Rgba {
+            r: (other.r * src_a + self.r * dst_weight) / out_a,
+            g: (other.g * src_a + self.g * dst_weight) / out_a,
+            b: (other.b * src_a + self.b * dst_weight) / out_a,
+            a: out_a,
         }
     }
 }
@@ -952,5 +1021,270 @@ mod tests {
         assert_eq!(background.opacity(0.5).colors[1], to.opacity(0.5));
         assert!(!background.is_transparent());
         assert!(background.opacity(0.0).is_transparent());
+    }
+
+    // ===== ADR-003 canonical source-over blend tests ============================
+    //
+    // These tests lock the contract from
+    // `docs/research/adr/ADR-003-color-alpha-pipeline.md`. A regression that
+    // reverts `Rgba::blend` to the pre-ADR formula (`a: self.a`,
+    // i.e. destination alpha preserved instead of composed) will fail
+    // `adr_003_canonical_alpha_two_half_over_half` first.
+
+    const ADR_003_FLOAT_TOL: f32 = 1e-6;
+
+    fn assert_rgba_near(actual: Rgba, expected: Rgba, tol: f32, label: &str) {
+        for (a, e, ch) in [
+            (actual.r, expected.r, 'r'),
+            (actual.g, expected.g, 'g'),
+            (actual.b, expected.b, 'b'),
+            (actual.a, expected.a, 'a'),
+        ] {
+            assert!(
+                (a - e).abs() <= tol,
+                "{label}: channel {ch} mismatch: actual={a}, expected={e}, tol={tol}, \
+                 actual_rgba={actual:?}, expected_rgba={expected:?}"
+            );
+        }
+    }
+
+    /// Canonical source-over reference implementation, used to cross-check
+    /// `Rgba::blend`. Re-deriving the formula inline (rather than calling
+    /// `blend`) is intentional — if `blend` regresses, this reference must
+    /// not regress with it.
+    fn reference_source_over(dst: Rgba, src: Rgba) -> Rgba {
+        if src.a >= 1.0 {
+            return src;
+        }
+        if src.a <= 0.0 {
+            // Match production: both-alpha-zero composite canonicalizes
+            // to (0,0,0,0) per ADR-003 decision 5.
+            if dst.a <= 0.0 {
+                return Rgba {
+                    r: 0.0,
+                    g: 0.0,
+                    b: 0.0,
+                    a: 0.0,
+                };
+            }
+            return dst;
+        }
+        let out_a = src.a + dst.a * (1.0 - src.a);
+        if out_a <= 0.0 {
+            return Rgba {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 0.0,
+            };
+        }
+        let dst_weight = dst.a * (1.0 - src.a);
+        Rgba {
+            r: (src.r * src.a + dst.r * dst_weight) / out_a,
+            g: (src.g * src.a + dst.g * dst_weight) / out_a,
+            b: (src.b * src.a + dst.b * dst_weight) / out_a,
+            a: out_a,
+        }
+    }
+
+    #[test]
+    fn adr_003_canonical_alpha_two_half_over_half() {
+        // 50% red over 50% blue: out.a = 0.5 + 0.5 * 0.5 = 0.75.
+        // The pre-ADR formula returned dst.a (= 0.5) — this test
+        // is the canary that locks the new formula.
+        let dst = Rgba {
+            r: 0.0,
+            g: 0.0,
+            b: 1.0,
+            a: 0.5,
+        };
+        let src = Rgba {
+            r: 1.0,
+            g: 0.0,
+            b: 0.0,
+            a: 0.5,
+        };
+        let out = dst.blend(src);
+        let expected = reference_source_over(dst, src);
+        assert!(
+            (out.a - 0.75).abs() <= ADR_003_FLOAT_TOL,
+            "ADR-003 regression: out.a must be 0.75 (canonical), got {} \
+             (pre-ADR buggy formula returned dst.a = 0.5).",
+            out.a
+        );
+        assert_rgba_near(out, expected, ADR_003_FLOAT_TOL, "half-over-half");
+    }
+
+    #[test]
+    fn adr_003_fast_path_opaque_source() {
+        let dst = Rgba {
+            r: 0.0,
+            g: 0.0,
+            b: 1.0,
+            a: 0.5,
+        };
+        let src = Rgba {
+            r: 1.0,
+            g: 0.0,
+            b: 0.0,
+            a: 1.0,
+        };
+        let out = dst.blend(src);
+        assert_eq!(out, src, "fully opaque source must replace destination");
+    }
+
+    #[test]
+    fn adr_003_fast_path_transparent_source() {
+        let dst = Rgba {
+            r: 0.0,
+            g: 0.0,
+            b: 1.0,
+            a: 0.5,
+        };
+        let src = Rgba {
+            r: 1.0,
+            g: 0.0,
+            b: 0.0,
+            a: 0.0,
+        };
+        let out = dst.blend(src);
+        assert_eq!(
+            out, dst,
+            "fully transparent source must leave destination unchanged"
+        );
+    }
+
+    #[test]
+    fn adr_003_zero_alpha_output_is_origin_no_nan() {
+        // Two fully-transparent inputs → out.a = 0 and the canonical RGB
+        // formula divides by zero. ADR-003 decision 5 says: return
+        // (0, 0, 0, 0), never NaN.
+        let dst = Rgba {
+            r: 0.5,
+            g: 0.5,
+            b: 0.5,
+            a: 0.0,
+        };
+        let src = Rgba {
+            r: 0.25,
+            g: 0.75,
+            b: 0.1,
+            a: 1e-9, // tiny but technically > 0; near-zero out.a
+        };
+        let out = dst.blend(src);
+        for ch in [out.r, out.g, out.b, out.a] {
+            assert!(
+                !ch.is_nan(),
+                "ADR-003 decision 5: no NaN in blend output; got {out:?}"
+            );
+        }
+        // With dst.a = 0 and tiny src.a, out.a == src.a > 0 — formula is
+        // well-defined; assert no NaN as the contract. (The strict
+        // "zero-alpha returns (0,0,0,0)" branch is exercised when
+        // out_a == 0.0 exactly — see next test.)
+    }
+
+    /// ADR-003 decision 5 — zero-alpha input behaviour.
+    ///
+    /// Two cases:
+    ///   - `src.a <= 0` with a non-zero-alpha destination: fast-path
+    ///     returns `*self` unchanged (transparent source contributes
+    ///     nothing).
+    ///   - `src.a <= 0` AND `dst.a <= 0`: the canonical output is
+    ///     `(0,0,0,0)` per decision 5 (a fully-transparent composite
+    ///     has zeroed RGB, not the destination's stale RGB).
+    #[test]
+    fn adr_003_zero_alpha_input_fast_paths() {
+        let dst_opaque = Rgba {
+            r: 0.5,
+            g: 0.5,
+            b: 0.5,
+            a: 1.0,
+        };
+        let zero_src = Rgba {
+            r: 0.0,
+            g: 0.0,
+            b: 0.0,
+            a: 0.0,
+        };
+        // `src.a <= 0` with non-zero `dst.a` → returns dst unchanged.
+        let out = dst_opaque.blend(zero_src);
+        assert_eq!(out, dst_opaque);
+
+        // `src.a <= 0` AND `dst.a <= 0` → returns canonical `(0,0,0,0)`
+        // per decision 5; the fast path must NOT preserve stale RGB on
+        // a zero-alpha destination.
+        let dst_zero = Rgba {
+            r: 0.5,
+            g: 0.5,
+            b: 0.5,
+            a: 0.0,
+        };
+        let out_both_zero = dst_zero.blend(zero_src);
+        assert_eq!(
+            out_both_zero,
+            Rgba {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 0.0
+            },
+            "ADR-003 decision 5: both-alpha-zero composite must canonicalize to (0,0,0,0)"
+        );
+
+        // Two zero-alpha colours blend to canonical zero (consistent
+        // with the case above).
+        let out2 = zero_src.blend(zero_src);
+        assert_eq!(out2, zero_src);
+    }
+
+    #[test]
+    fn adr_003_property_random_stack_no_nan_alpha_in_unit_interval() {
+        use rand::Rng;
+        use rand::SeedableRng;
+        use rand::rngs::SmallRng;
+
+        // Deterministic seed — picked once, never randomized between runs.
+        let mut rng = SmallRng::seed_from_u64(0x0ADA_0003_DEAD_BEEF_u64);
+        for stack_depth in [2_usize, 4, 8, 16] {
+            for _ in 0..32 {
+                let mut acc = Rgba {
+                    r: rng.random_range(0.0..=1.0),
+                    g: rng.random_range(0.0..=1.0),
+                    b: rng.random_range(0.0..=1.0),
+                    a: rng.random_range(0.0..=1.0),
+                };
+                for _ in 0..stack_depth {
+                    let layer = Rgba {
+                        r: rng.random_range(0.0..=1.0),
+                        g: rng.random_range(0.0..=1.0),
+                        b: rng.random_range(0.0..=1.0),
+                        a: rng.random_range(0.0..=1.0),
+                    };
+                    let blended = acc.blend(layer);
+                    let reference = reference_source_over(acc, layer);
+                    assert_rgba_near(
+                        blended,
+                        reference,
+                        ADR_003_FLOAT_TOL,
+                        "random stack iteration must match reference source-over",
+                    );
+                    for (ch, name) in [
+                        (blended.r, 'r'),
+                        (blended.g, 'g'),
+                        (blended.b, 'b'),
+                        (blended.a, 'a'),
+                    ] {
+                        assert!(!ch.is_nan(), "channel {name} is NaN in blended {blended:?}");
+                    }
+                    assert!(
+                        blended.a >= 0.0 && blended.a <= 1.0,
+                        "out.a must be in [0, 1] for valid inputs; got {} (stack_depth={stack_depth})",
+                        blended.a
+                    );
+                    acc = blended;
+                }
+            }
+        }
     }
 }

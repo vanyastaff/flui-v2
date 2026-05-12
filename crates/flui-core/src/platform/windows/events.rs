@@ -111,6 +111,12 @@ impl WindowsWindowInner {
             WM_GPUI_CURSOR_STYLE_CHANGED => self.handle_cursor_changed(lparam),
             WM_GPUI_FORCE_UPDATE_WINDOW => self.draw_window(handle, true),
             WM_GPUI_GPU_DEVICE_LOST => self.handle_device_lost(lparam),
+            // ADR-008 second-line enforcement of WindowOptions flags.
+            // Filters SC_MINIMIZE / SC_MAXIMIZE / SC_MOVE / SC_SIZE against
+            // is_minimizable / is_maximizable / is_movable / is_resizable.
+            // Reaches Alt+Space → Minimize, Win+Down, snap layouts, taskbar
+            // context menu — all paths that bypass the WS_*BOX style hints.
+            WM_SYSCOMMAND => self.handle_sys_command_msg(wparam),
             _ => None,
         };
         if let Some(n) = handled {
@@ -260,6 +266,49 @@ impl WindowsWindowInner {
 
     fn handle_paint_msg(&self, handle: HWND) -> Option<isize> {
         self.draw_window(handle, false)
+    }
+
+    /// ADR-008 second-line enforcement of WindowOptions flags.
+    ///
+    /// `wparam`'s low four bits are reserved for the system; the actual
+    /// command is in `wparam & 0xFFF0`. We compare against the documented
+    /// `SC_*` constants:
+    ///   - `SC_MINIMIZE` (0xF020) — Alt+Space → Minimize, Win+Down,
+    ///     taskbar context menu.
+    ///   - `SC_MAXIMIZE` (0xF030) — Alt+Space → Maximize, Win+Up,
+    ///     window-snap to top, double-click title bar.
+    ///   - `SC_MOVE` (0xF010) — Alt+Space → Move, programmatic drag.
+    ///   - `SC_SIZE` (0xF000) — Alt+Space → Size, edge-grip resize.
+    ///
+    /// When the corresponding `WindowOptions` flag is `false`, we return
+    /// `Some(0)` — the message is consumed, the OS does NOT proceed with
+    /// the action. Returning `None` falls through to `DefWindowProcW`,
+    /// preserving the default Windows behaviour for permitted commands.
+    ///
+    /// See `docs/research/adr/ADR-008-window-chrome-contract.md`.
+    fn handle_sys_command_msg(&self, wparam: WPARAM) -> Option<isize> {
+        const SYS_COMMAND_MASK: usize = 0xFFF0;
+        let cmd = wparam.0 & SYS_COMMAND_MASK;
+        let rejected = match cmd as u32 {
+            SC_MINIMIZE if !self.is_minimizable => Some("SC_MINIMIZE"),
+            SC_MAXIMIZE if !self.is_maximizable => Some("SC_MAXIMIZE"),
+            SC_MOVE if !self.is_movable => Some("SC_MOVE"),
+            SC_SIZE if !self.is_resizable => Some("SC_SIZE"),
+            _ => None,
+        };
+        if let Some(kind) = rejected {
+            log::debug!(
+                "ADR-008: rejected WM_SYSCOMMAND::{kind} on a window whose \
+                 WindowOptions disallow it (is_minimizable={}, is_maximizable={}, \
+                 is_movable={}, is_resizable={})",
+                self.is_minimizable,
+                self.is_maximizable,
+                self.is_movable,
+                self.is_resizable,
+            );
+            return Some(0);
+        }
+        None
     }
 
     fn handle_close_msg(&self) -> Option<isize> {

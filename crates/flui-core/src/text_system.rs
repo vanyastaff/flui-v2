@@ -1,3 +1,26 @@
+// CONTRACT (ADR-013 — Text rasterization strategy):
+//
+// `TextStyle::raster_mode: TextRasterMode` is the per-style strategy
+// (variants: `Subpixel` [default], `Grayscale`, `BiLevel`, `Hinted`). The
+// per-glyph atlas key includes the mode — distinct modes do not share
+// glyph slots.
+//
+// Per-platform capability matrix (rendering — not the mode enum itself):
+//   | Backend             | Subpixel | Grayscale | BiLevel | Hinted |
+//   |---------------------|:--------:|:---------:|:-------:|:------:|
+//   | macOS CoreText      |    ✓     |     ✓     |    ✓    |   ✓    |
+//   | Windows DirectWrite |    ✓     |     ✓     |    ✓    |   ✓    |
+//   | Linux cosmic-text   |    ✓     |     ✓     |    -    |   *    |
+//   | Web (wgpu)          |    ✓¹    |     ✓     |    -    |   -    |
+// `-` = falls through to the next-best supported variant silently
+//       (`BiLevel → Grayscale`, `Hinted → Subpixel`); never panics.
+// `*` = pending Skrifa `Outlines::hinted_glyph` stabilisation.
+// `¹` = honoured only when the WebGPU/WebGL adapter advertises it.
+//
+// See: `docs/research/adr/ADR-013-text-rasterization-strategy.md`.
+//      `docs/research/adr/ADR-004-text-slicing-utf8-safety.md` (slicing
+//      safety; orthogonal but co-located on the same code path).
+
 mod font_fallbacks;
 mod font_features;
 mod line;
@@ -1011,6 +1034,11 @@ pub struct RenderGlyphParams {
     pub scale_factor: f32,
     pub is_emoji: bool,
     pub subpixel_rendering: bool,
+    /// ADR-013: per-glyph atlas key includes the requested rasterization
+    /// strategy so the same `(font, size, glyph)` tuple is cached
+    /// independently for each mode. A `Subpixel` glyph and a `BiLevel`
+    /// glyph occupy distinct atlas slots — the underlying bitmaps differ.
+    pub raster_mode: crate::TextRasterMode,
 }
 
 impl Eq for RenderGlyphParams {}
@@ -1024,6 +1052,7 @@ impl Hash for RenderGlyphParams {
         self.scale_factor.to_bits().hash(state);
         self.is_emoji.hash(state);
         self.subpixel_rendering.hash(state);
+        self.raster_mode.hash(state);
     }
 }
 

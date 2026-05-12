@@ -210,6 +210,13 @@ impl WebWindow {
         })
     }
 
+    // CONTRACT (ADR-016): this `Closure` is registered with the
+    // `ResizeObserver` JS API and stored on `WebWindowInner` for the
+    // lifetime of the window. JS holds the strong reference; Rust
+    // hands off ownership at registration. No recursive re-invocation
+    // — the resize callback writes to flui state but does not call
+    // back into JS through this same closure. Safe per ADR-016
+    // decision 5 (no `Closure::wrap` recursion pattern).
     fn create_resize_observer_closure(
         inner: Rc<WebWindowInner>,
     ) -> Closure<dyn FnMut(js_sys::Array)> {
@@ -299,6 +306,16 @@ impl WebWindow {
 }
 
 impl WebWindowInner {
+    // CONTRACT (ADR-016): this `Closure` is the requestAnimationFrame
+    // callback. JS calls back into this closure once per frame; the
+    // closure may re-schedule by calling `request_animation_frame`
+    // with its OWN stored `js_sys::Function` handle (the
+    // `raf_handle_inner` capture below). This is the
+    // re-schedule-via-stored-handle pattern — NOT recursive
+    // invocation of `Closure::wrap` (which would be the GPUI #52715
+    // anti-pattern). The closure stays alive on the JS side; Rust
+    // owns the strong ref via `raf_handle`. Safe per ADR-016
+    // decision 5.
     fn create_raf_closure(self: &Rc<Self>) -> Closure<dyn FnMut()> {
         let raf_handle: Rc<RefCell<Option<js_sys::Function>>> = Rc::new(RefCell::new(None));
         let raf_handle_inner = Rc::clone(&raf_handle);

@@ -370,7 +370,9 @@ fn translate_one(input: &PlatformInput, state: &mut WindowPointerState) -> Optio
         PlatformInput::KeyDown(_)
         | PlatformInput::KeyUp(_)
         | PlatformInput::ModifiersChanged(_)
-        | PlatformInput::FileDrop(_) => None,
+        | PlatformInput::FileDrop(_)
+        // ADR-009: EditorCommand is a non-pointer text-editing event.
+        | PlatformInput::EditorCommand(_) => None,
     }
 }
 

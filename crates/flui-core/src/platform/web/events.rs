@@ -1,10 +1,10 @@
 use std::rc::Rc;
 
 use flui_core::{
-    Capslock, DispatchEventResult, ExternalPaths, FileDropEvent, KeyDownEvent, KeyUpEvent,
-    Keystroke, Modifiers, ModifiersChangedEvent, MouseButton, MouseDownEvent, MouseExitEvent,
-    MouseMoveEvent, MouseUpEvent, NavigationDirection, Pixels, PlatformInput, Point, ScrollDelta,
-    ScrollWheelEvent, TouchPhase, point, px,
+    Capslock, DispatchEventResult, ExternalDropEvent, ExternalDropPayload, ExternalPaths,
+    KeyDownEvent, KeyUpEvent, Keystroke, Modifiers, ModifiersChangedEvent, MouseButton,
+    MouseDownEvent, MouseExitEvent, MouseMoveEvent, MouseUpEvent, NavigationDirection, Pixels,
+    PlatformInput, Point, ScrollDelta, ScrollWheelEvent, TouchPhase, point, px,
 };
 use smallvec::smallvec;
 use wasm_bindgen::prelude::*;
@@ -290,7 +290,9 @@ impl WebWindowInner {
                 current_state.mouse_position = position;
             }
 
-            this.dispatch_input(PlatformInput::FileDrop(FileDropEvent::Pending { position }));
+            this.dispatch_input(PlatformInput::FileDrop(ExternalDropEvent::Pending {
+                position,
+            }));
         })
     }
 
@@ -310,19 +312,26 @@ impl WebWindowInner {
 
             let paths = extract_file_paths_from_drag(&event);
 
-            this.dispatch_input(PlatformInput::FileDrop(FileDropEvent::Entered {
+            // ADR-011: web DataTransfer currently only emits the path
+            // category. Wider negotiation (text/uri-list, text/plain,
+            // text/html, custom MIME) is a web-side follow-up tracked
+            // in the rollout plan; for now this emits the legacy
+            // Paths-only payload via the new typed enum.
+            this.dispatch_input(PlatformInput::FileDrop(ExternalDropEvent::Entered {
                 position,
-                paths: ExternalPaths(paths),
+                payload: ExternalDropPayload::Paths(ExternalPaths(paths)),
             }));
 
-            this.dispatch_input(PlatformInput::FileDrop(FileDropEvent::Submit { position }));
+            this.dispatch_input(PlatformInput::FileDrop(ExternalDropEvent::Submit {
+                position,
+            }));
         })
     }
 
     fn register_dragleave(self: &Rc<Self>) -> Closure<dyn FnMut(JsValue)> {
         let this = Rc::clone(self);
         self.listen("dragleave", move |_event: JsValue| {
-            this.dispatch_input(PlatformInput::FileDrop(FileDropEvent::Exited));
+            this.dispatch_input(PlatformInput::FileDrop(ExternalDropEvent::Exited));
         })
     }
 

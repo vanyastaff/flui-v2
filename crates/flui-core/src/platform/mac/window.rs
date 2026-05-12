@@ -23,7 +23,7 @@ use cocoa::{
 };
 use dispatch2::DispatchQueue;
 use flui_core::{
-    AnyWindowHandle, BackgroundExecutor, Bounds, Capslock, ExternalPaths, FileDropEvent,
+    AnyWindowHandle, BackgroundExecutor, Bounds, Capslock, ExternalDropEvent, ExternalPaths,
     ForegroundExecutor, KeyDownEvent, Keystroke, Modifiers, ModifiersChangedEvent, MouseButton,
     MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, PlatformAtlas, PlatformDisplay,
     PlatformInput, PlatformInputHandler, PlatformWindow, Point, PromptButton, PromptLevel,
@@ -442,6 +442,23 @@ struct MacWindowState {
     activated_least_once: bool,
     // The parent window if this window is a sheet (Dialog kind)
     sheet_parent: Option<id>,
+    // ADR-008: WindowOptions invariants carried into MacWindow so the
+    // platform-side `minimize()` / `zoom()` methods can enforce them
+    // as a second line of defense. The first line is the style mask
+    // (NSMiniaturizableWindowMask / NSResizableWindowMask) set at
+    // window creation, which only greys the title-bar button. System-
+    // menu interception (Dock right-click → Minimize, View menu → Zoom)
+    // is a TODO that requires NSWindowDelegate / NSMenu validation
+    // hooks; see `docs/research/adr/ADR-008-window-chrome-contract.md`
+    // action item 2.
+    // ADR-008: `is_movable` is read by the future NSWindowDelegate
+    // `windowShouldMove:` hook (action item 2). Carried on the state
+    // today so the wiring lands as a single read, not a struct
+    // reshape; `#[allow(dead_code)]` until that hook lands.
+    #[allow(dead_code)]
+    is_movable: bool,
+    is_resizable: bool,
+    is_minimizable: bool,
 }
 
 impl MacWindowState {
@@ -765,6 +782,9 @@ impl MacWindow {
                 toggle_tab_bar_callback: None,
                 activated_least_once: false,
                 sheet_parent: None,
+                is_movable,
+                is_resizable,
+                is_minimizable,
             })));
 
             (*native_window).set_ivar(
@@ -1411,7 +1431,25 @@ impl PlatformWindow for MacWindow {
     }
 
     fn minimize(&self) {
-        let window = self.0.lock().native_window;
+        // ADR-008 second line: reject programmatic minimize when the
+        // invariant was opted out. First line (NSMiniaturizableWindowMask
+        // absence) only greys the title-bar button; programmatic
+        // `miniaturize_:` and Dock right-click → Minimize bypass it.
+        // System-menu and Dock interception requires NSWindowDelegate /
+        // NSMenu validation hooks — TODO(ADR-008 #2): wire those when
+        // touching the macOS window code next.
+        let this = self.0.lock();
+        if !this.is_minimizable {
+            log::warn!(
+                "ADR-008: ignored programmatic minimize() on macOS — window \
+                 created with `is_minimizable = false`. (Dock → Minimize and \
+                 keyboard shortcuts are still TODO; tracked in ADR-008 \
+                 action item 2.)"
+            );
+            return;
+        }
+        let window = this.native_window;
+        drop(this);
         unsafe {
             window.miniaturize_(nil);
         }
@@ -1419,6 +1457,16 @@ impl PlatformWindow for MacWindow {
 
     fn zoom(&self) {
         let this = self.0.lock();
+        // ADR-008 decision 3: a non-resizable window is also non-maximizable
+        // (Cocoa conflates the two via `NSResizableWindowMask`).
+        if !this.is_resizable {
+            log::warn!(
+                "ADR-008: ignored programmatic zoom() on macOS — window created \
+                 with `is_resizable = false`. (View menu → Zoom and traffic-light \
+                 zoom-button paths are still TODO; tracked in ADR-008 action item 2.)"
+            );
+            return;
+        }
         let window = this.native_window;
         this.foreground_executor
             .spawn(async move {
@@ -2418,26 +2466,72 @@ extern "C" fn attributed_substring_for_proposed_range(
     .unwrap_or(nil)
 }
 
-// We ignore which selector it asks us to do because the user may have
-// bound the shortcut to something else.
-extern "C" fn do_command_by_selector(this: &Object, _: Sel, _: Sel) {
+/// ADR-009 macOS bridge for `doCommandBySelector:`.
+///
+/// The Cocoa key-binding manager calls this after translating a key combo
+/// (including anything the user added to
+/// `~/Library/KeyBindings/DefaultKeyBinding.dict`) into a selector. The
+/// pre-ADR handler dropped the selector and re-fired the original
+/// keystroke through the flui keymap, losing every standard Cocoa binding
+/// (`ctrl-W` = word-delete, `ctrl-A` = line-start, ...) and every user
+/// binding.
+///
+/// The new contract (ADR-009 decision 1): look the selector up in
+/// `editor_command_for_selector_name`. On a known mapping, dispatch a
+/// typed [`crate::EditorCommand`] event via `event_callback`. On unknown
+/// selectors OR when the downstream handler does not claim the command,
+/// fall back to the legacy keystroke path (decision 3 — keymap is a
+/// fallback, not a bypass). The macOS default beep on truly-unhandled
+/// commands is preserved.
+extern "C" fn do_command_by_selector(this: &Object, _: Sel, command: Sel) {
+    use flui_core::EditorCommand;
     let state = unsafe { get_window_state(this) };
     let mut lock = state.as_ref().lock();
     let keystroke = lock.keystroke_for_do_command.take();
     let mut event_callback = lock.event_callback.take();
     drop(lock);
 
-    if let Some((keystroke, callback)) = keystroke.zip(event_callback.as_mut()) {
-        let handled = (callback)(PlatformInput::KeyDown(KeyDownEvent {
-            keystroke,
-            is_held: false,
-            prefer_character_input: false,
-        }));
-        state.as_ref().lock().do_command_handled = Some(!handled.propagate);
+    // SAFETY: `Sel::name()` returns a borrow tied to the static
+    // selector-name table maintained by the Objective-C runtime; the
+    // returned &str is valid for the duration of this call.
+    let selector_name: &str = command.name();
+    let mapped: Option<EditorCommand> = EditorCommand::for_cocoa_selector(selector_name);
+
+    let mut handled_via_editor_command = false;
+
+    if let (Some(cmd), Some(callback)) = (mapped, event_callback.as_mut()) {
+        let result = (callback)(PlatformInput::EditorCommand(cmd));
+        if !result.propagate {
+            handled_via_editor_command = true;
+            state.as_ref().lock().do_command_handled = Some(true);
+        }
+    }
+
+    // Fallback: re-fire the original keystroke through the keymap when
+    // the editor command was unknown OR not claimed downstream (decision
+    // 3). When the keymap callback returns `propagate = true` (no flui
+    // handler claimed the keystroke), we set `do_command_handled =
+    // Some(false)`, which tells AppKit we did NOT consume the command
+    // and lets it apply its default behaviour (e.g. NSSystemBeep on
+    // truly-unhandled selectors, or the NSResponder fall-through that
+    // forwards `insertText:` for plain typing).
+    if !handled_via_editor_command {
+        if let Some((keystroke, callback)) = keystroke.zip(event_callback.as_mut()) {
+            let handled = (callback)(PlatformInput::KeyDown(KeyDownEvent {
+                keystroke,
+                is_held: false,
+                prefer_character_input: false,
+            }));
+            state.as_ref().lock().do_command_handled = Some(!handled.propagate);
+        }
     }
 
     state.as_ref().lock().event_callback = event_callback;
 }
+
+// (selector → EditorCommand mapping is `EditorCommand::for_cocoa_selector`
+// in `flui_core::platform` — kept cross-platform so it is unit-testable
+// without a macOS host.)
 
 extern "C" fn view_did_change_effective_appearance(this: &Object, _: Sel) {
     unsafe {
@@ -2480,8 +2574,15 @@ extern "C" fn dragging_entered(this: &Object, _: Sel, dragging_info: id) -> NSDr
     let window_state = unsafe { get_window_state(this) };
     let position = drag_event_position(&window_state, dragging_info);
     let paths = external_paths_from_event(dragging_info);
-    if let Some(event) = paths.map(|paths| FileDropEvent::Entered { position, paths })
-        && send_file_drop_event(window_state, event)
+    // ADR-011: macOS currently only negotiates the path category from
+    // `NSDraggingInfo::pasteboard.types`. Wider MIME negotiation
+    // (NSURLPboardType, NSStringPboardType, public.html, public.*) is a
+    // macOS-side follow-up tracked in the rollout plan; for now this
+    // emits the legacy Paths-only payload via the new typed enum.
+    if let Some(event) = paths.map(|paths| flui_core::ExternalDropEvent::Entered {
+        position,
+        payload: flui_core::ExternalDropPayload::Paths(paths),
+    }) && send_file_drop_event(window_state, event)
     {
         return NSDragOperationCopy;
     }
@@ -2491,7 +2592,7 @@ extern "C" fn dragging_entered(this: &Object, _: Sel, dragging_info: id) -> NSDr
 extern "C" fn dragging_updated(this: &Object, _: Sel, dragging_info: id) -> NSDragOperation {
     let window_state = unsafe { get_window_state(this) };
     let position = drag_event_position(&window_state, dragging_info);
-    if send_file_drop_event(window_state, FileDropEvent::Pending { position }) {
+    if send_file_drop_event(window_state, ExternalDropEvent::Pending { position }) {
         NSDragOperationCopy
     } else {
         NSDragOperationNone
@@ -2500,13 +2601,13 @@ extern "C" fn dragging_updated(this: &Object, _: Sel, dragging_info: id) -> NSDr
 
 extern "C" fn dragging_exited(this: &Object, _: Sel, _: id) {
     let window_state = unsafe { get_window_state(this) };
-    send_file_drop_event(window_state, FileDropEvent::Exited);
+    send_file_drop_event(window_state, ExternalDropEvent::Exited);
 }
 
 extern "C" fn perform_drag_operation(this: &Object, _: Sel, dragging_info: id) -> BOOL {
     let window_state = unsafe { get_window_state(this) };
     let position = drag_event_position(&window_state, dragging_info);
-    send_file_drop_event(window_state, FileDropEvent::Submit { position }).to_objc()
+    send_file_drop_event(window_state, ExternalDropEvent::Submit { position }).to_objc()
 }
 
 fn external_paths_from_event(dragging_info: *mut Object) -> Option<ExternalPaths> {
@@ -2528,7 +2629,7 @@ fn external_paths_from_event(dragging_info: *mut Object) -> Option<ExternalPaths
 
 extern "C" fn conclude_drag_operation(this: &Object, _: Sel, _: id) {
     let window_state = unsafe { get_window_state(this) };
-    send_file_drop_event(window_state, FileDropEvent::Exited);
+    send_file_drop_event(window_state, ExternalDropEvent::Exited);
 }
 
 async fn synthetic_drag(
@@ -2554,15 +2655,15 @@ async fn synthetic_drag(
     }
 }
 
-/// Sends the specified FileDropEvent using `PlatformInput::FileDrop` to the window
+/// Sends the specified ExternalDropEvent using `PlatformInput::FileDrop` to the window
 /// state and updates the window state according to the event passed.
 fn send_file_drop_event(
     window_state: Arc<Mutex<MacWindowState>>,
-    file_drop_event: FileDropEvent,
+    file_drop_event: ExternalDropEvent,
 ) -> bool {
     let external_files_dragged = match file_drop_event {
-        FileDropEvent::Entered { .. } => Some(true),
-        FileDropEvent::Exited => Some(false),
+        ExternalDropEvent::Entered { .. } => Some(true),
+        ExternalDropEvent::Exited => Some(false),
         _ => None,
     };
 
