@@ -702,7 +702,11 @@ pub struct FrameProfile {
 #[non_exhaustive]
 #[derive(Debug, Default, Clone)]
 pub struct FrameProfileDetailed {
-    pub per_phase: [Duration; FramePhase::COUNT],
+    /// Heap-backed slice with `len() == FramePhase::count()`. Implemented
+    /// as `Box<[Duration]>` rather than a fixed-size array so that
+    /// `FramePhase` can grow under `#[non_exhaustive]` without changing
+    /// the public field's type — see review-fix note in `frame/profile.rs`.
+    pub per_phase: Box<[Duration]>,
     pub effect_drain_count: u32,
     pub effect_drain_requeued: u32,
     pub deadline_overrun: SmallVec<[(FramePhase, Duration); 4]>,
