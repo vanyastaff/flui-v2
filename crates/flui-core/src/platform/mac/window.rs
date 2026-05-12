@@ -2566,8 +2566,15 @@ extern "C" fn dragging_entered(this: &Object, _: Sel, dragging_info: id) -> NSDr
     let window_state = unsafe { get_window_state(this) };
     let position = drag_event_position(&window_state, dragging_info);
     let paths = external_paths_from_event(dragging_info);
-    if let Some(event) = paths.map(|paths| FileDropEvent::Entered { position, paths })
-        && send_file_drop_event(window_state, event)
+    // ADR-011: macOS currently only negotiates the path category from
+    // `NSDraggingInfo::pasteboard.types`. Wider MIME negotiation
+    // (NSURLPboardType, NSStringPboardType, public.html, public.*) is a
+    // macOS-side follow-up tracked in the rollout plan; for now this
+    // emits the legacy Paths-only payload via the new typed enum.
+    if let Some(event) = paths.map(|paths| flui_core::ExternalDropEvent::Entered {
+        position,
+        payload: flui_core::ExternalDropPayload::Paths(paths),
+    }) && send_file_drop_event(window_state, event)
     {
         return NSDragOperationCopy;
     }

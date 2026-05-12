@@ -78,7 +78,12 @@ pub(crate) fn write_to_clipboard(item: ClipboardItem) {
             match entry {
                 ClipboardEntry::String(string) => write_string(string)?,
                 ClipboardEntry::Image(image) => write_image(image)?,
-                ClipboardEntry::ExternalPaths(_) => {}
+                // ADR-011: paths-only payloads stay as write-noops on
+                // the legacy fast path (matches pre-ADR behaviour). Other
+                // payload categories (Urls→CF_INETURL, Text→CF_UNICODETEXT,
+                // Html→CF_HTML, Mime, Mixed) are write-side TODO per
+                // ADR-011 #4.
+                ClipboardEntry::ExternalDrop(_) => {}
             }
         }
         Ok(())
@@ -263,9 +268,13 @@ fn read_files() -> Option<ClipboardEntry> {
     let hdrop = HDROP(locked.ptr as *mut _);
     let mut filenames = Vec::new();
     with_file_names(hdrop, |name| filenames.push(std::path::PathBuf::from(name)));
-    Some(ClipboardEntry::ExternalPaths(ExternalPaths(
-        filenames.into(),
-    )))
+    // ADR-011: Windows CF_HDROP only carries paths; emit via the new
+    // typed payload as the `Paths` variant. Wider CF negotiation
+    // (CF_INETURL → Urls, CF_UNICODETEXT → Text, CF_HTML → Html) is a
+    // Windows-side follow-up tracked in the rollout plan.
+    Some(ClipboardEntry::ExternalDrop(
+        crate::ExternalDropPayload::Paths(ExternalPaths(filenames.into())),
+    ))
 }
 
 /// DIB is BMP without the 14-byte BITMAPFILEHEADER. Prepend one.

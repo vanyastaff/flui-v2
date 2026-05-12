@@ -887,10 +887,19 @@ impl X11Client {
                         .filter_map(|path| Url::parse(path).log_err())
                         .filter_map(|url| url.to_file_path().log_err())
                         .collect();
-                    let input = PlatformInput::FileDrop(FileDropEvent::Entered {
-                        position: state.xdnd_state.position,
-                        paths: flui_core::ExternalPaths(paths),
-                    });
+                    // ADR-011: X11 XDND currently only negotiates the
+                    // path/URI category. Wider MIME negotiation is a
+                    // per-platform follow-up tracked in the rollout
+                    // plan; for now this emits the legacy Paths-only
+                    // payload via the new typed enum.
+                    let input = PlatformInput::FileDrop(
+                        flui_core::ExternalDropEvent::Entered {
+                            position: state.xdnd_state.position,
+                            payload: flui_core::ExternalDropPayload::Paths(
+                                flui_core::ExternalPaths(paths),
+                            ),
+                        },
+                    );
                     drop(state);
                     window.handle_input(input);
                     self.0.borrow_mut().xdnd_state.retrieved = true;

@@ -2169,14 +2169,28 @@ pub struct ClipboardItem {
 }
 
 /// Either a ClipboardString or a ClipboardImage
+///
+/// ADR-011: the historic `ClipboardEntry::ExternalPaths(ExternalPaths)`
+/// variant was renamed to `ClipboardEntry::ExternalDrop(ExternalDropPayload)`
+/// so the clipboard surface shares the same typed payload as drag-and-drop
+/// (decision 4: "Paste and drop carry the same shape; one ADR, one enum").
+/// Existing producers / consumers continue to work for the `Paths` variant
+/// via pattern-match against `ExternalDropPayload::Paths(...)`; the other
+/// payload categories (Urls, Text, Html, Mime, Mixed) become accessible to
+/// callers as platform clipboards advertise them.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum ClipboardEntry {
     /// A string entry
     String(ClipboardString),
     /// An image entry
     Image(Image),
-    /// A file entry
-    ExternalPaths(crate::ExternalPaths),
+    /// ADR-011: a typed cross-process payload (paths, URLs, text, HTML,
+    /// arbitrary MIME, or `Mixed`). Replaces the pre-ADR
+    /// `ExternalPaths` variant; current platform clipboards continue to
+    /// emit `ExternalDropPayload::Paths` until per-platform MIME
+    /// negotiation lands.
+    ExternalDrop(crate::ExternalDropPayload),
 }
 
 impl ClipboardItem {
@@ -2226,7 +2240,15 @@ impl ClipboardItem {
 
         if answer.is_empty() {
             for entry in self.entries.iter() {
-                if let ClipboardEntry::ExternalPaths(paths) = entry {
+                // ADR-011: fall back to the path category of the new
+                // typed payload; other variants don't have a path
+                // representation and are skipped here. A future
+                // overload could surface URL / text fallbacks if a
+                // user-visible reason emerges.
+                if let ClipboardEntry::ExternalDrop(
+                    crate::ExternalDropPayload::Paths(paths),
+                ) = entry
+                {
                     for path in &paths.0 {
                         use std::fmt::Write as _;
                         _ = write!(answer, "{}", path.display());

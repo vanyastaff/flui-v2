@@ -10,7 +10,8 @@ use crate::{
     AsyncWindowContext, AvailableSpace, Background, BorderStyle, Bounds, BoxShadow, Capslock,
     Context, Corners, CursorStyle, Decorations, DevicePixels, DispatchActionListener,
     DispatchNodeId, DispatchTree, DisplayId, Edges, Effect, ElementId, ElementIdStack, Entity,
-    EntityId, EventEmitter, FileDropEvent, FontId, Global, GlobalElementId, GlyphId, GpuSpecs,
+    EntityId, EventEmitter, ExternalDropEvent, ExternalDropPayload, FontId, Global,
+    GlobalElementId, GlyphId, GpuSpecs,
     Hsla, InputHandler, IsZero, KeyBinding, KeyContext, KeyDownEvent, KeyEvent, Keystroke,
     KeystrokeEvent, LayoutId, LineLayoutIndex, MediaQueryData, Modifiers, ModifiersChangedEvent,
     MonochromeSprite, MouseButton, MouseEvent, MouseMoveEvent, MouseUpEvent, Path, Pixels,
@@ -4786,24 +4787,38 @@ impl Window {
             }
             // Translate dragging and dropping of external files from the operating system
             // to internal drag and drop events.
+            //
+            // ADR-011: `FileDropEvent` is now an alias for `ExternalDropEvent`
+            // and carries `payload: ExternalDropPayload` instead of `paths`.
+            // For the `Paths` variant the active_drag preview behaviour is
+            // unchanged (ExternalPaths still has its Render impl). Other
+            // payload variants (Urls, Text, Html, Mime, Mixed) currently fall
+            // through without a drag preview — wider preview rendering is a
+            // future-work item tracked in the rollout plan.
             PlatformInput::FileDrop(file_drop) => match file_drop {
-                FileDropEvent::Entered { position, paths } => {
+                ExternalDropEvent::Entered { position, payload } => {
                     self.mouse_position = position;
                     if cx.active_drag.is_none() {
-                        cx.active_drag = Some(AnyDrag {
-                            value: Arc::new(paths.clone()),
-                            view: cx.new(|_| paths).into(),
-                            cursor_offset: position,
-                            cursor_style: None,
-                        });
+                        if let ExternalDropPayload::Paths(paths) = &payload {
+                            let paths = paths.clone();
+                            cx.active_drag = Some(AnyDrag {
+                                value: Arc::new(paths.clone()),
+                                view: cx.new(|_| paths).into(),
+                                cursor_offset: position,
+                                cursor_style: None,
+                            });
+                        }
+                        // Non-Paths variants: no engine-side drag preview
+                        // yet; widgets can paint their own on `Entered`.
                     }
+                    let _ = payload; // payload also flows downstream via event echo when handlers care.
                     PlatformInput::MouseMove(MouseMoveEvent {
                         position,
                         pressed_button: Some(MouseButton::Left),
                         modifiers: Modifiers::default(),
                     })
                 }
-                FileDropEvent::Pending { position } => {
+                ExternalDropEvent::Pending { position } => {
                     self.mouse_position = position;
                     PlatformInput::MouseMove(MouseMoveEvent {
                         position,
@@ -4811,7 +4826,7 @@ impl Window {
                         modifiers: Modifiers::default(),
                     })
                 }
-                FileDropEvent::Submit { position } => {
+                ExternalDropEvent::Submit { position } => {
                     cx.activate(true);
                     self.mouse_position = position;
                     PlatformInput::MouseUp(MouseUpEvent {
@@ -4821,9 +4836,9 @@ impl Window {
                         click_count: 1,
                     })
                 }
-                FileDropEvent::Exited => {
+                ExternalDropEvent::Exited => {
                     cx.active_drag.take();
-                    PlatformInput::FileDrop(FileDropEvent::Exited)
+                    PlatformInput::FileDrop(ExternalDropEvent::Exited)
                 }
             },
             PlatformInput::KeyDown(_) | PlatformInput::KeyUp(_) => event,

@@ -604,6 +604,12 @@ impl Deref for MouseExitEvent {
 }
 
 /// A collection of paths from the platform, such as from a file drop.
+///
+/// Kept as a distinct type (rather than inlining `SmallVec<[PathBuf; 2]>`
+/// into [`ExternalDropPayload::Paths`]) because it implements [`Render`]
+/// so the engine can paint a system icon stack during the drag preview.
+/// The `Render` impl is the load-bearing reason this newtype survives
+/// the ADR-011 migration.
 #[derive(Debug, Clone, Default, Eq, PartialEq)]
 pub struct ExternalPaths(pub SmallVec<[PathBuf; 2]>);
 
@@ -621,37 +627,131 @@ impl Render for ExternalPaths {
     }
 }
 
-/// A file drop event from the platform, generated when files are dragged and dropped onto the window.
+// `Eq` derive depends on every variant's fields being `Eq`. All current
+// variants meet this (`url::Url`, `String`, `Vec<u8>`, `Box<Self>` are
+// all `Eq`). Future variants must preserve this invariant so
+// `ClipboardEntry::ExternalDrop` (which derives `Eq + PartialEq`)
+// continues to compile.
+/// ADR-011: typed payload of an [`ExternalDropEvent`] / clipboard
+/// transfer.
+///
+/// External (cross-process) drag-and-drop and clipboard transfers carry
+/// MIME-typed payloads. Pre-ADR the engine modelled them as
+/// `ExternalPaths` only — paths from a Finder/Explorer drag — and
+/// silently dropped every other shape (URL drags from browsers, text
+/// snippets, HTML fragments, arbitrary MIME blobs). This enum is the
+/// faithful representation of what every native source can advertise.
+///
+/// Marked `#[non_exhaustive]` so future MIME categories can be added
+/// without breaking matchers — additive evolution per the ADR's
+/// "extension via new variant" pattern.
+///
+/// See `docs/research/adr/ADR-011-external-drag-drop.md`.
+#[derive(Debug, Clone, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum ExternalDropPayload {
+    /// A list of filesystem paths (`text/uri-list` with `file://` URIs
+    /// on most platforms, `CF_HDROP` on Windows). The pre-ADR
+    /// `FileDropEvent` payload was always this variant.
+    Paths(ExternalPaths),
+    /// A list of URLs (`text/uri-list` with `http(s)://` URIs from
+    /// browser tab drags, `text/x-moz-url`, `CF_INETURL` on Windows).
+    Urls(SmallVec<[url::Url; 2]>),
+    /// A plain-text snippet (`text/plain`, NSStringPboardType,
+    /// `CF_UNICODETEXT`).
+    Text(String),
+    /// An HTML fragment with an optional plain-text fallback
+    /// (`text/html`, `public.html`, `CF_HTML`).
+    Html {
+        /// The HTML markup, typically a fragment without `<html>` wrapper.
+        html: String,
+        /// Plain-text representation provided by the source, when available.
+        text: Option<String>,
+    },
+    /// Escape hatch for any MIME-typed payload the platform exposes
+    /// outside the above categories (e.g. `image/png`, custom application
+    /// types). `Vec<u8>` is used for now; future revisions may switch to
+    /// `bytes::Bytes` for zero-copy sharing.
+    Mime {
+        /// The MIME type advertised by the source (e.g. `image/png`).
+        kind: String,
+        /// The raw payload bytes.
+        bytes: Vec<u8>,
+    },
+    /// Multiple payloads negotiated from the same drag/clipboard source.
+    /// Browsers commonly advertise `[Urls(...), Text(...), Html { ... }]`
+    /// — the receiver picks the variant matching its widget's accept
+    /// filter. Boxed because the variant is recursive.
+    Mixed(SmallVec<[Box<ExternalDropPayload>; 4]>),
+}
+
+impl Default for ExternalDropPayload {
+    fn default() -> Self {
+        ExternalDropPayload::Paths(ExternalPaths::default())
+    }
+}
+
+/// ADR-011: per-`Div::on_drop` filter that decides whether a drag
+/// should be accepted (i.e. whether the drop target advertises
+/// compatibility with the source's payload).
+///
+/// Equivalent to the web's `DataTransfer.dropEffect` — controls the
+/// cursor displayed during the drag and gates the final `Submit`
+/// dispatch. The closure runs on every `Pending` step.
+pub type DropAcceptFilter = std::rc::Rc<dyn Fn(&ExternalDropPayload) -> bool>;
+
+/// An external drag-and-drop event from the platform.
+///
+/// ADR-011 renames the historic `FileDropEvent` to `ExternalDropEvent`
+/// because the payload is no longer restricted to file paths. The
+/// `payload` field carries the typed [`ExternalDropPayload`] (paths,
+/// URLs, text, HTML, arbitrary MIME, or `Mixed`).
+///
+/// A `pub use FileDropEvent = ExternalDropEvent;` alias is provided
+/// below for soft migration of out-of-tree callers; the alias will be
+/// `#[deprecated]` in a future minor release.
+///
+/// See `docs/research/adr/ADR-011-external-drag-drop.md`.
 #[derive(Debug, Clone)]
-pub enum FileDropEvent {
-    /// The files have entered the window.
+pub enum ExternalDropEvent {
+    /// The drag has entered the window.
     Entered {
         /// The position of the mouse relative to the window.
         position: Point<Pixels>,
-        /// The paths of the files that are being dragged.
-        paths: ExternalPaths,
+        /// The typed payload advertised by the source.
+        payload: ExternalDropPayload,
     },
-    /// The files are being dragged over the window
+    /// The drag is being held over the window. Receivers should consult
+    /// their [`DropAcceptFilter`] on this step and update cursor /
+    /// preview state accordingly.
     Pending {
         /// The position of the mouse relative to the window.
         position: Point<Pixels>,
     },
-    /// The files have been dropped onto the window.
+    /// The drop has been committed onto the window.
     Submit {
         /// The position of the mouse relative to the window.
         position: Point<Pixels>,
     },
-    /// The user has stopped dragging the files over the window.
+    /// The user has stopped dragging over the window without dropping.
     Exited,
 }
 
-impl Sealed for FileDropEvent {}
-impl InputEvent for FileDropEvent {
+/// Soft-migration alias from the pre-ADR-011 name. Out-of-tree callers
+/// that match `FileDropEvent::Entered { paths, .. }` need to migrate to
+/// `ExternalDropEvent::Entered { payload, .. }` and pattern-match on
+/// [`ExternalDropPayload::Paths`] for the legacy behaviour; the alias
+/// keeps un-pattern-matching call sites compiling during the
+/// transition.
+pub type FileDropEvent = ExternalDropEvent;
+
+impl Sealed for ExternalDropEvent {}
+impl InputEvent for ExternalDropEvent {
     fn to_platform_input(self) -> PlatformInput {
         PlatformInput::FileDrop(self)
     }
 }
-impl MouseEvent for FileDropEvent {}
+impl MouseEvent for ExternalDropEvent {}
 
 /// An enum corresponding to all kinds of platform input events.
 #[derive(Clone, Debug)]
@@ -801,5 +901,147 @@ mod test {
                 assert!(test_view.saw_action);
             })
             .unwrap();
+    }
+
+    // ===== ADR-011 ExternalDropPayload regression tests ===================
+
+    /// ADR-011 — typed payload variants construct + match correctly.
+    ///
+    /// Locks the public surface: callers can construct each variant
+    /// (Paths / Urls / Text / Html / Mime / Mixed) and destructure them
+    /// in `match` arms. A regression that drops a variant or breaks its
+    /// shape would fail to compile this test.
+    #[test]
+    fn adr_011_external_drop_payload_variants_construct_and_match() {
+        use crate::{ExternalDropPayload, ExternalPaths};
+        use smallvec::smallvec;
+        use std::path::PathBuf;
+
+        let paths = ExternalDropPayload::Paths(ExternalPaths(smallvec![PathBuf::from(
+            "/some/file.txt"
+        )]));
+        let urls = ExternalDropPayload::Urls(smallvec![
+            url::Url::parse("https://example.com").unwrap()
+        ]);
+        let text = ExternalDropPayload::Text("hello".into());
+        let html = ExternalDropPayload::Html {
+            html: "<b>hi</b>".into(),
+            text: Some("hi".into()),
+        };
+        let mime = ExternalDropPayload::Mime {
+            kind: "image/png".into(),
+            bytes: vec![0x89, 0x50, 0x4E, 0x47],
+        };
+        // Construct fresh payloads for the Mixed variant rather than
+        // cloning the existing ones — keeps clippy happy and exercises
+        // the recursive shape directly.
+        let mixed = ExternalDropPayload::Mixed(smallvec![
+            Box::new(ExternalDropPayload::Urls(smallvec![
+                url::Url::parse("https://nested.example").unwrap()
+            ])),
+            Box::new(ExternalDropPayload::Text("nested".into())),
+            Box::new(ExternalDropPayload::Html {
+                html: "<i>n</i>".into(),
+                text: None,
+            }),
+        ]);
+
+        // Each variant matches its own arm.
+        for (label, payload) in [
+            ("Paths", &paths),
+            ("Urls", &urls),
+            ("Text", &text),
+            ("Html", &html),
+            ("Mime", &mime),
+            ("Mixed", &mixed),
+        ] {
+            // `#[non_exhaustive]` matters for external crates only; inside
+            // this crate the match below stays exhaustive over current
+            // variants. A future variant will force this match arm to
+            // grow alongside the enum — that is the explicit signal.
+            let arm = match payload {
+                ExternalDropPayload::Paths(_) => "Paths",
+                ExternalDropPayload::Urls(_) => "Urls",
+                ExternalDropPayload::Text(_) => "Text",
+                ExternalDropPayload::Html { .. } => "Html",
+                ExternalDropPayload::Mime { .. } => "Mime",
+                ExternalDropPayload::Mixed(_) => "Mixed",
+            };
+            assert_eq!(arm, label, "{} variant must match its own arm", label);
+        }
+
+        // Mixed boxes the recursive variant — pull out the inner payloads.
+        if let ExternalDropPayload::Mixed(parts) = &mixed {
+            assert_eq!(parts.len(), 3);
+            assert!(matches!(*parts[0], ExternalDropPayload::Urls(_)));
+            assert!(matches!(*parts[1], ExternalDropPayload::Text(_)));
+            assert!(matches!(*parts[2], ExternalDropPayload::Html { .. }));
+        } else {
+            unreachable!()
+        }
+    }
+
+    /// ADR-011 — `Eq + PartialEq` derive holds for all variants
+    /// (needed so `ClipboardEntry::ExternalDrop(ExternalDropPayload)`
+    /// can stay `Eq + PartialEq`).
+    #[test]
+    fn adr_011_external_drop_payload_equality() {
+        use crate::{ExternalDropPayload, ExternalPaths};
+        use smallvec::smallvec;
+        use std::path::PathBuf;
+
+        let a = ExternalDropPayload::Paths(ExternalPaths(smallvec![PathBuf::from("/x")]));
+        let a_eq = ExternalDropPayload::Paths(ExternalPaths(smallvec![PathBuf::from("/x")]));
+        let b = ExternalDropPayload::Paths(ExternalPaths(smallvec![PathBuf::from("/y")]));
+        let c = ExternalDropPayload::Text("/x".into());
+
+        assert_eq!(a, a_eq);
+        assert_ne!(a, b);
+        assert_ne!(a, c);
+        // Mixed recursive equality — construct each side fresh rather
+        // than cloning, to keep clippy's redundant-clone lint happy.
+        let mix_a = ExternalDropPayload::Mixed(smallvec![Box::new(
+            ExternalDropPayload::Paths(ExternalPaths(smallvec![PathBuf::from("/x")]))
+        )]);
+        let mix_b = ExternalDropPayload::Mixed(smallvec![Box::new(
+            ExternalDropPayload::Paths(ExternalPaths(smallvec![PathBuf::from("/x")]))
+        )]);
+        let mix_c = ExternalDropPayload::Mixed(smallvec![Box::new(
+            ExternalDropPayload::Paths(ExternalPaths(smallvec![PathBuf::from("/y")]))
+        )]);
+        assert_eq!(mix_a, mix_b);
+        assert_ne!(mix_a, mix_c);
+    }
+
+    /// ADR-011 — soft-migration alias: `FileDropEvent` is still a usable
+    /// name for `ExternalDropEvent`, so out-of-tree callers don't break
+    /// on the rename in their first build. The alias is for the *type*
+    /// only; the field rename `paths` → `payload` is still observable.
+    #[test]
+    fn adr_011_file_drop_event_alias_resolves_to_external_drop_event() {
+        use crate::{ExternalDropEvent, ExternalDropPayload, ExternalPaths, FileDropEvent};
+
+        let _via_new_name: ExternalDropEvent = ExternalDropEvent::Exited;
+        let _via_alias: FileDropEvent = FileDropEvent::Exited;
+        // The alias and the renamed type are interchangeable — these
+        // bindings compile only if `type FileDropEvent = ExternalDropEvent`
+        // holds. (Direct cross-assignment via `let x: FileDropEvent = ...`
+        // expression instead of `.clone()` to avoid the redundant-clone
+        // lint.)
+        let _interchangeable: FileDropEvent = ExternalDropEvent::Exited;
+        let _back_to_new: ExternalDropEvent = FileDropEvent::Exited;
+
+        // Construct via the alias name, observe the `payload` field
+        // (new field name; alias does NOT preserve the old `paths`).
+        let drop = FileDropEvent::Entered {
+            position: crate::point(crate::px(0.0), crate::px(0.0)),
+            payload: ExternalDropPayload::Paths(ExternalPaths::default()),
+        };
+        match drop {
+            ExternalDropEvent::Entered { payload, .. } => {
+                assert!(matches!(payload, ExternalDropPayload::Paths(_)));
+            }
+            _ => unreachable!(),
+        }
     }
 }

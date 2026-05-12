@@ -1025,13 +1025,19 @@ impl IDropTarget_Impl for WindowsDragDropHandler_Impl {
                     .ok()
                     .log_err();
                 let scale_factor = self.0.state.scale_factor.get();
-                let input = PlatformInput::FileDrop(FileDropEvent::Entered {
+                // ADR-011: Windows currently only negotiates the
+                // `CF_HDROP` path category. Wider MIME negotiation
+                // (CF_INETURL, CF_UNICODETEXT, CF_HTML) is a
+                // Windows-side follow-up tracked in the rollout plan;
+                // for now this emits the legacy Paths-only payload via
+                // the new typed enum.
+                let input = PlatformInput::FileDrop(ExternalDropEvent::Entered {
                     position: logical_point(
                         cursor_position.x as f32,
                         cursor_position.y as f32,
                         scale_factor,
                     ),
-                    paths: ExternalPaths(paths),
+                    payload: ExternalDropPayload::Paths(ExternalPaths(paths)),
                 });
                 self.handle_drag_drop(input);
             } else {

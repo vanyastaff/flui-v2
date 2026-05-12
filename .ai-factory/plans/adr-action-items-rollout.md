@@ -99,7 +99,12 @@ safely.
 - [x] Task 10: ADR-012 `canvas` rustdoc example.
 
 ### Phase F — External DnD payload
-- [ ] Task 11: ADR-011 `ExternalDropPayload` migration (breaking).
+- [x] Task 11: ADR-011 `ExternalDropPayload` migration (breaking).
+  - **Landed:** `ExternalDropPayload` enum (`#[non_exhaustive]`, 6 variants: `Paths`/`Urls`/`Text`/`Html`/`Mime`/`Mixed`) + `Eq/PartialEq` derives; `FileDropEvent` renamed to `ExternalDropEvent` with the field `paths` → `payload`; soft-migration `pub type FileDropEvent = ExternalDropEvent` alias for out-of-tree callers; `DropAcceptFilter` type alias; `ClipboardEntry::ExternalPaths` → `ClipboardEntry::ExternalDrop(ExternalDropPayload)` (also `#[non_exhaustive]`); all 5 platform glue files (mac/pasteboard, mac/window, windows/clipboard, windows/window, linux/{x11,wayland}/client, web/events) updated to emit `Paths` payload via the new typed enum; 3 regression tests.
+  - **Deferred follow-ups** (per ADR-011 #4/#5):
+    - Wider per-platform MIME negotiation: macOS (`NSURLPboardType`, `NSStringPboardType`, `public.html`), Windows (`CF_INETURL`, `CF_UNICODETEXT`, `CF_HTML`), X11 (XDND types beyond `text/uri-list`), Wayland (`wl_data_offer::accept` for non-URI types), Web (full `DataTransfer.types` walk).
+    - `DropAcceptFilter` wiring to `Div::on_drop` API — currently the type is defined but not consumed by the listener path.
+    - Sandbox example (`examples/dnd_payload`) with URL drag from Firefox/Chrome/Safari/Edge — requires cross-browser manual testing.
 
 ### Phase G — Text rasterization + software-rendering pacing
 - [ ] Task 12: ADR-013 `TextRasterMode` + per-style override.

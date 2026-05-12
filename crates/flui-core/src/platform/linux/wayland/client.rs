@@ -2208,10 +2208,20 @@ impl Dispatch<wl_data_device::WlDataDevice, ()> for WaylandClientStatePtr {
                                 return;
                             }
 
-                            let input = PlatformInput::FileDrop(FileDropEvent::Entered {
-                                position,
-                                paths: flui_core::ExternalPaths(paths),
-                            });
+                            // ADR-011: Wayland currently only negotiates the
+                            // `text/uri-list` path category. Wider MIME
+                            // negotiation (Urls, Text, Html, arbitrary Mime)
+                            // is a per-platform follow-up tracked in the
+                            // rollout plan; for now this emits the legacy
+                            // Paths-only payload via the new typed enum.
+                            let input = PlatformInput::FileDrop(
+                                flui_core::ExternalDropEvent::Entered {
+                                    position,
+                                    payload: flui_core::ExternalDropPayload::Paths(
+                                        flui_core::ExternalPaths(paths),
+                                    ),
+                                },
+                            );
 
                             let client = this.get_client();
                             let mut state = client.borrow_mut();
