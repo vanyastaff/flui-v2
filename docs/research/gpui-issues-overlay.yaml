@@ -52,9 +52,9 @@ issues:
     repro: 'yes'
     notes: 'Покрыто ADR-009 (docs/research/adr/ADR-009-input-ime-contract.md). `do_command_by_selector` в mac/window.rs:2423 имеет тот же шаблон — селектор игнорируется (`_: Sel`), keystroke re-fire через keymap. Контракт: дополнить InputHandler методом handle_editor_command + enum EditorCommand.'
   40623:
-    adr: 'no'
-    repro: 'unknown'
-    notes: macOS trackpad horizontal scroll не блокирует vertical. Конкретный gesture-bug.
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Покрыто ADR-019 (docs/research/adr/ADR-019-scroll-physics.md), decision 3: axis-lock в ScrollPhysics::apply_delta. Закрывается data-change, не новым gesture recogniser.'
   38350:
     adr: 'yes'
     repro: 'partial'

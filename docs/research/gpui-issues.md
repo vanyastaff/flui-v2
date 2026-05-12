@@ -4,7 +4,7 @@
 **Фильтр:** `label:area:gpui is:issue`
 **Дата снимка:** 2026-05-12
 **Всего:** 242  (open: 43, closed: 199)
-**Overlay (наш триаж):** 43 issues  (ADR: yes=29, maybe=2)
+**Overlay (наш триаж):** 43 issues  (ADR: yes=30, maybe=2)
 
 Колонки `ADR?`, `Reproduced in flui-v2?`, `Notes` берутся из
 `docs/research/gpui-issues-overlay.yaml` — редактируйте overlay, а не этот файл (он перегенерируется).
@@ -42,7 +42,7 @@
 | #43273 | gpui: Add a mechanism to render one-off shaders | 2025-11-21 | @mikayla-maki |  | 0 | [link](https://github.com/zed-industries/zed/issues/43273) | yes | partial | Покрыто ADR-012 (docs/research/adr/ADR-012-custom-canvas-paint.md). Reading (A) — низкоуровневый paint — закрыт: `canvas(prepaint, paint)` в elements/canvas.rs. Reading (B) — custom shader — отдельный future ADR. |
 | #43207 | gpui: On Android | 2025-11-21 | @mikayla-maki |  | 2 | [link](https://github.com/zed-industries/zed/issues/43207) | yes | n-a | Покрыто docs/research/mobile-roadmap.md (стратегический roadmap, не ADR). Touchpoints: android-activity crate, wgpu Vulkan, onPause→ADR-005 recover. |
 | #43206 | gpui: On IOS | 2025-11-21 | @mikayla-maki |  | 3 | [link](https://github.com/zed-industries/zed/issues/43206) | yes | n-a | Покрыто docs/research/mobile-roadmap.md. Touchpoints: objc2, UIKit lifecycle (applicationDidEnterBackground), wgpu Metal, ADR-009 IME contract extends к UITextInput. |
-| #40623 | macOS: Horizontal scroll with trackpad does not prevent vertical scroll | 2025-10-19 | @iwa | platform:macOS, area:ui/scrolling, state:needs repro, frequency:common, priority:P3 | 4 | [link](https://github.com/zed-industries/zed/issues/40623) | no | unknown | macOS trackpad horizontal scroll не блокирует vertical. Конкретный gesture-bug. |
+| #40623 | macOS: Horizontal scroll with trackpad does not prevent vertical scroll | 2025-10-19 | @iwa | platform:macOS, area:ui/scrolling, state:needs repro, frequency:common, priority:P3 | 4 | [link](https://github.com/zed-industries/zed/issues/40623) | yes | partial | Покрыто ADR-019 (docs/research/adr/ADR-019-scroll-physics.md), decision 3: axis-lock в ScrollPhysics::apply_delta. Закрывается data-change, не новым gesture recogniser. |
 | #38350 | [Darwin] Zed reacts to hover events when in background | 2025-09-17 | @dwt | platform:macOS, area:popovers, state:needs repro, frequency:common, priority:P3 | 2 | [link](https://github.com/zed-industries/zed/issues/38350) | yes | partial | Частично покрыто ADR-002 (docs/research/adr/ADR-002-hover-active-invalidation.md) — scoped invalidation reduces over-paint от лишних hover events. Сама причина (events fire when window is in background) — отдельный ADR про event filtering при background-state. |
 | #37727 | Windows Alpha: Text typing loads GPU as FullHD video playing | 2025-09-07 | @hisbvdis | platform:windows, state:needs repro, frequency:common, priority:P2 | 4 | [link](https://github.com/zed-industries/zed/issues/37727) | yes | unknown | ВАЖНО: Windows + ввод текста = GPU 20% vs VSCode 2%. Архитектурный ADR по text render performance / damage regions. Мы на Windows — обязательно проверить наш text_system на аналогичную картину. |
 | #35903 | The Zed editor window sometimes has difficulty being dragged and does not move with the mouse. | 2025-08-09 | @Simao0532 | platform:macOS, state:reproducible, frequency:uncommon, priority:P3 | 2 | [link](https://github.com/zed-industries/zed/issues/35903) | no | unknown | Window drag flaky на macOS — platform bug. |
