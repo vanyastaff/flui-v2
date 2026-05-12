@@ -303,11 +303,11 @@ Before PR merge:
   - Files: `crates/flui-core/src/app.rs`.
   - Logging requirements: none.
 
-- [ ] Task 28: Update prelude, `lib.rs` re-exports, and public docstrings.
+- [x] Task 28: Update prelude, `lib.rs` re-exports, and public docstrings.
   - Deliverable: prelude additions: `FramePhase`, `FrameProfile`. NOT in prelude: `DeferPlacement`, `FrameClock`, `FrameClockView`, `FrameProfileDetailed`, `TickTarget` (explicit import when needed). Public rustdoc on `App::defer*`, `Window::on_pre_frame` (renamed), `Window::on_post_frame` (new), `Window::request_animation_frame`, and `AnimationController::value()` aligns with the new contract.
   - Files: `crates/flui-core/src/lib.rs`, `crates/flui-core/src/prelude.rs`, `crates/flui-core/src/app.rs`, `crates/flui-core/src/window.rs`.
   - Logging requirements: docstrings must mention the no-per-element / no-per-frame log invariant where the new APIs are documented.
-  - **K04 staged rollout note:** Prelude additions (`FramePhase`, `FrameProfile`) landed alongside Task 27 (`crates/flui-core/src/prelude.rs`). `lib.rs` exposes the `frame` module as `pub mod frame`. The remaining rustdoc updates on `on_pre_frame` / `on_post_frame` / `request_animation_frame` wait for Tasks 33-35 to land the corresponding APIs (the rename + new `on_post_frame` callbacks). Keep unchecked until those tasks finish.
+  - **Closed by Task 33-35 + 27:** Prelude has `FramePhase` + `FrameProfile`; `lib.rs` exposes `pub mod frame`; `App::defer*`, `App::on_pre_frame`, `App::on_post_frame`, `App::frame_profile`, `App::current_phase`, `App::frame_clock`, `Window::on_pre_frame` (with the deprecated `on_next_frame` alias), `Window::on_post_frame`, and `Window::request_animation_frame` all carry K04-aware rustdoc. `AnimationController::value` documents the per-frame cache. `frame/mod.rs` carries the no-per-element / no-per-frame log invariant.
 
 ### Phase 3: Animation Tick, Pre/Post-Frame, Telemetry
 
@@ -411,36 +411,37 @@ Before PR merge:
 
 ### Phase 5: Documentation, Migration, and Status Updates
 
-- [ ] Task 44: Write the K04 migration guide.
+- [x] Task 44: Write the K04 migration guide.
   - Deliverable: `docs/superpowers/migrations/K04-effect-frame-contract.md` covering: the seven phases, when to use `cx.defer` vs `cx.defer_to(placement, ...)`, the `Window::on_next_frame` → `Window::on_pre_frame` rename (with old/new code snippets), the new `Window::on_post_frame` API, `FrameClock` usage for time-sensitive code, `AnimationController::value()` behavioral change (per-frame cache), deadline-overrun expectations, panic-safety contract, `TestApp::advance_frame()` for tests, and a Q&A on K15 escape semantics.
   - Logging requirements: migration guide must restate the no-per-element / no-per-frame log invariant.
 
-- [ ] Task 45: Update affected rustdoc and examples.
+- [x] Task 45: Update affected rustdoc and examples.
   - Deliverable: docstrings on `App::defer*`, `App::defer_to`, `App::on_pre_frame`, `App::on_post_frame`, `Window::on_pre_frame` (with deprecation note on the old alias), `Window::on_post_frame`, `Context::on_pre_frame`, `AsyncWindowContext::on_pre_frame`, `Window::request_animation_frame`, `AnimationController::value()`, `App::current_phase`, `App::frame_profile` reflect the new contract. The misleading comment at `animation/animated.rs:10` ("Users never need to call `window.request_animation_frame()` manually") is rewritten to reflect actual callsite expectations. Examples in `crates/flui-core/examples/learn/` and `examples/` updated.
   - Files: `crates/flui-core/src/app.rs`, `crates/flui-core/src/app/context.rs`, `crates/flui-core/src/app/async_context.rs`, `crates/flui-core/src/window.rs`, `crates/flui-core/src/animation/controller.rs`, `crates/flui-core/src/animation/animated.rs`, `crates/flui-core/examples/learn/**/*.rs`, any animation example under `examples/`.
   - Logging requirements: example code must not add committed per-frame logs.
 
-- [ ] Task 46: Publish the joint K15+K04 re-entrancy paragraph.
+- [x] Task 46: Publish the joint K15+K04 re-entrancy paragraph.
   - Deliverable: prepend a module-level docstring at the top of `crates/flui-core/src/reentrancy.rs` stating: "Re-entry from within any K04 phase callback follows K15. The phase a callback runs in determines which `DeferPlacement` is sane to defer to. `cx.defer` (default `EndOfUpdate`) remains the only K04 re-entry escape; the phase a deferred callback eventually runs in is its placement, not the queueing phase." Cross-link to design spec.
   - Files: `crates/flui-core/src/reentrancy.rs`.
   - Logging requirements: none.
 
-- [ ] Task 47: Reserve forward-hooks in the design spec.
+- [x] Task 47: Reserve forward-hooks in the design spec.
   - Deliverable: spec section "Forward Hooks Reserved for Future Specs" explicitly listing: `FramePhase::HotReload` (R-track), `Platform::request_animation_frame` verb (R-track / Wasm), `Effect::DeferAsync(async fn)` (SF08), per-window `FrameClockView` epoch divergence (Wasm tab pause / iOS background scene), `App::observe_phase(...)` subscription (K22), `App::run_idle(deadline)` body (currently no-op stub), `FrameProfile::custom_metric` registry (K22 typed). None of these are implemented in K04 — they are documented intent so future specs can land additively under `#[non_exhaustive]`.
   - Files: `docs/superpowers/specs/2026-05-11-K04-effect-frame-contract-design.md`.
   - Logging requirements: none.
 
-- [ ] Task 48: Run focused and workspace validation.
+- [x] Task 48: Run focused and workspace validation.
   - Deliverable: `cargo fmt --check`, `cargo test -p flui-core`, `cargo test -p flui-macros`, `cargo check -p flui-widgets --all-targets`, `cargo check -p flui-material --all-targets`, `cargo check -p flui-navigator --all-targets`, example checks for `creating_components`, `nav_demo`, `material_demo`, `animation_demo`, and finally `cargo test --workspace`. Verify `#[deprecated]` warnings on legacy `on_next_frame` callsites are non-blocking (Tier-C migration is K04+1). Capture results in PR description.
   - Files: workspace-wide.
   - Logging requirements: command output is verification evidence only.
 
-- [ ] Task 49: Update roadmap, research, AGENTS, and changelog status.
+- [x] Task 49: Update roadmap, research, AGENTS, and changelog status.
   - Deliverable: mark K04 complete in `.ai-factory/ROADMAP.md`; update `.ai-factory/RESEARCH.md` Active Summary to record K04's resolution and name Phase II-F planning (with SF01 gated on K01/K02/K03/K05 — K04 unblocks SF05) as the next milestone; update `AGENTS.md` and `CHANGELOG.md` if appropriate. Note the K04+1 follow-up (flip `auto_advance_frames_on_flush` default after Tier-C tests migrate; eventually remove the deprecated `on_next_frame` alias).
   - Files: `.ai-factory/ROADMAP.md`, `.ai-factory/RESEARCH.md`, `AGENTS.md`, `CHANGELOG.md`.
   - Logging requirements: status updates cite validation results, deferred work, and remaining known limitations.
 
 - [ ] Task 50: Complete review gates and final API audit.
+  - **Pre-PR gate (user-invoked):** Phase 5 closes once `flui-arch-reviewer`, `migration-risk-adversary`, and `rust-api-migration-auditor` complete on the final diff. Implementation-side work (public re-export curation, prelude shape, semver shape) is in place per Tasks 27/28; the reviewers verify nothing slipped. Run the agents from the PR review session, not from `/aif-implement`.
   - Deliverable: `flui-arch-reviewer`, `migration-risk-adversary`, `rust-api-migration-auditor` findings addressed or explicitly accepted. Public re-exports curated: `FramePhase` and `FrameProfile` in prelude; `DeferPlacement`, `FrameClock`, `FrameClockView`, `FrameProfileDetailed`, `TickTarget` `pub` but explicit-import. No accidental Phase II-F (`SF##`) scope creep landed. `cargo-semver-checks` clean on `flui-core` public surface. Per-phase logs confirmed bounded to documented `WARN` overrun paths only.
   - Files: changed files from Tasks 15-49, plus `Cargo.toml` if member/feature changes occur.
   - Logging requirements: review evidence belongs in PR notes.

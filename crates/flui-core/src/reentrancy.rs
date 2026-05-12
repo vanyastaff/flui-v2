@@ -7,6 +7,36 @@
 //! Kernel Cleanup, critical chain). Authoritative design document:
 //! `docs/superpowers/specs/2026-05-09-K15-reentrancy-contract-design.md`.
 //!
+//! # K15 + K04 joint contract
+//!
+//! K04 (Effect / Frame Contract) layered a typed seven-phase pipeline on top
+//! of the App scheduler without weakening K15:
+//!
+//! - **Re-entry from any K04 phase callback follows K15.** A callback running
+//!   inside `PreFrame`, `AnimationTick`, `Layout`, `Prepaint`, `Paint`, or
+//!   `PostFrame` is subject to the same allow / forbid / queue rules as a
+//!   pre-K04 observer or update body.
+//! - **`cx.defer` (default [`DeferPlacement::EndOfUpdate`](crate::frame::DeferPlacement::EndOfUpdate))
+//!   remains the only K04 re-entry escape.** K04 did NOT introduce a new
+//!   escape path — placement-aware [`cx.defer_to(placement, ...)`](crate::App::defer_to)
+//!   is the same escape with a different drain phase, not a new bucket.
+//! - **The phase a deferred callback eventually runs in is its placement,
+//!   not the queueing phase.** A `cx.defer_to(NextFrameStart, ...)` queued
+//!   from inside `on_pre_frame` runs in the NEXT frame's `PreFrame`, not the
+//!   current frame's. The drain logic in `App::run_phase`
+//!   (`FlushScope::PhasePost`) is the mechanism that enforces this — post-body
+//!   drains admit only `EndOfUpdate`, so matching-placement defers always
+//!   carry to a later phase entry.
+//! - **`Window::on_pre_frame` / `Window::on_post_frame` are not new escapes.**
+//!   They are convenience APIs for queueing work into specific phase
+//!   boundaries; the work itself still obeys K15 inside the phase body
+//!   (e.g. `on_post_frame` MUST NOT mutate elements directly — queue via
+//!   `cx.defer_to(NextFrameStart, ...)` instead).
+//!
+//! Spec cross-references:
+//! `docs/superpowers/specs/2026-05-11-K04-effect-frame-contract-design.md`,
+//! `docs/superpowers/migrations/K04-effect-frame-contract.md`.
+//!
 //! # The contract
 //!
 //! Every callback class falls into one of three buckets:
