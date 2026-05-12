@@ -134,11 +134,11 @@ issues:
   43207:
     adr: 'yes'
     repro: 'n-a'
-    notes: Android target. Стратегический ADR на наш roadmap.
+    notes: 'Покрыто docs/research/mobile-roadmap.md (стратегический roadmap, не ADR). Touchpoints: android-activity crate, wgpu Vulkan, onPause→ADR-005 recover.'
   43206:
     adr: 'yes'
     repro: 'n-a'
-    notes: iOS target. Стратегический ADR на наш roadmap.
+    notes: 'Покрыто docs/research/mobile-roadmap.md. Touchpoints: objc2, UIKit lifecycle (applicationDidEnterBackground), wgpu Metal, ADR-009 IME contract extends к UITextInput.'
   34796:
     adr: 'yes'
     repro: 'no'
