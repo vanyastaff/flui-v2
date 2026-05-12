@@ -1,0 +1,173 @@
+issues:
+  56314:
+    adr: 'no'
+    repro: 'unknown'
+    notes: Wayland init panic — bug в платформенном бэкенде. Проверить наш crates/flui-core/src/platform/linux init на аналогичные `unreachable!`.
+  56294:
+    adr: 'yes'
+    repro: 'unknown'
+    notes: 'Архитектурный: жизненный цикл `on_next_frame`-регистраций во время `paint`. ADR по контракту scheduler/frame callbacks (см. flui-core/src/scheduler).'
+  48103:
+    adr: 'no'
+    repro: 'unknown'
+    notes: Wayland-specific (drag/resize не работают для standalone). Под нас не приоритет, пока Linux не доезжаем.
+  46378:
+    adr: 'yes'
+    repro: 'unknown'
+    notes: 'Архитектурный: AppContext::displays() пуст до создания первого окна. ADR по lifecycle обнаружения мониторов до окон.'
+  44529:
+    adr: 'no'
+    repro: 'unknown'
+    notes: UI 1px shift после авторизации — Zed-specific design papercut.
+  33956:
+    adr: 'no'
+    repro: 'unknown'
+    notes: X11 cursor lag на 4K. Платформенный bug. Linux пока не приоритет.
+  30469:
+    adr: 'no'
+    repro: 'unknown'
+    notes: 'Wayland: монитор выкл → app закрывается. Нужен device-lost / output-disconnect hook (см. также #23288).'
+  21851:
+    adr: 'yes'
+    repro: 'unknown'
+    notes: 'Архитектурный: обновление DPI scale при переходе окна между мониторами X11. ADR по DPI tracking contract.'
+  21341:
+    adr: 'maybe'
+    repro: 'unknown'
+    notes: Тень за прозрачным окном. Дизайн-вопрос; ADR разве что в общем спеке о window decorations.
+  19805:
+    adr: 'no'
+    repro: 'unknown'
+    notes: 'X11 1.5x scale: wrap guides слишком тонкие. Pixel-rounding в рендере под non-integer scale. Локально, без ADR.'
+  14590:
+    adr: 'yes'
+    repro: 'n-a'
+    notes: 'X11 background blur. Feature ADR — стоит решать вместе с #5040 closed по transparency.'
+  54017:
+    adr: 'maybe'
+    repro: 'unknown'
+    notes: Floating window не становится key. macOS NSWindow level/key behavior. Если у нас macOS не приоритет — отложить.
+  52550:
+    adr: 'yes'
+    repro: 'n-a'
+    notes: 'Архитектурный: контракт IME/keybinding. doCommandBySelector ignores selector → ломает DefaultKeyBinding.dict. ADR по input/IME pipeline (касается всех платформ).'
+  40623:
+    adr: 'no'
+    repro: 'unknown'
+    notes: macOS trackpad horizontal scroll не блокирует vertical. Конкретный gesture-bug.
+  38350:
+    adr: 'yes'
+    repro: 'unknown'
+    notes: 'Hover events когда окно не в foreground. Архитектурный: event filtering при background-state. У нас flui-core/src/gesture — нужен ADR по contract на pointer-events lifecycle.'
+  35903:
+    adr: 'no'
+    repro: 'unknown'
+    notes: Window drag flaky на macOS — platform bug.
+  27500:
+    adr: 'yes'
+    repro: 'unknown'
+    notes: 'Архитектурный: drag-region API на title bar. Кнопка внутри drag-region всё равно драгает окно. ADR по window decorations / drag-zone semantics.'
+  52448:
+    adr: 'maybe'
+    repro: 'unknown'
+    notes: Modal в одном окне блокирует навигацию в других. Архитектурный вопрос модальности (scoped vs app-global). У нас несколько окон поддерживаются — критично проверить.
+  52085:
+    adr: 'no'
+    repro: 'unknown'
+    notes: 'Crash во время обновления GPU driver. Симптом device-lost — связан с #23288 (полноценный ADR именно там).'
+  37727:
+    adr: 'yes'
+    repro: 'unknown'
+    notes: 'ВАЖНО: Windows + ввод текста = GPU 20% vs VSCode 2%. Архитектурный ADR по text render performance / damage regions. Мы на Windows — обязательно проверить наш text_system на аналогичную картину.'
+  55972:
+    adr: 'yes'
+    repro: 'unknown'
+    notes: 'Альфа-композитинг: opacity суммируются. Архитектурный — color pipeline / blending mode. ADR по контракту alpha/transparency.'
+  55214:
+    adr: 'yes'
+    repro: 'n-a'
+    notes: 'Metrics hinting + bi-level rendering. Архитектурный выбор: подписан на Skrifa. ADR в text_system по text rasterization strategy.'
+  52715:
+    adr: 'yes'
+    repro: 'unknown'
+    notes: 'wasm regression: closure recursive, proptest tянет imp. ADR по wasm target gating (dev-deps + feature flags). Мы тоже целимся в web — критично.'
+  52110:
+    adr: 'yes'
+    repro: 'unknown'
+    notes: 'External drag-and-drop в standalone-apps. Архитектурный: API контракт DnD на всех платформах. У нас сейчас drop-API нет.'
+  52067:
+    adr: 'maybe'
+    repro: 'unknown'
+    notes: is_minimizable / is_resizable не уважаются. Контракт WindowOptions. Локально починить, но стоит зафиксировать инвариант в спеке Window.
+  52013:
+    adr: 'maybe'
+    repro: 'unknown'
+    notes: 'Z-index: picker за modal. Архитектурный: ordering overlay/portal-слоёв. Близко к #24405.'
+  50392:
+    adr: 'yes'
+    repro: 'unknown'
+    notes: 'Анимация триггерит full layout repaint. Архитектурный: invalidation scope. Мы строим element identity + render/build separation (K02/K03) — ADR по dirty-region propagation.'
+  49860:
+    adr: 'yes'
+    repro: 'unknown'
+    notes: CJK + ellipsis truncate → not-a-char-boundary panic. У нас flui-core/src/text_system — нужно срочно проверить наши truncation helpers на UTF-8 safety. ADR по text slicing contract.
+  46486:
+    adr: 'no'
+    repro: 'n-a'
+    notes: crates.io старый gpui + macOS SDK mismatch. Чужая инфраструктурная проблема.
+  45897:
+    adr: 'yes'
+    repro: 'unknown'
+    notes: 'Нет Vulkan → 100% CPU на всех ядрах. Архитектурный: fallback стратегия рендера / event loop при software rendering. У нас wgpu — проверить software path.'
+  44339:
+    adr: 'yes'
+    repro: 'unknown'
+    notes: 'ObjectFit::Cover не клипает rounded corners — закругляется сам image, а не visible area. Архитектурный: composition порядок clip + image transform. Применимо к нашим img-элементам.'
+  44252:
+    adr: 'no'
+    repro: 'n-a'
+    notes: Старый NVIDIA driver на конкретной системе.
+  43273:
+    adr: 'yes'
+    repro: 'n-a'
+    notes: '`<canvas>`-аналог для one-off shaders. Feature ADR — связано с custom render pass API.'
+  43207:
+    adr: 'yes'
+    repro: 'n-a'
+    notes: Android target. Стратегический ADR на наш roadmap.
+  43206:
+    adr: 'yes'
+    repro: 'n-a'
+    notes: iOS target. Стратегический ADR на наш roadmap.
+  34796:
+    adr: 'yes'
+    repro: 'n-a'
+    notes: 'Локальный tab-index API (не глобальный). Архитектурный: фокус-менеджмент / accessibility. Связано с flui-a11y.'
+  33050:
+    adr: 'yes'
+    repro: 'unknown'
+    notes: 'Color blending не совпадает со стандартным source-over alpha. Дублирует #55972 — оба покрываются единым ADR по color/alpha pipeline.'
+  24405:
+    adr: 'yes'
+    repro: 'unknown'
+    notes: 'Hover events просачиваются сквозь панели. Архитектурный: hit-test layering. Связано с #52013.'
+  23288:
+    adr: 'yes'
+    repro: 'unknown'
+    notes: 'GPU device-loss graceful recovery. Большой архитектурный ADR — выживание при suspend/resume/driver-crash. Связано с #52085, #30469.'
+  15166:
+    adr: 'yes'
+    repro: 'unknown'
+    notes: 'Damage/present regions не указаны → display server перерисовывает всё окно. Архитектурный: API для invalidation regions / partial present. Связано с #50392, #37727.'
+  14110:
+    adr: 'no'
+    repro: 'unknown'
+    notes: Опция отключить rounded corners окна. Локальная настройка WindowOptions, не ADR.
+  13605:
+    adr: 'no'
+    repro: 'n-a'
+    notes: Запуск GUI в терминале через kitty graphics. Вне нашего scope.
+  8043:
+    adr: 'yes'
+    repro: 'unknown'
+    notes: 'ВАЖНО: GPUI overdraws 5-6× на пиксель. Архитектурный: front-to-back opaque pass + depth/stencil reject. Большой ADR по rendering strategy.'
