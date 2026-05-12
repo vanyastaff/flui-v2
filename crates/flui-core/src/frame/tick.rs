@@ -114,7 +114,14 @@ impl TickTargetId {
 pub trait TickTarget: sealed::Sealed {
     /// Advances the target with the current frame's clock sample. Returns
     /// whether the target stays in the active set after this tick.
-    fn tick(&mut self, now: Instant) -> TickOutcome;
+    ///
+    /// `frame_index` is the monotonic `FrameClock::frame_index()` value for
+    /// the current frame. Implementors that cache per-frame state should
+    /// key the cache on this counter rather than on `now` — under
+    /// `TestClock` two frames can share the same wall-clock `Instant`
+    /// (no advance between ticks), which would defeat an `Instant`-keyed
+    /// cache.
+    fn tick(&mut self, frame_index: u64, now: Instant) -> TickOutcome;
 
     /// Returns the target's stable identifier. The same value is returned on
     /// every call for the lifetime of `self`.

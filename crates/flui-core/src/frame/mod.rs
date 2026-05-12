@@ -51,9 +51,18 @@
 //! [`FrameProfile`]: profile::FrameProfile
 //! [`FrameProfileDetailed`]: profile::FrameProfileDetailed
 
-pub mod clock;
-pub mod profile;
-pub mod tick;
+// K04 review fix #2: submodules are `pub(crate)` and their public items are
+// re-exported flat at `frame::*`. Canonical paths are
+// `flui_core::frame::FrameClock` rather than `flui_core::frame::clock::FrameClock`,
+// so future internal restructuring (merging files, renaming) does not break
+// downstream imports.
+pub(crate) mod clock;
+pub(crate) mod profile;
+pub(crate) mod tick;
+
+pub use clock::{FrameClock, FrameClockView};
+pub use profile::{FrameProfile, FrameProfileDetailed};
+pub use tick::{TickOutcome, TickTarget, TickTargetId};
 
 #[cfg(test)]
 mod tests;
@@ -152,13 +161,23 @@ pub enum FramePhase {
 }
 
 impl FramePhase {
-    /// Number of variants in the enum. Used for sizing per-phase telemetry arrays
-    /// (e.g. `FrameProfileDetailed.per_phase: [Duration; FramePhase::COUNT]`).
+    /// K04 review fix #1: `COUNT` is `pub(crate)` — exposing it as `pub`
+    /// would create a `#[non_exhaustive]` contradiction. Downstream code
+    /// that wants to size per-phase arrays must construct them via
+    /// `[T; N]` literals with a hard-coded `N`, or use the runtime
+    /// accessor [`Self::count`] (which can grow under `#[non_exhaustive]`
+    /// without breaking downstream compilation).
     ///
-    /// Under `#[non_exhaustive]`, future specs adding variants bump `COUNT`.
-    /// Downstream code that indexes per-phase arrays must use this constant
-    /// rather than hardcoding the size.
-    pub const COUNT: usize = 8;
+    /// Used inside the crate to size `FrameProfileDetailed.per_phase`.
+    pub(crate) const COUNT: usize = 8;
+
+    /// Runtime accessor for the current number of [`FramePhase`] variants.
+    /// Stable across `#[non_exhaustive]` additions — downstream code that
+    /// needs the count should call this rather than depend on a `const`.
+    #[inline]
+    pub const fn count() -> usize {
+        Self::COUNT
+    }
 
     /// Returns the discriminant as a `u8` (`Idle = 0`, ..., `PostFrame = 7`).
     /// Stable; matches the `#[repr(u8)]` discriminant.

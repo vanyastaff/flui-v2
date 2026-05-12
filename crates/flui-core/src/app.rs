@@ -678,10 +678,13 @@ pub struct App {
     /// frames explicitly through `TestApp::advance_frame()` (Task 22). K04+1
     /// will flip the default to `false` once Tier-C tests migrate.
     ///
-    /// The field is cfg-gated because the pre-K04 auto-redraw block in
-    /// `flush_effects_at` is itself cfg-gated to `cfg(any(test, feature = "test-support"))`.
+    /// K04 review fix #3: the field is `pub(crate)` and gated on
+    /// `cfg(feature = "test-support")` — flipped via the sanctioned setter
+    /// [`TestApp::set_auto_advance_frames`](crate::TestApp::set_auto_advance_frames).
+    /// `cfg(test)` alone would only apply when this crate is compiled as a
+    /// test target and is not a stable public API surface.
     #[cfg(any(test, feature = "test-support"))]
-    pub auto_advance_frames_on_flush: bool,
+    pub(crate) auto_advance_frames_on_flush: bool,
     quit_mode: QuitMode,
     quitting: bool,
 
@@ -2060,6 +2063,19 @@ impl App {
             FramePhase::Idle,
             "App::run_frame called while a frame is already in flight"
         );
+        // K04 review fix #7: `run_phase` brackets each phase with
+        // `flushing_effects = true` and restores the prior value at the
+        // end. If `run_frame` is entered with `flushing_effects = true`
+        // already (e.g. from a platform callback that itself sits inside
+        // `finish_update`), the `was_flushing` restore at the end of every
+        // phase would leak that pre-existing `true` past the frame —
+        // permanently breaking the legacy Legacy flush path for the rest
+        // of the App's lifetime. Assert the invariant in debug builds so
+        // the issue surfaces in tests rather than silently downstream.
+        debug_assert!(
+            !self.flushing_effects,
+            "App::run_frame entered with flushing_effects = true; that breaks the run_phase guard restoration"
+        );
 
         // Sample the wall clock once for the whole frame measurement. Detailed
         // per-phase durations are captured only when `profiling_enabled`; the
@@ -2144,6 +2160,17 @@ impl App {
             Ok(primitive_count) => {
                 self.current_phase = FramePhase::Idle;
                 self.frame_clock.end_frame();
+                // K04 review fix #11: drain `DeferPlacement::Idle` callbacks
+                // now that the frame is finished and we are back at the
+                // `Idle` phase. Without this, `defer_to(Idle, ...)` would
+                // never fire inside `run_frame` — it would accumulate
+                // silently until a Legacy flush ran. Suppress nested
+                // Legacy flushes for the duration of the Idle drain (a
+                // `defer_to(Idle, ...)` callback that calls `update_window`
+                // would otherwise trigger a same-scope Legacy flush).
+                let was_flushing = std::mem::replace(&mut self.flushing_effects, true);
+                self.flush_effects_at(FlushScope::Phase(FramePhase::Idle), None);
+                self.flushing_effects = was_flushing;
                 FrameOutcome {
                     frame_index: self.frame_clock.frame_index(),
                     panicked_phase: None,
@@ -2354,6 +2381,7 @@ impl App {
         }
 
         let now = self.frame_clock.now();
+        let frame_index = self.frame_clock.frame_index();
         // Take the map so we can lease individual entities (lease holds
         // `&mut self.entities`, which conflicts with iterating
         // `self.active_animations` borrowed from `self`). Re-insert at the
@@ -2373,7 +2401,7 @@ impl App {
             visited += 1;
 
             let mut lease = self.entities.lease(&entity);
-            let outcome: TickOutcome = lease.tick(now);
+            let outcome: TickOutcome = lease.tick(frame_index, now);
             self.entities.end_lease(lease);
 
             match outcome {

@@ -32,7 +32,7 @@ pub use crate::{
     // telemetry — without exposing implementation types like `FrameClock`,
     // `DeferPlacement`, `TickTarget`, or `FrameProfileDetailed`, which stay
     // `pub` but explicit-import.
-    frame::{FramePhase, profile::FrameProfile},
+    frame::{FramePhase, FrameProfile},
     local_util::FluentBuilder,
     reentrancy::{ReentryError, ReentryMode},
 };

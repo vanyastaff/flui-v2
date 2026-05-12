@@ -1307,11 +1307,26 @@ impl Window {
                     }
                 }
 
-                // K04 Tasks 33/36: drain pre-frame callbacks (the renamed
-                // `on_next_frame` queue). `take` the storage so callbacks
-                // queueing more pre-frame work fire next frame, not this one.
+                // K04 Tasks 33/36 + review fix #5: drain pre-frame callbacks
+                // (the renamed `on_next_frame` queue) on the production
+                // platform path. `take` the storage so callbacks queueing
+                // more pre-frame work fire next frame, not this one.
+                //
+                // Dual-drain guard: in debug builds we assert that no frame
+                // is currently in flight from a parallel `App::run_frame`
+                // path (which today only runs through `TestApp::advance_frame`
+                // and therefore should never race with this platform
+                // callback). If a future spec makes `run_frame` the
+                // production entrypoint, this guard becomes the migration
+                // checkpoint — the assert will trip if the new code path
+                // re-enters here before tearing the platform callback down.
                 handle
                     .update(&mut cx, |_, window, cx| {
+                        debug_assert_eq!(
+                            cx.current_phase(),
+                            crate::frame::FramePhase::Idle,
+                            "platform on_request_frame fired while App::run_frame is mid-frame; dual-drain hazard"
+                        );
                         let drained: SmallVec<[FrameCallback; 4]> =
                             RefCell::borrow_mut(&window.next_frame_callbacks)
                                 .drain(..)
@@ -1362,6 +1377,24 @@ impl Window {
                 handle
                     .update(&mut cx, |_, window, _| {
                         window.complete_frame();
+                    })
+                    .log_err();
+
+                // K04 review fix #10: drain `post_frame_callbacks` after
+                // `complete_frame`. Without this, the production platform
+                // path (`on_request_frame`) silently ignores every
+                // `Window::on_post_frame` / `Context::on_post_frame` /
+                // `AsyncWindowContext::on_post_frame` callback — those
+                // would only fire from the test path via `App::run_frame`.
+                handle
+                    .update(&mut cx, |_, window, cx| {
+                        let drained: SmallVec<[FrameCallback; 4]> =
+                            RefCell::borrow_mut(&window.post_frame_callbacks)
+                                .drain(..)
+                                .collect();
+                        for callback in drained {
+                            callback(window, cx);
+                        }
                     })
                     .log_err();
             }
@@ -2005,6 +2038,22 @@ impl Window {
         AsyncWindowContext::new_context(cx.to_async(), self.handle)
     }
 
+    /// K04 review fix #4: returns an opaque
+    /// [`FrameClockView`](crate::frame::FrameClockView) snapshot of the
+    /// App-wide [`FrameClock`](crate::frame::FrameClock).
+    ///
+    /// Today the snapshot always reflects the App-level clock — the
+    /// indirection exists so a future R-track / Wasm spec can introduce
+    /// per-window epoch divergence (tab visibility, iOS background scene)
+    /// without a SemVer break.
+    ///
+    /// Call from inside a frame (e.g. layout, prepaint, paint, or a
+    /// `Window::on_pre_frame` / `on_post_frame` callback) to read the
+    /// per-frame `Instant`, `frame_index`, and `delta`.
+    pub fn frame_clock_view(&self, cx: &App) -> crate::frame::FrameClockView {
+        cx.frame_clock().view()
+    }
+
     /// K04 Task 33: schedule the given closure to be run at the start of the
     /// next frame's [`PreFrame`](crate::frame::FramePhase::PreFrame) phase —
     /// BEFORE `window.draw()` paints the next frame.
@@ -2057,30 +2106,29 @@ impl Window {
 
     /// Schedule a frame to be drawn on the next animation frame.
     ///
-    /// This is useful for elements that need to animate continuously, such as
-    /// a video player or an animated GIF. It causes the window to redraw on
-    /// the next frame even if no other changes have occurred.
+    /// If called from within a view, notifies that view on the next frame.
+    /// Otherwise, refreshes the entire window.
     ///
-    /// # K04 Task 32: idempotence
+    /// # K04 review fix #6: per-view notify restored
     ///
-    /// Multiple calls in the same frame coalesce — a single `Cell<bool>` flag
-    /// (`Window::request_next_frame`) is set on each call; the platform
-    /// `on_request_frame` callback drains the flag exactly once at the start
-    /// of the next frame by marking the window's invalidator dirty. Cost is
-    /// `O(1)` per call regardless of caller frequency, which is the desired
-    /// shape for tight-loop animation drivers (e.g.
-    /// `elements/animation.rs::request_animation_frame` fires every layout
-    /// pass while an animation is in flight).
+    /// An earlier K04 iteration replaced the per-view notify closure with a
+    /// `Cell<bool>` flag that dirtied the entire window invalidator. That
+    /// regressed multi-view windows: every sibling view re-rendered on
+    /// every animation frame, not just the animating one. This method now
+    /// pushes a per-view notify closure (pre-K04 behavior) AND sets the
+    /// idempotence flag, so:
     ///
-    /// # Behavior change vs. pre-K04
-    ///
-    /// Previously, each call appended a closure to `next_frame_callbacks`
-    /// that notified the current view on the next frame. The view-targeted
-    /// notify is replaced by an invalidator-dirty mark — the entire window
-    /// redraws. The existing callers (`elements/animation.rs:210`,
-    /// `elements/img.rs:371`, `animation/animated.rs:30`) want exactly
-    /// "redraw next frame" semantics and are unaffected.
+    /// - per-view granularity is preserved (the closure's `cx.notify(entity)`
+    ///   dedups via `App::pending_notifications`),
+    /// - multiple calls in the same frame coalesce at the App-level
+    ///   dedup, not at this method's storage,
+    /// - the flag still drains in `App::run_frame`'s PreFrame phase as a
+    ///   defense-in-depth invalidator mark for callers that hit this method
+    ///   outside a view context.
     pub fn request_animation_frame(&self) {
+        let entity = self.current_view();
+        self.on_pre_frame(move |_, cx| cx.notify(entity));
+        // Idempotence flag — defense-in-depth for callers outside a view.
         self.request_next_frame.set(true);
     }
 

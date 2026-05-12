@@ -122,14 +122,20 @@ pub struct AnimationController {
     /// be set from a `&self` method on the tick path.
     last_tick_instant: Cell<Option<Instant>>,
 
-    /// K04 Task 31: cached `value()` result keyed by the `Instant` at which
-    /// it was computed. Hits when the next `value()` call sees the same
-    /// `Instant` (per axiom P3: a single frame samples one `Instant`).
-    ///
-    /// Invalidated implicitly — every new `tick()` may overwrite
-    /// `last_tick_instant`, and any cached entry whose key no longer matches
-    /// is recomputed on the next read.
-    value_cache: Cell<Option<(Instant, f32)>>,
+    /// K04 review fix #8: monotonic frame index from the tick walker. Used
+    /// as the cache key for [`Self::value_cache`] instead of `Instant`,
+    /// because under `TestClock` (or any non-monotonic wall clock) two
+    /// frames may share the same `Instant`. The `frame_index` increments
+    /// every frame and never collides.
+    last_tick_frame_index: Cell<Option<u64>>,
+
+    /// K04 Task 31 + review fix #8: cached `value()` result keyed by the
+    /// `frame_index` at which it was computed. Hits when the next
+    /// `value()` call sees the same `frame_index`. Invalidated implicitly
+    /// — every new `tick()` overwrites `last_tick_frame_index`, and any
+    /// cached entry whose key no longer matches is recomputed on the
+    /// next read.
+    value_cache: Cell<Option<(u64, f32)>>,
 }
 
 impl AnimationController {
@@ -159,6 +165,7 @@ impl AnimationController {
             style_curve: None,
             tick_target_id: TickTargetId::allocate(),
             last_tick_instant: Cell::new(None),
+            last_tick_frame_index: Cell::new(None),
             value_cache: Cell::new(None),
         }
     }
@@ -283,11 +290,13 @@ impl AnimationController {
         // outside an AnimationTick (e.g. PreFrame, between frames).
         let now = self.last_tick_instant.get().unwrap_or_else(|| self.now());
 
-        // Cache fast path: same `Instant` ⇒ identical result. Skipped when
-        // no frame `Instant` is available (cache key would degenerate to a
-        // per-call wall-clock read).
-        if let Some((cached_at, val)) = self.value_cache.get()
-            && cached_at == now
+        // K04 review fix #8: cache is keyed on `frame_index` (monotonic),
+        // not `Instant`. Two frames driven by a `TestClock` without
+        // `advance_clock` would share an `Instant` but never a
+        // `frame_index`. Cache misses fall through to recompute.
+        if let Some(frame_index) = self.last_tick_frame_index.get()
+            && let Some((cached_at, val)) = self.value_cache.get()
+            && cached_at == frame_index
         {
             return val;
         }
@@ -326,18 +335,27 @@ impl AnimationController {
             self.value
         };
 
-        // Only cache when we have a frame `Instant` — otherwise the cache
-        // would never hit (each call resamples wall-clock).
-        if self.last_tick_instant.get().is_some() {
-            self.value_cache.set(Some((now, computed)));
+        // Only cache when we have a frame index — outside an
+        // `AnimationTick` (pre-attach, between frames) the cache key would
+        // be `None` and every read would miss.
+        if let Some(frame_index) = self.last_tick_frame_index.get() {
+            self.value_cache.set(Some((frame_index, computed)));
         }
         computed
     }
 
     /// Whether the animation is currently running.
+    ///
+    /// K04 review fix #9: reads `last_tick_instant` (if seeded by the
+    /// `AnimationTick` walker) before falling back to `self.now()`. This
+    /// keeps the Continue/Done outcome in `TickTarget::tick` in lockstep
+    /// with `value()`'s per-frame view — under `TestClock`, both consult
+    /// the same `Instant` for the elapsed check.
     pub fn is_animating(&self) -> bool {
+        let now = self.last_tick_instant.get().unwrap_or_else(|| self.now());
+
         if let (Some(sim), Some(start)) = (&self.simulation, self.sim_start_time) {
-            let elapsed = self.now().saturating_duration_since(start).as_secs_f32();
+            let elapsed = now.saturating_duration_since(start).as_secs_f32();
             return !sim.is_done(elapsed);
         }
 
@@ -346,7 +364,7 @@ impl AnimationController {
                 AnimationStatus::Reverse => self.reverse_duration.unwrap_or(self.duration),
                 _ => self.duration,
             };
-            let elapsed = self.now().saturating_duration_since(start);
+            let elapsed = now.saturating_duration_since(start);
             if elapsed >= duration {
                 return self.repeating;
             }
@@ -749,21 +767,24 @@ impl Animation<f64> for AnimationController {
 // stored value — it only reports whether the controller still wants to be
 // walked next frame.
 impl TickTarget for AnimationController {
-    fn tick(&mut self, now: Instant) -> TickOutcome {
-        // K04 Task 31: seed the per-frame cache key so subsequent `value()`
-        // reads within this frame return the cached result rather than
-        // resampling the wall clock. Per axiom P3, every consumer in the
-        // frame sees the same `Instant`.
+    fn tick(&mut self, frame_index: u64, now: Instant) -> TickOutcome {
+        // K04 Task 31 + review fix #8: seed the per-frame cache keys so
+        // subsequent `value()` reads return the cached result rather than
+        // resampling the wall clock. Cache key is `frame_index` (monotonic),
+        // not `Instant` (may collide under `TestClock`).
         self.last_tick_instant.set(Some(now));
+        self.last_tick_frame_index.set(Some(frame_index));
         // Invalidate the cached *value* so the next `value()` read computes
-        // fresh against the new frame's `Instant`. The cache will repopulate
-        // on first read; we don't recompute here to avoid paying for views
-        // that ignore the controller this frame.
+        // fresh against the new frame. The cache repopulates on first read;
+        // we don't recompute here to avoid paying for views that ignore
+        // the controller this frame.
         self.value_cache.set(None);
 
         // The controller is "still animating" while a curve or simulation is
         // mid-flight. When neither is active, the active set drops this
-        // target via `TickOutcome::Done`.
+        // target via `TickOutcome::Done`. `is_animating()` reads
+        // `last_tick_instant` so the Continue/Done decision matches the
+        // `value()` cache's per-frame view (review fix #9).
         if self.is_animating() {
             TickOutcome::Continue
         } else {
