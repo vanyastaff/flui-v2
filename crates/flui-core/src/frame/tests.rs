@@ -307,9 +307,14 @@ fn k04_k15_defer_next_frame_start_carries_one_frame() {
     app.update(|cx| cx.shutdown());
 }
 
-/// Task 42: a panic inside a phase body triggers `abort_frame_after_panic`;
-/// the App restores `current_phase = Idle` and continues to be usable. The
-/// returned `FrameOutcome` reports the phase that panicked.
+/// Task 42: a panic inside a phase body triggers `abort_frame_after_panic`
+/// and `next_frame` cleanup; the App restores `current_phase = Idle` and
+/// continues to be usable. The returned `FrameOutcome` reports the phase
+/// that panicked.
+///
+/// Per the K04 plan Task 12 panic-safety contract, the panicking window's
+/// in-flight scene buffer must be cleared so the next frame's `Window::draw`
+/// swap does not push stale primitives into `rendered_frame`.
 #[test]
 fn k04_panic_in_phase_recovers_app() {
     let mut app = TestApp::new();

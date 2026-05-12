@@ -2159,6 +2159,17 @@ impl App {
                 // Idle.
                 let panicked_phase = self.current_phase;
                 self.abort_frame_after_panic(panicked_phase);
+                // Per Task 12 of the K04 plan, the in-flight scene-primitive
+                // buffer on the panicking window must be cleared so a partially
+                // populated `next_frame` from a panic mid-Paint does not bleed
+                // primitives into the next frame's `rendered_frame` after the
+                // `mem::swap` in `Window::draw`. The window-id-aware cleanup
+                // lives here (rather than inside `abort_frame_after_panic`)
+                // because the App-level helper has no window context — only
+                // `run_frame` knows which window was being driven.
+                let _ = self.update_window_id(handle.id, |_, window, _| {
+                    window.next_frame.clear();
+                });
                 FrameOutcome {
                     frame_index: self.frame_clock.frame_index(),
                     panicked_phase: Some(panicked_phase),
@@ -2411,10 +2422,13 @@ impl App {
     /// - `pending_effects` queue (drains at the next phase boundary).
     /// - Window invalidator (already dirty → forces redraw).
     ///
-    /// Window-level cleanup of `next_frame` (the in-flight scene buffer) is
-    /// the responsibility of `App::run_frame`'s panic catch path (Task 23),
-    /// not this method — `App` cannot reach into a specific window's frame
-    /// buffer without knowing which window was panicking.
+    /// Window-level cleanup of `next_frame` (the in-flight scene buffer)
+    /// happens in [`Self::run_frame`]'s panic catch path, NOT in this method,
+    /// because only `run_frame` knows which `WindowId` was being driven.
+    /// `run_frame` calls `window.next_frame.clear()` immediately after
+    /// invoking this method so a panic mid-Paint cannot bleed
+    /// half-built primitives into the next frame's `rendered_frame` via the
+    /// `Window::draw` swap.
     pub(crate) fn abort_frame_after_panic(&mut self, _phase: FramePhase) {
         // Note: the `_phase` argument is informational for now — the cleanup
         // is uniform across phases. Task 23 may use it for log context.
