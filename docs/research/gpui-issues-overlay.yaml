@@ -81,8 +81,8 @@ issues:
     notes: 'ВАЖНО: Windows + ввод текста = GPU 20% vs VSCode 2%. Архитектурный ADR по text render performance / damage regions. Мы на Windows — обязательно проверить наш text_system на аналогичную картину.'
   55972:
     adr: 'yes'
-    repro: 'unknown'
-    notes: 'Альфа-композитинг: opacity суммируются. Архитектурный — color pipeline / blending mode. ADR по контракту alpha/transparency.'
+    repro: 'yes'
+    notes: 'Покрыто ADR-003 (docs/research/adr/ADR-003-color-alpha-pipeline.md). `Rgba::blend` в color.rs:58 возвращает `out.a = self.a` — это та же ошибка. GPU side корректен (PREMULTIPLIED_ALPHA_BLENDING). Action item 1 в ADR-003: исправить CPU-формулу.'
   55214:
     adr: 'yes'
     repro: 'n-a'
@@ -145,8 +145,8 @@ issues:
     notes: 'Локальный tab-index API (не глобальный). Архитектурный: фокус-менеджмент / accessibility. Связано с flui-a11y.'
   33050:
     adr: 'yes'
-    repro: 'unknown'
-    notes: 'Color blending не совпадает со стандартным source-over alpha. Дублирует #55972 — оба покрываются единым ADR по color/alpha pipeline.'
+    repro: 'yes'
+    notes: 'Покрыто ADR-003 (docs/research/adr/ADR-003-color-alpha-pipeline.md). Та же ошибка в `Rgba::blend`. Контракт зафиксирован: canonical source-over alpha. Action item 1 — пересчёт формулы.'
   24405:
     adr: 'yes'
     repro: 'partial'
