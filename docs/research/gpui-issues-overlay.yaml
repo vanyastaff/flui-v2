@@ -170,4 +170,4 @@ issues:
   8043:
     adr: 'yes'
     repro: 'yes'
-    notes: 'Audit 2026-05-12: подтверждено — wgpu_renderer.rs:674 cull_mode=None, wgpu_renderer.rs:679 depth_stencil=None. Front-to-back opaque pass + depth reject отсутствует. Большой ADR ещё не написан (отдельная тема, не покрыта 001-019).'
+    notes: 'Покрыто ADR-020 (docs/research/adr/ADR-020-opaque-pass-overdraw.md). Подтверждено в audit 2026-05-12: wgpu_renderer.rs:674 cull_mode=None, :679 depth_stencil=None. Контракт: opaque-pass front-to-back + depth reject; transparent-pass back-to-front с depth test без write.'
