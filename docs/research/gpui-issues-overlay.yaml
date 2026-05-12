@@ -68,9 +68,9 @@ issues:
     repro: 'partial'
     notes: 'Покрыто ADR-008 (docs/research/adr/ADR-008-window-chrome-contract.md), decision 4: drag-region вычисляется после per-child hit-test. Action item 3.'
   52448:
-    adr: 'maybe'
-    repro: 'unknown'
-    notes: Modal в одном окне блокирует навигацию в других. Архитектурный вопрос модальности (scoped vs app-global). У нас несколько окон поддерживаются — критично проверить.
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Покрыто ADR-018 (docs/research/adr/ADR-018-modal-overlay-layering.md), decision 4: модальность per-window, не app-global. Apps хотят "block below" → wrap modal в transparent backdrop element (helper modal_backdrop в action item 3).'
   52085:
     adr: 'no'
     repro: 'no'
@@ -100,9 +100,9 @@ issues:
     repro: 'partial'
     notes: 'Покрыто ADR-008 (docs/research/adr/ADR-008-window-chrome-contract.md). WS_MINIMIZEBOX устанавливает кнопку, но WM_SYSCOMMAND/SC_MINIMIZE не фильтруется. Контракт: invariant, а не hint. Action item 1.'
   52013:
-    adr: 'maybe'
-    repro: 'unknown'
-    notes: 'Z-index: picker за modal. Архитектурный: ordering overlay/portal-слоёв. Близко к #24405.'
+    adr: 'yes'
+    repro: 'partial'
+    notes: 'Покрыто ADR-018 (docs/research/adr/ADR-018-modal-overlay-layering.md). У нас уже есть `defer_draw(priority)`. Контракт: priority — единственный механизм; hit-test тоже идёт по priority. Action item 1: верифицировать hit-test walk.'
   50392:
     adr: 'yes'
     repro: 'partial'
