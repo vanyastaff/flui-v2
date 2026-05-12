@@ -5,8 +5,8 @@ issues:
     notes: Wayland init panic — bug в платформенном бэкенде. Проверить наш crates/flui-core/src/platform/linux init на аналогичные `unreachable!`.
   56294:
     adr: 'yes'
-    repro: 'partial'
-    notes: 'Покрыто ADR-001 (docs/research/adr/ADR-001-invalidation-scope.md), пункт 4. У нас `on_next_frame` есть, но debug-guard на регистрацию из `paint` отсутствует — action item 2 этого ADR.'
+    repro: 'no'
+    notes: 'Закрыто debug-guard в `Window::on_next_frame` (`WindowInvalidator::debug_assert_not_paint`) — регистрация из `paint` теперь панически падает в debug. См. ADR-001 (action item 2 закрыт).'
   48103:
     adr: 'no'
     repro: 'unknown'

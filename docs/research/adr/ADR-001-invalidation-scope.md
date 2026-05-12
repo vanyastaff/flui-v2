@@ -148,17 +148,20 @@ A workspace grep for `.refresh()` was performed against
   update during drag. Discrete; acceptable.
 
 Result: decision point 2 ("animation uses `request_animation_frame`, not
-`refresh`") is held by the current code. Decision point 4 about
-`on_next_frame` in `paint` is not currently enforced — no guard exists.
+`refresh`") is held by the current code. Decision point 4
+(`on_next_frame` must not be called from `paint`) is now enforced by a
+debug-only assert added with this ADR — see action item 2 below.
 
 ## Action items (tracked, not blocking this ADR)
 
 1. ~~Audit `crates/flui-core/src/animation/**` and verify no path calls
    `refresh()` per tick.~~ **Done in this ADR** — clean.
-2. Add a `#[cfg(debug_assertions)]` guard inside `on_next_frame` that warns
-   when called during `DrawPhase::Paint` (mirrors the existing `debug_assert_paint`
-   / `debug_assert_prepaint` helpers in `WindowInvalidator`). This is the
-   concrete K-series-style follow-up that closes GPUI #56294 against our code.
+2. ~~Add a `#[cfg(debug_assertions)]` guard inside `on_next_frame` that warns
+   when called during `DrawPhase::Paint`.~~ **Done.** `WindowInvalidator` now
+   has `debug_assert_not_paint`, called from the entry of `Window::on_next_frame`.
+   `cargo test -p flui-core --lib` (410 tests) and `cargo clippy -p flui-core
+   --all-targets -- -D warnings` both pass — no existing code paths violate the
+   new contract.
 3. Open ADR-002 — "hover / active state invalidation" — to migrate
    `div.rs` hover/click/tooltip `refresh()` calls to per-view invalidation
    where possible. Driven by GPUI #24405 and #38350.
