@@ -451,6 +451,11 @@ struct MacWindowState {
     // is a TODO that requires NSWindowDelegate / NSMenu validation
     // hooks; see `docs/research/adr/ADR-008-window-chrome-contract.md`
     // action item 2.
+    // ADR-008: `is_movable` is read by the future NSWindowDelegate
+    // `windowShouldMove:` hook (action item 2). Carried on the state
+    // today so the wiring lands as a single read, not a struct
+    // reshape; `#[allow(dead_code)]` until that hook lands.
+    #[allow(dead_code)]
     is_movable: bool,
     is_resizable: bool,
     is_minimizable: bool,

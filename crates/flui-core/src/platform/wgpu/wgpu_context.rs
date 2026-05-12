@@ -401,7 +401,12 @@ impl WgpuContext {
     /// [`crate::RendererKind::Software`] when wgpu reports
     /// `wgpu::DeviceType::Cpu` (Mesa `llvmpipe`, WARP, etc.); otherwise
     /// [`crate::RendererKind::Hardware`]. The Linux/X11/Wayland
-    /// `Platform::renderer_kind` impls forward to this method.
+    /// `Platform::renderer_kind` impls forward to this method —
+    /// wiring is deferred per the rollout plan, so this method is
+    /// currently dead from the engine's POV but published as the
+    /// stable downstream surface for apps that hold a `WgpuContext`
+    /// directly (e.g. via the headless renderer).
+    #[allow(dead_code)] // ADR-014: pending LinuxPlatform forward.
     pub fn renderer_kind(&self) -> crate::RendererKind {
         match self.adapter.get_info().device_type {
             wgpu::DeviceType::Cpu => crate::RendererKind::Software,
