@@ -1676,10 +1676,17 @@ impl App {
         }
 
         if budget_exhausted {
-            // Single rate-limited WARN per overrun (one per phase per frame).
-            // Per `docs/promt.md` §3.1: dispatch/tick/paint paths must not log
-            // per element or per frame — this `WARN` is the only allowed
-            // committed log on the effect-flush path.
+            // Per `docs/promt.md` §3.1: dispatch/tick/paint paths must not
+            // log per element or per frame — this `WARN` is the only
+            // allowed committed log on the effect-flush path.
+            //
+            // K04 staged rollout: `App::run_frame` currently passes
+            // `deadline: None` everywhere, so `budget_exhausted` is
+            // unreachable in production code paths today. The K04+1
+            // follow-up that wires per-phase deadlines is the consumer
+            // that will trip this branch; at that point a per-frame
+            // `(frame_index, scope)` rate-limit needs to land here so
+            // the WARN can't fire multiple times per frame per phase.
             log::warn!(
                 "flui-core: effect-flush exceeded budget at {:?} boundary; \
                  remainder deferred to next phase boundary",
@@ -2056,6 +2063,21 @@ impl App {
     pub fn run_frame(&mut self, handle: AnyWindowHandle) -> Result<FrameOutcome> {
         use std::panic::AssertUnwindSafe;
 
+        // Validate the window handle up front so a missing-window error is
+        // returned via `Result` rather than swallowed inside the `catch_unwind`
+        // body. This avoids the silent-failure shape flagged by the Copilot
+        // review: previously `update_window_id`'s `Err` was discarded inside
+        // the Paint phase and `run_frame` would still return `Ok` with
+        // `primitive_count: 0`.
+        if !self
+            .windows
+            .get(handle.id)
+            .map(|slot| slot.is_some())
+            .unwrap_or(false)
+        {
+            return Err(anyhow!("window not found"));
+        }
+
         // Sanity: nested `run_frame` is forbidden — K04 axiom P5 routes
         // re-entry through `cx.defer_to(...)`, not nested frame entry.
         debug_assert_eq!(
@@ -2088,6 +2110,10 @@ impl App {
         if self.profiling_enabled {
             self.frame_profile_detailed.reset();
         }
+        // Reset `active_animations` so a frame with no active animations
+        // reports 0, not the previous frame's count. `drive_animation_tick`
+        // overwrites with the visited count if the set is non-empty.
+        self.frame_profile.active_animations = 0;
 
         // Walk phases. We catch panics inside the body so a panicking phase
         // does not poison the App. The `AssertUnwindSafe` is safe here because
@@ -2211,7 +2237,10 @@ impl App {
         self.frame_profile.frame_index = outcome.frame_index;
         self.frame_profile.frame_duration_total = frame_start.elapsed();
         self.frame_profile.primitive_count = outcome.primitive_count;
-        self.frame_profile.active_animations = 0; // populated by Task 30 (animation tick wiring)
+        // `active_animations` is owned by `drive_animation_tick` (called from
+        // the `AnimationTick` phase body) — it sets the field to the visited
+        // count after the walk. Do NOT overwrite here; it would clobber a
+        // legitimate non-zero count with 0 for every frame.
 
         Ok(outcome)
     }
@@ -2260,11 +2289,13 @@ impl App {
 
         if let Some(start) = phase_start {
             // Record per-phase duration for `FrameProfileDetailed`. The
-            // array index matches `FramePhase::as_index()`.
+            // slice index matches `FramePhase::as_index()`. `per_phase` is
+            // `Box<[Duration]>` sized at `reset()` time to `FramePhase::count()`;
+            // the bounds check guards against early-frame uninitialized state.
             let dur = start.elapsed();
             let idx = phase.as_index() as usize;
-            if idx < FramePhase::COUNT {
-                self.frame_profile_detailed.per_phase[idx] = dur;
+            if let Some(slot) = self.frame_profile_detailed.per_phase.get_mut(idx) {
+                *slot = dur;
             }
         }
     }
@@ -2298,20 +2329,23 @@ impl App {
     /// (`App::on_pre_frame`). Per-window first so App-level callbacks can
     /// observe the resolved per-window state.
     fn drain_pre_frame_callbacks(&mut self) {
-        // Per-window pre-frame callbacks. The legacy storage is
-        // `Rc<RefCell<Vec<FrameCallback>>>` — drain by taking the vec.
+        // Per-window pre-frame callbacks. Post-K04 (Task 36) the storage is
+        // `RefCell<SmallVec<[FrameCallback; 4]>>` directly on `Window`;
+        // drain into a local `SmallVec` so the typical 0-4 callback case
+        // never spills to the heap.
         let ids: Vec<WindowId> = self
             .windows
             .iter()
             .filter_map(|(id, slot)| slot.as_ref().map(|_| id))
             .collect();
         for id in ids {
-            let drained: Vec<_> = match self.windows.get(id) {
-                Some(Some(window)) => RefCell::borrow_mut(&window.next_frame_callbacks)
-                    .drain(..)
-                    .collect(),
-                _ => continue,
-            };
+            let drained: SmallVec<[Box<dyn FnOnce(&mut Window, &mut App)>; 4]> =
+                match self.windows.get(id) {
+                    Some(Some(window)) => RefCell::borrow_mut(&window.next_frame_callbacks)
+                        .drain(..)
+                        .collect(),
+                    _ => continue,
+                };
             if drained.is_empty() {
                 continue;
             }
@@ -2482,16 +2516,31 @@ impl App {
         });
     }
 
-    /// K04 placement-aware deferred callback. Schedules `f` to run at the next
-    /// `placement` boundary (next phase boundary for `EndOfUpdate`, next
-    /// `PreFrame` for `NextFrameStart`, next `PostFrame` for `PostFrame`, next
-    /// `Idle` for `Idle`).
+    /// K04 placement-aware deferred callback. Schedules `f` to run at the
+    /// matching phase boundary inside `App::run_frame`:
     ///
-    /// As of K04 Phase 2 Task 18 the API is wired but `flush_effects` does not
-    /// yet filter by placement (Task 20). For now every placement drains
-    /// identically to `EndOfUpdate`. Task 20 will make placements observable;
-    /// downstream code that calls `defer_to` today will pick up the corrected
-    /// drain semantics automatically when Task 20 lands.
+    /// - [`DeferPlacement::EndOfUpdate`] — drains at every phase boundary in
+    ///   the current frame (matches the pre-K04 `cx.defer(f)` behavior).
+    /// - [`DeferPlacement::NextFrameStart`] — drains at the next frame's
+    ///   `PreFrame` phase entry.
+    /// - [`DeferPlacement::PostFrame`] — drains in the current frame's
+    ///   `PostFrame` phase entry (if queued before `PostFrame` starts),
+    ///   otherwise the next frame's `PostFrame`.
+    /// - [`DeferPlacement::Idle`] — drains in the `Idle` drain that
+    ///   `App::run_frame` runs at the end of a successful frame.
+    ///
+    /// `flush_effects_at` filters [`Effect::Defer`] by `placement` via
+    /// [`FlushScope::admits`]; pre-body drains (`FlushScope::Phase`) admit
+    /// the matching placement, while post-body drains
+    /// (`FlushScope::PhasePost`) admit only `EndOfUpdate`. This guarantees
+    /// that a defer queued from inside the current phase carries to a
+    /// later phase entry rather than firing same-frame at the matching
+    /// post-drain.
+    ///
+    /// Defers queued from outside `App::run_frame` (e.g. inside
+    /// `cx.update`) drain via the legacy `FlushScope::Legacy` pathway,
+    /// which admits every placement to preserve pre-K04 observable
+    /// behavior.
     pub fn defer_to(&mut self, placement: DeferPlacement, f: impl FnOnce(&mut App) + 'static) {
         self.push_effect(Effect::Defer {
             placement,
@@ -3458,15 +3507,16 @@ pub(crate) enum Effect {
     NotifyGlobalObservers {
         global_type: TypeId,
     },
-    /// K04 placement-aware deferred callback. `placement` selects which phase
-    /// boundary drains the callback; the default `DeferPlacement::EndOfUpdate`
-    /// preserves pre-K04 observable behavior for every `App::defer(f)` callsite.
-    /// `App::defer_to(placement, f)` is the new placement-aware constructor.
+    /// K04 placement-aware deferred callback. `placement` selects which
+    /// phase boundary drains the callback; the default
+    /// `DeferPlacement::EndOfUpdate` preserves pre-K04 observable behavior
+    /// for every `App::defer(f)` callsite. `App::defer_to(placement, f)`
+    /// is the new placement-aware constructor.
     ///
-    /// As of K04 Phase 2 Task 19 the field is captured but not yet filtered on
-    /// drain — the per-phase drain (Task 20) is the consumer that will route
-    /// callbacks to the matching phase boundary. Until then, all placements
-    /// drain identically to `EndOfUpdate`.
+    /// `flush_effects_at` filters this variant by `placement` via
+    /// [`FlushScope::admits`]: pre-body `Phase(_)` drains admit the
+    /// matching placement, post-body `PhasePost(_)` drains admit only
+    /// `EndOfUpdate`, and the legacy entry admits everything.
     Defer {
         placement: DeferPlacement,
         callback: Box<dyn FnOnce(&mut App) + 'static>,

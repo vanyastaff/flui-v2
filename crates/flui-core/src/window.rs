@@ -1919,18 +1919,12 @@ impl Window {
 
     /// K04 placement-aware deferred callback (window-scoped).
     ///
-    /// Schedules `f` to run at the next `placement` boundary against this window.
-    /// Mirror of [`Window::defer`] using [`App::defer_to`] under the hood; the
-    /// window handle is captured so the callback runs only if the window is
-    /// still alive at drain time.
-    ///
-    /// As of K04 Phase 2 Task 18 the API is wired but `flush_effects` does not
-    /// yet filter by placement (Task 20). For now every placement drains
-    /// identically to [`DeferPlacement::EndOfUpdate`]. Task 20 will make
-    /// placements observable; downstream code that calls `defer_to` today will
-    /// pick up the corrected drain semantics automatically when Task 20 lands.
-    ///
-    /// [`DeferPlacement::EndOfUpdate`]: crate::frame::DeferPlacement::EndOfUpdate
+    /// Schedules `f` to run at the matching phase boundary against this
+    /// window via [`App::defer_to`] under the hood; the window handle is
+    /// captured so the callback runs only if the window is still alive at
+    /// drain time. See [`App::defer_to`] for the per-placement drain
+    /// semantics — `flush_effects_at` filters by `placement` via
+    /// [`FlushScope::admits`].
     pub fn defer_to(
         &self,
         cx: &mut App,

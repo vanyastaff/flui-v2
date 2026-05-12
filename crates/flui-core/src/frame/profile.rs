@@ -45,9 +45,13 @@ pub struct FrameProfile {
     /// `App::run_frame` start.
     pub frame_index: u64,
 
-    /// Total wall-clock duration of the frame, from `PreFrame` entry to
-    /// `PostFrame` exit. `Duration::ZERO` in release builds when profiling is
-    /// disabled — the measurement is skipped to honor the hot-path discipline.
+    /// Total wall-clock duration of the frame, sampled around
+    /// `App::run_frame`'s body. Always populated — the single
+    /// `Instant::now() / elapsed()` pair is the documented K04 exception
+    /// to the "no `Instant::now()` in phase bodies" lint, because it
+    /// brackets the entire frame rather than running inside a phase.
+    /// Per-phase breakdowns live in [`FrameProfileDetailed::per_phase`]
+    /// and are only populated when `App::set_profiling_enabled(true)`.
     pub frame_duration_total: Duration,
 
     /// Number of [`TickTarget`](super::tick::TickTarget) entries the
@@ -94,11 +98,17 @@ impl FrameProfile {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct FrameProfileDetailed {
     /// Per-phase durations, indexed by [`FramePhase::as_index()`].
-    /// Size is exactly [`FramePhase::COUNT`].
+    /// Length is exactly [`FramePhase::count()`] at runtime.
+    ///
+    /// Stored as `Box<[Duration]>` (not a fixed-size array) so the type
+    /// stays stable when `FramePhase` (which is `#[non_exhaustive]`) gains
+    /// new variants. Use [`Self::phase_duration`] for typed access; only
+    /// touch the slice directly if you have already validated the index.
     ///
     /// Phases that did not run (e.g. `Build` while reserved as no-op in K04)
-    /// contain `Duration::ZERO`.
-    pub per_phase: [Duration; FramePhase::COUNT],
+    /// contain `Duration::ZERO`. Empty slice immediately after `Default::default()`;
+    /// `App::run_frame` sizes it on first use.
+    pub per_phase: Box<[Duration]>,
 
     /// Total number of effects drained during interleaved `EffectFlush` work
     /// in this frame.
@@ -118,22 +128,30 @@ pub struct FrameProfileDetailed {
 }
 
 impl FrameProfileDetailed {
-    /// Returns the recorded duration of `phase`. `Duration::ZERO` if the phase
-    /// did not run in this frame (e.g. reserved `Build`).
+    /// Returns the recorded duration of `phase`. `Duration::ZERO` if the
+    /// phase did not run in this frame (e.g. reserved `Build`) or if the
+    /// detailed profile has not been initialized yet.
     #[inline]
     pub fn phase_duration(&self, phase: FramePhase) -> Duration {
-        self.per_phase[phase.as_index() as usize]
+        self.per_phase
+            .get(phase.as_index() as usize)
+            .copied()
+            .unwrap_or(Duration::ZERO)
     }
 
     /// Resets the struct to all zeros / empty. Called by `App::run_frame` at
-    /// the start of each frame when profiling is enabled.
-    ///
-    /// Wired by `App::run_frame` (Task 23). The `dead_code` allow is part of
-    /// the K04 staged rollout — every accessor lands first, then `run_frame`
-    /// consumes them.
-    #[allow(dead_code)]
+    /// the start of each frame when profiling is enabled. Re-allocates
+    /// `per_phase` if its length does not match [`FramePhase::count()`]
+    /// (e.g. on the first call or after a future `FramePhase` addition).
     pub(crate) fn reset(&mut self) {
-        self.per_phase = [Duration::ZERO; FramePhase::COUNT];
+        let expected = FramePhase::count();
+        if self.per_phase.len() != expected {
+            self.per_phase = vec![Duration::ZERO; expected].into_boxed_slice();
+        } else {
+            for slot in self.per_phase.iter_mut() {
+                *slot = Duration::ZERO;
+            }
+        }
         self.effect_drain_count = 0;
         self.effect_drain_requeued = 0;
         self.deadline_overrun.clear();

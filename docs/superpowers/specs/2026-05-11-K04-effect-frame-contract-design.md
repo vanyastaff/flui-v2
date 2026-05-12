@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-11
 **Phase:** 0-K Kernel Cleanup (eighth and final spec in the critical chain after K99, K15, K07, K05, K01, K02, K03)
-**Status:** Designed (implementation pending)
+**Status:** Implemented (2026-05-12). Plan checkboxes 1-49 done; Task 40 dedicated logging-sink test and Task 50 pre-PR review gates remain as follow-ups tracked in the plan file.
 **Plan:** `.ai-factory/plans/feature-K04-effect-frame-contract.md`
 
 ## Summary

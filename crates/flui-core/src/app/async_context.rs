@@ -168,13 +168,10 @@ impl AsyncApp {
     /// [`App::defer_to`]; reaches the underlying `App` via the existing
     /// `app_or_panic()` handle, mirroring how [`AsyncApp::update`] does it.
     ///
-    /// As of K04 Phase 2 Task 18 the API is wired but `flush_effects` does not
-    /// yet filter by placement (Task 20). For now every placement drains
-    /// identically to [`DeferPlacement::EndOfUpdate`]. Task 20 will make
-    /// placements observable; downstream code that calls `defer_to` today will
-    /// pick up the corrected drain semantics automatically when Task 20 lands.
-    ///
-    /// [`DeferPlacement::EndOfUpdate`]: crate::frame::DeferPlacement::EndOfUpdate
+    /// See [`App::defer_to`] for the per-placement drain semantics —
+    /// `flush_effects_at` filters by `placement` via
+    /// [`FlushScope::admits`]; defers queued from outside `App::run_frame`
+    /// use the legacy scope (drains every placement).
     pub fn defer_to(
         &self,
         placement: crate::frame::DeferPlacement,

@@ -25,12 +25,6 @@
 //! last-sampled `Instant` (the most recent `begin_frame` value), preventing
 //! a panic but signalling a bug via the `FrameProfile`.
 
-// The `pub(crate)` constructors and lifecycle methods on `FrameClock` are unused
-// until Task 23 wires `App::run_frame` to drive them. Suppressing dead-code
-// warnings keeps the K04 staged rollout green. Remove this `allow` once
-// `App::run_frame` lands (the corresponding plan checkbox is Task 23).
-#![allow(dead_code)]
-
 use crate::scheduler::{Clock, Instant};
 use std::marker::PhantomData;
 use std::sync::Arc;

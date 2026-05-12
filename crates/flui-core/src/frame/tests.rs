@@ -6,11 +6,14 @@
 //! - Task 39: placement-aware `defer_to` drains.
 //! - Task 41: K15 coexistence (cx.defer still escapes; nested update_window
 //!   still rejected).
+//! - Task 42: panic-in-phase recovery via `abort_frame_after_panic` —
+//!   `k04_panic_in_phase_recovers_app` below.
 //! - Task 43: animation-tick + `FrameClock` determinism via `TestClock`.
 //!
-//! Tasks 40 (deadline overrun) and 42 (panic-in-phase recovery) live in
-//! dedicated modules — they need a logging-sink harness and a `catch_unwind`
-//! integration that is orthogonal to the rest.
+//! Task 40 (dedicated deadline-overrun logging-sink harness) is deferred to a
+//! K04+1 follow-up — the break-and-requeue path itself is exercised
+//! indirectly here, but the `WARN`-emission verification needs an
+//! installable logging sink that is orthogonal to the rest of these tests.
 //!
 //! All tests flip `set_auto_advance_frames(false)` so legacy
 //! `flush_effects` does not interleave a redraw before `advance_frame`

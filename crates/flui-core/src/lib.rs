@@ -35,9 +35,9 @@ pub(crate) use platform_scheduler::PlatformScheduler;
 ///
 /// [`FramePhase`]: frame::FramePhase
 /// [`DeferPlacement`]: frame::DeferPlacement
-/// [`FrameClock`]: frame::clock::FrameClock
-/// [`FrameProfile`]: frame::profile::FrameProfile
-/// [`TickTarget`]: frame::tick::TickTarget
+/// [`FrameClock`]: frame::FrameClock
+/// [`FrameProfile`]: frame::FrameProfile
+/// [`TickTarget`]: frame::TickTarget
 pub mod frame;
 mod geometry;
 /// Gesture arena, normalized pointer events, hit-test protocol, and
