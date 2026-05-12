@@ -1,0 +1,6 @@
+error: only one #[widget(key)] field is allowed; previously seen on `first`
+  --> tests/widget_derive/fail_multiple_keys.rs:9:5
+   |
+ 9 | /     #[widget(key)]
+10 | |     second: Option<Key>,
+   | |_______________________^

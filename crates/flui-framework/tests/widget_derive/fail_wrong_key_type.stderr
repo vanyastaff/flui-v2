@@ -1,0 +1,5 @@
+error: #[widget(key)] field must be `Option<Key>` (terminal path segment must be `Option<...Key>`; aliases are not resolved by the macro)
+ --> tests/widget_derive/fail_wrong_key_type.rs:8:10
+  |
+8 |     key: String,
+  |          ^^^^^^

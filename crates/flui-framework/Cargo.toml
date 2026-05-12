@@ -19,6 +19,14 @@ description = "Framework tier for flui — Widget / Key / State / BuildCx / reco
 
 [dependencies]
 flui-core = { path = "../flui-core" }
+flui-macros = { path = "../flui-macros" }
+
+[dev-dependencies]
+# Snapshot-based compile-pass / compile-fail tests for the derive(Widget)
+# proc-macro. SF01 design spec § "Decision — trybuild vs compile_fail
+# doctests" documents the rationale for introducing trybuild over the
+# existing compile_fail doctest precedent.
+trybuild = "1"
 
 [lints]
 workspace = true

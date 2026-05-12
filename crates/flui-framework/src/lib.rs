@@ -79,3 +79,10 @@ pub mod widget;
 
 pub use crate::key::{GlobalKey, Key, ValueKey};
 pub use crate::widget::{Empty, IntoWidget, StatefulWidget, Widget, WidgetState};
+
+// Re-export the `#[derive(Widget)]` proc-macro so consumers can write
+// `use flui_framework::Widget;` for both the trait and the derive. The
+// trait and the macro coexist in different namespaces (types vs
+// macros) per Rust's namespace rules. See SF01 design spec
+// §"derive(Widget) Macro Contract".
+pub use flui_macros::Widget;

@@ -196,7 +196,7 @@ Per user-memory feedback "Keep docs work separate from code work — ADR session
 
 ### Phase 4 — `derive(Widget)` macro skeleton
 
-- [ ] **T4.1 — Add `crates/flui-macros/src/derive_widget.rs` proc-macro implementation.**
+- [x] **T4.1 — Add `crates/flui-macros/src/derive_widget.rs` proc-macro implementation.**
   - Module name `derive_widget` follows the project convention used by every existing derive in `flui-macros` (`derive_action`, `derive_render`, `derive_into_element`, `derive_app_context`, `derive_visual_context` — see `crates/flui-macros/src/flui_macros.rs:1-9`). Do NOT pick a different name.
   - Reuse the existing `get_simple_attribute_field(ast, "widget")` helper at `crates/flui-macros/src/flui_macros.rs:289-299` for finding the `#[widget(key)]` field. The helper already enforces struct-only input (returns `None` for enum/union) and field-attribute matching by ident.
   - `#[proc_macro_derive(Widget, attributes(widget))]` entry point registered in `crates/flui-macros/src/flui_macros.rs` calling into `derive_widget::derive_widget(input)`.
@@ -208,11 +208,11 @@ Per user-memory feedback "Keep docs work separate from code work — ADR session
 
   **File:** `crates/flui-macros/src/derive_widget.rs`. **Logging:** none (proc-macro diagnostics via `syn::Error::to_compile_error`). **Validation:** `cargo check -p flui-macros` succeeds.
 
-- [ ] **T4.2 — Register the derive in `crates/flui-macros/src/flui_macros.rs`.** Add `mod derive_widget;` (placed next to the existing `mod derive_*;` lines for ordering consistency) and the `#[proc_macro_derive(Widget, attributes(widget))]` entry function (placed near `derive_render` for thematic grouping). Verify the macro is picked up by `cargo doc -p flui-macros`.
+- [x] **T4.2 — Register the derive in `crates/flui-macros/src/flui_macros.rs`.** Add `mod derive_widget;` (placed next to the existing `mod derive_*;` lines for ordering consistency) and the `#[proc_macro_derive(Widget, attributes(widget))]` entry function (placed near `derive_render` for thematic grouping). Verify the macro is picked up by `cargo doc -p flui-macros`.
 
   **File:** `crates/flui-macros/src/flui_macros.rs`. **Logging:** none. **Validation:** `cargo check -p flui-macros` succeeds.
 
-- [ ] **T4.3 — Add `trybuild` compile-pass/fail tests for the derive.** **Test crate placement:** tests live in `crates/flui-framework/tests/`, NOT `crates/flui-macros/tests/`. Rationale: `flui-macros` is the producer of the derive but `flui-framework` is the consumer (it re-exports the derive in T4.4, and ALL real-world callers use the framework re-export). Placing trybuild tests on the consumer side keeps the dependency graph linear (`flui-framework → flui-macros`) and avoids the dev-dep circular smell that would arise from `flui-macros [dev-dependencies] flui-framework = { path = … }`.
+- [x] **T4.3 — Add `trybuild` compile-pass/fail tests for the derive.** **Test crate placement:** tests live in `crates/flui-framework/tests/`, NOT `crates/flui-macros/tests/`. Rationale: `flui-macros` is the producer of the derive but `flui-framework` is the consumer (it re-exports the derive in T4.4, and ALL real-world callers use the framework re-export). Placing trybuild tests on the consumer side keeps the dependency graph linear (`flui-framework → flui-macros`) and avoids the dev-dep circular smell that would arise from `flui-macros [dev-dependencies] flui-framework = { path = … }`.
   - Add `trybuild = "1"` to `crates/flui-framework/[dev-dependencies]`. Acknowledge in the design spec that this introduces a new dev-dep that the project did not previously use — the alternative (compile_fail doctests per the existing precedent at `flui_macros.rs:48-89`) was considered and rejected in T0.1's "DECISION — trybuild vs compile_fail doctests" subsection.
   - Add `crates/flui-framework/tests/widget_derive_compile.rs` runner and test cases under `crates/flui-framework/tests/widget_derive/`:
     - `pass_simple.rs` — `#[derive(Widget)] struct Leaf;`. Compiles.
@@ -224,11 +224,11 @@ Per user-memory feedback "Keep docs work separate from code work — ADR session
 
   **Files:** `crates/flui-framework/Cargo.toml`, `crates/flui-framework/tests/widget_derive_compile.rs`, `crates/flui-framework/tests/widget_derive/*.rs`. **Logging:** none. **Validation:** `cargo test -p flui-framework --test widget_derive_compile` passes; all three fail-case `.stderr` snapshots match.
 
-- [ ] **T4.4 — Re-export the macro from `flui-framework` for ergonomics.** Add `flui-macros = { path = "../flui-macros" }` to `crates/flui-framework/[dependencies]` (regular dep, not dev — the re-export is part of the public surface). Re-export `pub use flui_macros::Widget;` from `crates/flui-framework/src/lib.rs`. Now Tier C users write `use flui_framework::Widget;` (trait) plus `#[derive(Widget)]` from the same path. **Decision check:** does the trait-name collision with the derive name cause `cargo doc` or rustc to emit ambiguity warnings? Rust normally permits this (trait and macro live in different namespaces) but rustdoc rendering may need explicit disambiguation. If yes, capture the outcome in the design spec; if no, document the fact explicitly so future-readers don't re-investigate.
+- [x] **T4.4 — Re-export the macro from `flui-framework` for ergonomics.** Add `flui-macros = { path = "../flui-macros" }` to `crates/flui-framework/[dependencies]` (regular dep, not dev — the re-export is part of the public surface). Re-export `pub use flui_macros::Widget;` from `crates/flui-framework/src/lib.rs`. Now Tier C users write `use flui_framework::Widget;` (trait) plus `#[derive(Widget)]` from the same path. **Decision check:** does the trait-name collision with the derive name cause `cargo doc` or rustc to emit ambiguity warnings? Rust normally permits this (trait and macro live in different namespaces) but rustdoc rendering may need explicit disambiguation. If yes, capture the outcome in the design spec; if no, document the fact explicitly so future-readers don't re-investigate.
 
   **Files:** `crates/flui-framework/Cargo.toml`, `crates/flui-framework/src/lib.rs`. **Logging:** none. **Validation:** `cargo check -p flui-framework` succeeds; an example doctest `use flui_framework::Widget; #[derive(Widget)] struct X;` compiles.
 
-- [ ] **T4.5 — Positive test: `#[widget(key)]` with non-default field name.** Add `crates/flui-framework/tests/widget_derive/pass_renamed_key_field.rs` (and register in the trybuild runner):
+- [x] **T4.5 — Positive test: `#[widget(key)]` with non-default field name.** Add `crates/flui-framework/tests/widget_derive/pass_renamed_key_field.rs` (and register in the trybuild runner):
   - `#[derive(Widget)] struct R { #[widget(key)] id: Option<Key> }`. Compiles. Construct `R { id: Some(Key::local()) }` and assert that `Widget::key(&r)` returns `Some(&Key)` — i.e., the derive does NOT hard-code the field name `key` and correctly picks up whatever field carries the `#[widget(key)]` attribute. Guards against a subtle macro bug where the generated body uses `self.key` instead of `self.<attribute_field_name>`.
   - Also add a doctest in `crates/flui-macros/src/derive_widget.rs` showing the `id` example so the macro contract is self-documenting.
 
