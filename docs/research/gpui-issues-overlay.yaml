@@ -1,8 +1,8 @@
 issues:
   56314:
     adr: 'no'
-    repro: 'unknown'
-    notes: Wayland init panic — bug в платформенном бэкенде. Проверить наш crates/flui-core/src/platform/linux init на аналогичные `unreachable!`.
+    repro: 'no'
+    notes: 'Audit 2026-05-12: у нас нет аналогичного init `unreachable!`. Все `unreachable!` в wayland/client.rs — exhaustive match на `wl_pointer::Axis` (safe). GPUI panic на crates/gpui_linux/src/linux.rs:55 у нас нет — у нас x11 и wayland раздельно.'
   56294:
     adr: 'yes'
     repro: 'no'
@@ -10,19 +10,19 @@ issues:
   48103:
     adr: 'no'
     repro: 'unknown'
-    notes: Wayland-specific (drag/resize не работают для standalone). Под нас не приоритет, пока Linux не доезжаем.
+    notes: 'Audit 2026-05-12: API есть (wayland/window.rs:1391 start_window_move, :1399 start_window_resize через xdg_toplevel). Конкретный compositor-specific bug — требует Linux machine для проверки.'
   46378:
     adr: 'yes'
     repro: 'partial'
     notes: 'Покрыто ADR-007 (docs/research/adr/ADR-007-display-lifecycle.md). `App::displays` — pass-through в platform без кеша/wait. Contract decision 6 требует "blocking populate" если платформе нужен event-loop tick.'
   44529:
     adr: 'no'
-    repro: 'unknown'
-    notes: UI 1px shift после авторизации — Zed-specific design papercut.
+    repro: 'n-a'
+    notes: 'Audit 2026-05-12: Zed-specific UI (login → account avatar). У нас нет аналогичного account-flow UI. Не наш scope.'
   33956:
     adr: 'no'
     repro: 'unknown'
-    notes: X11 cursor lag на 4K. Платформенный bug. Linux пока не приоритет.
+    notes: 'Audit 2026-05-12: X11 event loop у нас есть (platform/linux/x11/{client,event,window}.rs). Cursor-lag-specific поведение требует 4K X11 machine для воспроизведения.'
   30469:
     adr: 'yes'
     repro: 'unknown'
@@ -33,20 +33,20 @@ issues:
     notes: 'Покрыто ADR-007 (docs/research/adr/ADR-007-display-lifecycle.md). `scale_factor` обновляется только в `bounds_changed`; cross-monitor без resize пропускается. Action item 3 в ADR-007 добавит XRandR-driven path.'
   21341:
     adr: 'maybe'
-    repro: 'unknown'
-    notes: Тень за прозрачным окном. Дизайн-вопрос; ADR разве что в общем спеке о window decorations.
+    repro: 'partial'
+    notes: 'Audit 2026-05-12: у нас есть shadow rendering (paint_shadow в window.rs), но `transparent + maximized` сценарий не проверяли. Дизайн-вопрос; не блокирующий.'
   19805:
     adr: 'no'
-    repro: 'unknown'
-    notes: 'X11 1.5x scale: wrap guides слишком тонкие. Pixel-rounding в рендере под non-integer scale. Локально, без ADR.'
+    repro: 'n-a'
+    notes: 'Audit 2026-05-12: wrap guides — Zed editor concept (editor "wrap_guides" в settings.json), не engine. У нас нет analogous element. Не наш scope.'
   14590:
     adr: 'yes'
     repro: 'partial'
     notes: 'Покрыто ADR-017 (docs/research/adr/ADR-017-window-background-blur.md). API уже есть: WindowBackgroundAppearance::Blurred. X11 импл отсутствует — нужно поставить _KDE_NET_WM_BLUR_BEHIND_REGION и _NET_WM_DEEPIN_BLUR_REGION_ROUNDED xprops.'
   54017:
     adr: 'maybe'
-    repro: 'unknown'
-    notes: Floating window не становится key. macOS NSWindow level/key behavior. Если у нас macOS не приоритет — отложить.
+    repro: 'n-a'
+    notes: 'Audit 2026-05-12: macOS NSWindow level/key API platform-specific. Mac не наш текущий приоритет. Отложено.'
   52550:
     adr: 'yes'
     repro: 'yes'
@@ -61,8 +61,8 @@ issues:
     notes: 'Частично покрыто ADR-002 (docs/research/adr/ADR-002-hover-active-invalidation.md) — scoped invalidation reduces over-paint от лишних hover events. Сама причина (events fire when window is in background) — отдельный ADR про event filtering при background-state.'
   35903:
     adr: 'no'
-    repro: 'unknown'
-    notes: Window drag flaky на macOS — platform bug.
+    repro: 'n-a'
+    notes: 'Audit 2026-05-12: macOS-specific platform bug. Mac не приоритет; конкретный fix должен прилететь от upstream GPUI или своими руками когда mac станет приоритетом.'
   27500:
     adr: 'yes'
     repro: 'partial'
@@ -77,8 +77,8 @@ issues:
     notes: 'Покрыто DirectX recovery path (windows/platform.rs:318, directx_renderer.rs:227, try_to_recover_from_device_lost) — см. ADR-005. Контракт зафиксирован; реальный driver-update сценарий — action item 4 ADR-005.'
   37727:
     adr: 'yes'
-    repro: 'unknown'
-    notes: 'ВАЖНО: Windows + ввод текста = GPU 20% vs VSCode 2%. Архитектурный ADR по text render performance / damage regions. Мы на Windows — обязательно проверить наш text_system на аналогичную картину.'
+    repro: 'partial'
+    notes: 'Audit 2026-05-12: структурно покрыто ADR-001 (invalidation) + ADR-006 (damage region) + ADR-013 (TextRasterMode) + ADR-015 (clip overhead). Конкретный GPU benchmark не проведён — требует целевой Windows-машины и сравнения с VSCode.'
   55972:
     adr: 'yes'
     repro: 'yes'
@@ -161,13 +161,13 @@ issues:
     notes: 'Покрыто ADR-001 + scoping ADR-006 (docs/research/adr/ADR-006-partial-present-damage-regions.md). PlatformWindow::draw принимает только Scene без damage; ADR-006 фиксирует constraints на будущий damage-region API (backward-compatible, opt-in per backend, device pixels, additive hint).'
   14110:
     adr: 'no'
-    repro: 'unknown'
-    notes: Опция отключить rounded corners окна. Локальная настройка WindowOptions, не ADR.
+    repro: 'yes'
+    notes: 'Audit 2026-05-12: grep platform.rs — нет поля `disable_rounded_corners` / `square_corners` в WindowOptions. Минорная опция, ADR не нужен — добавить bool field когда будет UX-кейс.'
   13605:
     adr: 'no'
     repro: 'n-a'
     notes: Запуск GUI в терминале через kitty graphics. Вне нашего scope.
   8043:
     adr: 'yes'
-    repro: 'unknown'
-    notes: 'ВАЖНО: GPUI overdraws 5-6× на пиксель. Архитектурный: front-to-back opaque pass + depth/stencil reject. Большой ADR по rendering strategy.'
+    repro: 'yes'
+    notes: 'Audit 2026-05-12: подтверждено — wgpu_renderer.rs:674 cull_mode=None, wgpu_renderer.rs:679 depth_stencil=None. Front-to-back opaque pass + depth reject отсутствует. Большой ADR ещё не написан (отдельная тема, не покрыта 001-019).'
