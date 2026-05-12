@@ -15,10 +15,11 @@ flutter-issues.md         ← snapshot (997 unique open, filtered labels)
 flutter-issues-overlay.yaml
 flutter-cross-walk.md     ← Flutter → ADR mapping
 gpui-closed-cross-walk.md ← GPUI closed → ADR reading list
+gpui-unknown-audit.md     ← log of the 2026-05-12 unknown-repro audit
 
 mobile-roadmap.md         ← Android / iOS expansion plan
 
-adr/ADR-001…019           ← 19 contracts, each scoped to one theme
+adr/ADR-001…020           ← 20 contracts, each scoped to one theme
 ```
 
 The two **overlays** are the only files written by hand. Snapshots
@@ -47,8 +48,9 @@ regenerate from `scripts/fetch-{gpui,flutter}-issues.sh`.
 | [017](adr/ADR-017-window-background-blur.md) | `WindowBackgroundAppearance::Blurred` capability matrix | GPUI #14590 |
 | [018](adr/ADR-018-modal-overlay-layering.md) | `defer_draw(priority)` + per-window modality | GPUI #52013, #52448 |
 | [019](adr/ADR-019-scroll-physics.md) | `ScrollPhysics` trait scoping | GPUI #40623, Flutter `f: scrolling` |
+| [020](adr/ADR-020-opaque-pass-overdraw.md) | Opaque/transparent pass split + depth reject | GPUI #8043 |
 
-19 ADRs + 1 code change ([commit ed98186](../../) — `on_next_frame`
+20 ADRs + 1 code change ([commit ed98186](../../) — `on_next_frame`
 debug guard in `crates/flui-core/src/window.rs`).
 
 ## How a typical ADR is structured
@@ -69,13 +71,15 @@ debug guard in `crates/flui-core/src/window.rs`).
 
 | repro | count |
 |-------|-------|
-| `yes` (we reproduce the bug) | 7 |
-| `partial` (contract written, fix in backlog) | 17 |
-| `no` (defended / already OK) | 4 |
-| `n-a` (out of scope) | 5 |
-| `unknown` (narrow / not audited) | 10 |
+| `yes` (we reproduce the bug) | 8 |
+| `partial` (contract written, fix in backlog) | 18 |
+| `no` (defended / already OK) | 5 |
+| `n-a` (out of scope) | 9 |
+| `unknown` (need a Linux machine) | 3 |
 
 ADR coverage: 30 issues marked `adr: yes`, 2 `maybe`, the rest `no`/`n-a`.
+See [gpui-unknown-audit.md](gpui-unknown-audit.md) for the audit that
+moved 9 of the previously-`unknown` items to a resolved category.
 
 ## Maintenance
 
