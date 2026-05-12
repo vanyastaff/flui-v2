@@ -109,19 +109,19 @@ Per user-memory feedback "Keep docs work separate from code work — ADR session
 
 ### Phase 1 — Crate scaffolding
 
-- [ ] **T1.1 — Create `crates/flui-framework/` skeleton.** New files:
+- [x] **T1.1 — Create `crates/flui-framework/` skeleton.** New files:
   - `crates/flui-framework/Cargo.toml` — `name = "flui-framework"`, explicit `version = "0.1.0"` (workspace does NOT inherit version — checked against `crates/flui-macros/Cargo.toml` precedent), workspace-inherited `edition` / `rust-version` / `authors` / `license` / `repository`, `description = "Framework tier for flui — Widget / Key / State / BuildCx / reconciliation"`. Dependencies: `flui-core = { path = "../flui-core" }` ONLY (no `flui-macros` yet — derive is consumed by users, not by `flui-framework` itself; macros dep lands in T4.4 alongside the re-export). `[lints] workspace = true`. **NO** `flui-widgets`, `flui-material`, `flui-platform` deps (would be tier violations or pointless).
   - `crates/flui-framework/src/lib.rs` — crate-level rustdoc explaining Tier B's role, the "2 structures + 1 cache" model, the relationship to `flui-core` Engine substrate, and the Tier A / B / C dependency direction. `#![deny(missing_docs)]` lint at crate root (workspace does not currently deny `missing_docs` — Framework tier is the Tier C-facing API, stricter than engine is intentional). Empty module declarations for `widget`, `key`, `prelude`. No `pub use crate::*` — explicit re-exports only (per ARCHITECTURE.md principle 6).
 
   **Files:** `crates/flui-framework/Cargo.toml`, `crates/flui-framework/src/lib.rs`. **Logging:** none (no runtime code yet). **Validation:** `cargo check -p flui-framework` succeeds.
 
-- [ ] **T1.2 — Register `flui-framework` in workspace.** Edit root `Cargo.toml`:
+- [x] **T1.2 — Register `flui-framework` in workspace.** Edit root `Cargo.toml`:
   - Add `"crates/flui-framework",` to `[workspace] members` immediately after `"crates/flui-macros",` and before `"crates/flui-widgets",` — this keeps the visual ordering Tier A (`flui-core`, `flui-platform`, `flui-macros`) → Tier B (`flui-framework`) → Tier C (`flui-widgets`, `flui-navigator`, `flui-a11y`, `flui-theme`, `flui-material`) in the members list.
   - Do NOT add a workspace dependency entry (no other crate depends on `flui-framework` in SF01).
 
   **File:** root `Cargo.toml`. **Logging:** none. **Validation:** `cargo check --workspace` succeeds; `cargo metadata --format-version 1 | jq '.workspace_members'` lists `flui-framework`.
 
-- [ ] **T1.3 — Verify Tier-A-only dependency direction at the metadata level.** Run `cargo tree -p flui-framework --depth 1` and confirm only `flui-core` (plus its transitive deps) appears. Document the output in a new `.ai-factory/qa/SF01-tier-isolation.md` note so reviewers can re-run the same check.
+- [x] **T1.3 — Verify Tier-A-only dependency direction at the metadata level.** Run `cargo tree -p flui-framework --depth 1` and confirm only `flui-core` (plus its transitive deps) appears. Document the output in a new `.ai-factory/qa/SF01-tier-isolation.md` note so reviewers can re-run the same check.
 
   **File:** `.ai-factory/qa/SF01-tier-isolation.md`. **Logging:** none. **Validation:** `cargo tree` output captured; no `flui-widgets` / `flui-material` / `flui-platform` deps present.
 

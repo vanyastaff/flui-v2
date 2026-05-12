@@ -3,6 +3,7 @@ members = [
     "crates/flui-core",
     "crates/flui-platform",
     "crates/flui-macros",
+    "crates/flui-framework",
     "crates/flui-widgets",
     "crates/flui-navigator",
     "crates/flui-a11y",
