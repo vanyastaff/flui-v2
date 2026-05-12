@@ -27,6 +27,18 @@ mod elements;
 mod executor;
 mod platform_scheduler;
 pub(crate) use platform_scheduler::PlatformScheduler;
+/// K04 effect/frame contract: [`FramePhase`], [`DeferPlacement`], [`FrameClock`],
+/// [`FrameProfile`], and the sealed [`TickTarget`] trait. See module-level docs
+/// for the seven-phase contract and the 10-year axioms.
+///
+/// Spec: `docs/superpowers/specs/2026-05-11-K04-effect-frame-contract-design.md`.
+///
+/// [`FramePhase`]: frame::FramePhase
+/// [`DeferPlacement`]: frame::DeferPlacement
+/// [`FrameClock`]: frame::FrameClock
+/// [`FrameProfile`]: frame::FrameProfile
+/// [`TickTarget`]: frame::TickTarget
+pub mod frame;
 mod geometry;
 /// Gesture arena, normalized pointer events, hit-test protocol, and
 /// competing recognizers (Tap, DoubleTap, LongPress, Drag, Scale).

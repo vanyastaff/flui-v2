@@ -5,9 +5,16 @@ use crate::{App, Entity, IntoElement, Window};
 
 /// Render with an AnimationController, automatically scheduling frame updates.
 ///
-/// Reads the controller's current value, calls `builder` with it, and
-/// schedules the next frame if the animation is still running.
-/// Users never need to call `window.request_animation_frame()` manually.
+/// Reads the controller's current value, calls `builder` with it, and — if
+/// the animation is still running — calls
+/// [`Window::request_animation_frame`](crate::Window::request_animation_frame)
+/// internally so the next frame redraws this view. Consumers of `animated()`
+/// do not need to drive `request_animation_frame` themselves; the helper owns
+/// that scheduling.
+///
+/// Per K04 Task 32, `request_animation_frame` is idempotent within a frame —
+/// calling `animated()` from every layout pass during an in-flight animation
+/// collapses to one frame request.
 ///
 /// # Example
 /// ```ignore

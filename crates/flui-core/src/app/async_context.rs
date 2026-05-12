@@ -164,6 +164,24 @@ impl AsyncApp {
         lock.update(f)
     }
 
+    /// K04 placement-aware deferred callback. Async counterpart of
+    /// [`App::defer_to`]; reaches the underlying `App` via the existing
+    /// `app_or_panic()` handle, mirroring how [`AsyncApp::update`] does it.
+    ///
+    /// See [`App::defer_to`] for the per-placement drain semantics —
+    /// `flush_effects_at` filters by `placement` via
+    /// [`FlushScope::admits`]; defers queued from outside `App::run_frame`
+    /// use the legacy scope (drains every placement).
+    pub fn defer_to(
+        &self,
+        placement: crate::frame::DeferPlacement,
+        f: impl FnOnce(&mut App) + 'static,
+    ) {
+        let app = self.app_or_panic();
+        let mut lock = app.borrow_mut();
+        lock.defer_to(placement, f);
+    }
+
     /// Arrange for the given callback to be invoked whenever the given entity emits an event of a given type.
     /// The callback is provided a handle to the emitting entity and a reference to the emitted event.
     pub fn subscribe<T, Event>(
@@ -307,10 +325,27 @@ impl AsyncWindowContext {
         self.app.update_window(self.window, update)
     }
 
-    /// A convenience method for [`Window::on_next_frame`].
-    pub fn on_next_frame(&mut self, f: impl FnOnce(&mut Window, &mut App) + 'static) {
+    /// K04 Task 33: convenience method for [`Window::on_pre_frame`] (the
+    /// renamed `on_next_frame`).
+    pub fn on_pre_frame(&mut self, f: impl FnOnce(&mut Window, &mut App) + 'static) {
         self.app
-            .update_window(self.window, |_, window, _| window.on_next_frame(f))
+            .update_window(self.window, |_, window, _| window.on_pre_frame(f))
+            .ok();
+    }
+
+    /// K04 Task 33: deprecated alias for [`Self::on_pre_frame`].
+    #[deprecated(
+        since = "0.1.0",
+        note = "renamed to `on_pre_frame` (K04) — the callback fires before the next frame's draw; this alias is scheduled for removal in 0.2.0"
+    )]
+    pub fn on_next_frame(&mut self, f: impl FnOnce(&mut Window, &mut App) + 'static) {
+        self.on_pre_frame(f);
+    }
+
+    /// K04 Task 34: convenience method for [`Window::on_post_frame`].
+    pub fn on_post_frame(&mut self, f: impl FnOnce(&mut Window, &mut App) + 'static) {
+        self.app
+            .update_window(self.window, |_, window, _| window.on_post_frame(f))
             .ok();
     }
 

@@ -1,3 +1,6 @@
+use crate::frame::profile::{FrameProfile, FrameProfileDetailed};
+use crate::frame::tick::{TickOutcome, TickTarget, TickTargetId};
+use crate::frame::{DeferPlacement, FramePhase};
 use crate::scheduler::Instant;
 use std::{
     any::{TypeId, type_name},
@@ -603,6 +606,85 @@ pub struct App {
     pub(crate) mode: GpuiMode,
     flushing_effects: bool,
     pending_updates: usize,
+    /// K04 Task 26: the current frame phase. `FramePhase::Idle` outside
+    /// `App::run_frame`; advanced by `App::run_frame` (Task 23) at every phase
+    /// transition. Cheap (one byte) — inspector and Framework-tier tests read
+    /// it via [`App::current_phase()`].
+    pub(crate) current_phase: FramePhase,
+    /// K04 Task 17 + Task 25: per-App frame clock. Samples the underlying
+    /// scheduler [`Clock`](crate::scheduler::Clock) exactly once at the start
+    /// of each `App::run_frame` call (axiom P3). All consumers in that frame —
+    /// animation tick (Task 30), `AnimationController::value()` (Task 31),
+    /// post-frame callbacks, layout cache hash keys — read the same `Instant`
+    /// for the duration of the frame.
+    ///
+    /// `!Send` (lives on `App`); layered on top of `Arc<dyn Clock>`. Wired by
+    /// `App::run_frame` (Task 23) for `begin_frame`/`end_frame`; consumed via
+    /// the [`App::frame_clock()`] accessor.
+    pub(crate) frame_clock: crate::frame::clock::FrameClock,
+    /// K04 Task 27: always-on per-frame telemetry. Populated at the end of
+    /// every `App::run_frame` call (or, during the K04 staged rollout, every
+    /// `TestApp::advance_frame` call). Read via [`App::frame_profile()`].
+    ///
+    /// Sized for cheapness (~32 bytes); never allocates. Always available.
+    pub(crate) frame_profile: FrameProfile,
+    /// K04 Task 27: flag-gated detailed per-frame telemetry. Populated only
+    /// when [`App::set_profiling_enabled(true)`](App::set_profiling_enabled).
+    /// Default `cfg!(debug_assertions)`.
+    ///
+    /// Read via [`App::frame_profile_detailed()`] — returns `None` when
+    /// profiling is disabled to make the disabled path observably cold.
+    pub(crate) frame_profile_detailed: FrameProfileDetailed,
+    /// K04 Task 27: gate for [`Self::frame_profile_detailed`]. When `false`,
+    /// `App::run_frame` skips per-phase `Duration` measurements — release
+    /// builds default to `false` per `docs/promt.md` §3.1 hot-path discipline.
+    pub(crate) profiling_enabled: bool,
+    /// K04 Task 30: active animation-tick targets.
+    ///
+    /// The [`FramePhase::AnimationTick`] phase walks this map once per
+    /// `run_frame`, leases each target, calls
+    /// [`TickTarget::tick`](crate::frame::tick::TickTarget::tick), emits an
+    /// `Effect::Notify` for [`TickOutcome::Continue`] entries, and removes
+    /// [`TickOutcome::Done`] entries from the set.
+    ///
+    /// Today (K04) only [`AnimationController`](crate::AnimationController)
+    /// implements the trait, so the value type is a typed
+    /// `WeakEntity<AnimationController>`. SF08 (async widgets) and follow-up
+    /// audio / spring / particle controllers will widen the value type
+    /// additively when the trait is unsealed.
+    pub(crate) active_animations: FxHashMap<TickTargetId, WeakEntity<crate::AnimationController>>,
+    /// K04 Task 35: App-level pre-frame callbacks. Fire at the top of
+    /// every `App::run_frame` (across all windows) AFTER per-window
+    /// `Window::on_pre_frame` callbacks. Use for cross-window pre-paint
+    /// work (input replay, telemetry seed, deferred focus changes that
+    /// span multiple windows).
+    pub(crate) app_pre_frame_callbacks: SmallVec<[Box<dyn FnOnce(&mut App)>; 4]>,
+    /// K04 Task 35: App-level post-frame callbacks. Fire at the bottom of
+    /// every `App::run_frame` (across all windows) AFTER per-window
+    /// `Window::on_post_frame` callbacks. Use for cross-window
+    /// post-paint work (input replay, telemetry export, profiler tick).
+    pub(crate) app_post_frame_callbacks: SmallVec<[Box<dyn FnOnce(&mut App)>; 4]>,
+    /// K04 Task 21: test-mode auto-redraw flag.
+    ///
+    /// When `true` (the default under `cfg(test, feature = "test-support")`),
+    /// `App::flush_effects` (the legacy Pre-K04 entry) redraws every dirty
+    /// window inline once the effect queue empties. This is the behavior the
+    /// pre-K04 test suite relies on — most existing tests trigger UI work via
+    /// `cx.update(...)` and expect the resulting `cx.notify(...)` to materialize
+    /// as a draw before the call returns.
+    ///
+    /// Tests that need observable phase boundaries (Task 38 phase-order tests
+    /// and downstream Framework-tier tests) flip this to `false` and drive
+    /// frames explicitly through `TestApp::advance_frame()` (Task 22). K04+1
+    /// will flip the default to `false` once Tier-C tests migrate.
+    ///
+    /// K04 review fix #3: the field is `pub(crate)` and gated on
+    /// `cfg(feature = "test-support")` — flipped via the sanctioned setter
+    /// [`TestApp::set_auto_advance_frames`](crate::TestApp::set_auto_advance_frames).
+    /// `cfg(test)` alone would only apply when this crate is compiled as a
+    /// test target and is not a stable public API surface.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) auto_advance_frames_on_flush: bool,
     quit_mode: QuitMode,
     quitting: bool,
 
@@ -644,6 +726,36 @@ impl App {
                 actions: Rc::new(ActionRegistry::default()),
                 flushing_effects: false,
                 pending_updates: 0,
+                current_phase: FramePhase::Idle,
+                // K04 Task 17 + Task 25: pull the scheduler's `Arc<dyn Clock>`
+                // (the same handle every other component reaches via
+                // `cx.background_executor().scheduler().clock()`) and layer
+                // `FrameClock` on top.
+                frame_clock: crate::frame::clock::FrameClock::new(
+                    background_executor.scheduler_executor().scheduler().clock(),
+                ),
+                // K04 Task 27: always-on profile starts zeroed; populated on
+                // every `App::run_frame`.
+                frame_profile: FrameProfile::default(),
+                frame_profile_detailed: FrameProfileDetailed::default(),
+                // K04 Task 27: detailed profiling defaults to debug-only.
+                // Production builds stay cold unless `set_profiling_enabled`
+                // is explicitly flipped on by the host.
+                profiling_enabled: cfg!(debug_assertions),
+                // K04 Task 30: active-animation set; populated by
+                // `AnimationController::forward` / `reverse` / `animate_*`
+                // and drained by [`Self::run_frame`]'s AnimationTick phase.
+                active_animations: FxHashMap::default(),
+                // K04 Task 35: App-level pre/post-frame callback queues;
+                // populated by `App::on_pre_frame` / `App::on_post_frame`,
+                // drained by `App::run_frame`.
+                app_pre_frame_callbacks: SmallVec::new(),
+                app_post_frame_callbacks: SmallVec::new(),
+                // K04 Task 21: default `true` under test-support to preserve
+                // pre-K04 test-suite behavior. Phase-order tests (Task 38) and
+                // future Framework-tier tests flip this to `false`.
+                #[cfg(any(test, feature = "test-support"))]
+                auto_advance_frames_on_flush: true,
                 active_drag: None,
                 background_executor,
                 foreground_executor,
@@ -1409,13 +1521,82 @@ impl App {
     }
 
     /// Called at the end of [`App::update`] to complete any side effects
-    /// such as notifying observers, emitting events, etc. Effects can themselves
-    /// cause effects, so we continue looping until all effects are processed.
+    /// such as notifying observers, emitting events, etc.
+    ///
+    /// Pre-K04 legacy entry: drains every placement with no deadline,
+    /// preserving observable behavior for every existing callsite. Routes
+    /// through [`App::flush_effects_at`] with [`FlushScope::Legacy`].
+    ///
+    /// Once Task 23 wires `App::run_frame`, phase-aware boundaries will call
+    /// [`App::flush_effects_at`] directly with [`FlushScope::Phase(_)`].
     fn flush_effects(&mut self) {
+        self.flush_effects_at(FlushScope::Legacy, None);
+    }
+
+    /// K04 phase-aware deadline-aware drain.
+    ///
+    /// Drains `pending_effects` according to the `scope`. Non-[`Effect::Defer`]
+    /// variants always drain (they have no placement). [`Effect::Defer`] effects
+    /// are filtered: only those whose placement is admissible at the current
+    /// scope drain; the rest are carried over for a future phase boundary.
+    ///
+    /// FIFO is preserved *within* each placement — the carry-over rebuild walks
+    /// the carry queue in reverse so that the original insertion order survives.
+    ///
+    /// When `deadline` is `Some(dl)` and `Instant::now() > dl`, the drain breaks
+    /// and emits a single `WARN` log; any remaining effects (admissible or not)
+    /// stay in `pending_effects` for the next phase boundary. This implements
+    /// the "break-and-requeue" policy from `docs/promt.md` §3.1 / K04 design
+    /// decision D7. Pre-K04 legacy callers pass `deadline: None` and are never
+    /// time-budgeted.
+    ///
+    /// Per-flush behavior:
+    ///
+    /// - The dedup invariants on `Notify` / `NotifyGlobalObservers` (first-insert
+    ///   wins; `pending_notifications` / `pending_global_notifications` sets) are
+    ///   preserved verbatim because the dedup state lives outside this function.
+    /// - `event_arena.clear()` runs at the end of a [`FlushScope::Legacy`] drain
+    ///   only. Phase-aware drains (Task 23+) leave the arena to `run_frame`'s
+    ///   end-of-frame cleanup.
+    /// - The `cfg(test, feature = "test-support")` auto-redraw block runs only
+    ///   under [`FlushScope::Legacy`]; Task 21 will gate it behind
+    ///   `App::auto_advance_frames_on_flush`.
+    ///
+    /// K15 coexistence: this function holds the same re-entry guarantees as the
+    /// pre-K04 `flush_effects` — callers wrap it with `flushing_effects` /
+    /// `pending_updates` so a Defer callback that issues a nested `update_window`
+    /// continues to follow the K15 contract.
+    pub(crate) fn flush_effects_at(&mut self, scope: FlushScope, deadline: Option<Instant>) {
+        use collections::VecDeque;
+
+        // Effects whose placement does not match the current scope. Drained at
+        // a future phase boundary. Sized to zero allocations in the common case
+        // (no carry-over); grows as needed.
+        let mut carry: VecDeque<Effect> = VecDeque::new();
+        let mut budget_exhausted = false;
+
         loop {
             self.release_dropped_entities();
             self.release_dropped_focus_handles();
+
+            // Deadline check (axiom P4): only the `EffectFlush` budget enforces
+            // break-and-requeue. Non-effect phases pass `deadline: None`.
+            if let Some(dl) = deadline {
+                if Instant::now() > dl {
+                    budget_exhausted = true;
+                    break;
+                }
+            }
+
             if let Some(effect) = self.pending_effects.pop_front() {
+                // Placement filter (Defer only — other effects always drain).
+                if let Effect::Defer { placement, .. } = &effect {
+                    if !scope.admits(*placement) {
+                        carry.push_back(effect);
+                        continue;
+                    }
+                }
+
                 match effect {
                     Effect::Notify { emitter } => {
                         self.apply_notify_effect(emitter);
@@ -1435,7 +1616,10 @@ impl App {
                         self.apply_notify_global_observers_effect(global_type);
                     }
 
-                    Effect::Defer { callback } => {
+                    Effect::Defer {
+                        placement: _placement,
+                        callback,
+                    } => {
                         self.apply_defer_effect(callback);
                     }
                     Effect::EntityCreated {
@@ -1447,25 +1631,67 @@ impl App {
                     }
                 }
             } else {
+                // No admissible effects remain in the queue. Under Legacy scope,
+                // run the test-mode auto-redraw block when the
+                // `auto_advance_frames_on_flush` flag (K04 Task 21) is set;
+                // under a Phase scope, skip — `App::run_frame` (Task 23) owns
+                // the redraw.
                 #[cfg(any(test, feature = "test-support"))]
-                for window in self
-                    .windows
-                    .values()
-                    .filter_map(|window| {
-                        let window = window.as_deref()?;
-                        window.invalidator.is_dirty().then_some(window.handle)
-                    })
-                    .collect::<Vec<_>>()
-                {
-                    self.update_window(window, |_, window, cx| window.draw(cx).clear())
-                        .unwrap();
+                if matches!(scope, FlushScope::Legacy) && self.auto_advance_frames_on_flush {
+                    for window in self
+                        .windows
+                        .values()
+                        .filter_map(|window| {
+                            let window = window.as_deref()?;
+                            window.invalidator.is_dirty().then_some(window.handle)
+                        })
+                        .collect::<Vec<_>>()
+                    {
+                        self.update_window(window, |_, window, cx| window.draw(cx).clear())
+                            .unwrap();
+                    }
                 }
 
                 if self.pending_effects.is_empty() {
-                    self.event_arena.clear();
+                    // Truly empty for this scope. Under Legacy, clear the event
+                    // arena (matches pre-K04 behavior). Under Phase, leave the
+                    // arena to `run_frame`'s end-of-frame cleanup (Task 23).
+                    if matches!(scope, FlushScope::Legacy) {
+                        self.event_arena.clear();
+                    }
                     break;
                 }
+                // The test-mode redraw may have pushed new effects via
+                // `cx.notify(_)`; loop back to drain them.
             }
+        }
+
+        // Restore the carry-over to the front of `pending_effects`, preserving
+        // FIFO order within each placement. `push_front` reverses, so we walk
+        // the carry in reverse to put the first carried effect at the head.
+        if !carry.is_empty() {
+            for effect in carry.into_iter().rev() {
+                self.pending_effects.push_front(effect);
+            }
+        }
+
+        if budget_exhausted {
+            // Per `docs/promt.md` §3.1: dispatch/tick/paint paths must not
+            // log per element or per frame — this `WARN` is the only
+            // allowed committed log on the effect-flush path.
+            //
+            // K04 staged rollout: `App::run_frame` currently passes
+            // `deadline: None` everywhere, so `budget_exhausted` is
+            // unreachable in production code paths today. The K04+1
+            // follow-up that wires per-phase deadlines is the consumer
+            // that will trip this branch; at that point a per-frame
+            // `(frame_index, scope)` rate-limit needs to land here so
+            // the WARN can't fire multiple times per frame per phase.
+            log::warn!(
+                "flui-core: effect-flush exceeded budget at {:?} boundary; \
+                 remainder deferred to next phase boundary",
+                scope
+            );
         }
     }
 
@@ -1699,10 +1925,625 @@ impl App {
             .spawn_with_priority(priority, async move { f(&mut cx).await }.boxed_local())
     }
 
+    /// K04 Task 26: returns the current frame phase.
+    ///
+    /// Returns [`FramePhase::Idle`] outside of `App::run_frame` (i.e. when no
+    /// frame is in flight). Advanced by `App::run_frame` (Task 23) at every
+    /// phase transition.
+    ///
+    /// Cheap (one field read). Used by:
+    ///
+    /// - Inspector (K22) for read-only phase queries.
+    /// - Framework-tier tests (Task 38 phase-order tests, SF05) to assert
+    ///   phase invariants without inspecting internal fields.
+    /// - K04 panic-safety paths to know which phase to wind down from.
+    ///
+    /// A subscribing variant (`App::observe_phase(...)`) is reserved for K22
+    /// inspector intro but NOT shipped in K04.
+    pub fn current_phase(&self) -> FramePhase {
+        self.current_phase
+    }
+
+    /// K04 (Task 17 surface): returns a reference to the per-App
+    /// [`FrameClock`](crate::frame::clock::FrameClock).
+    ///
+    /// Read-only. Animation tick (Task 30), `AnimationController::value()`
+    /// (Task 31), post-frame callbacks, layout cache hash keys, and any
+    /// time-sensitive phase code reads `Instant` values from this clock
+    /// instead of `Instant::now()` (axiom P3).
+    ///
+    /// Outside a frame, [`FrameClock::in_frame()`] returns `false`. Calling
+    /// [`FrameClock::now()`] outside a frame triggers a debug assertion in
+    /// `cfg(debug_assertions)` and returns the last-sampled value in release.
+    pub fn frame_clock(&self) -> &crate::frame::clock::FrameClock {
+        &self.frame_clock
+    }
+
+    /// K04 Task 27: returns the always-on per-frame telemetry recorded for the
+    /// most recent `App::run_frame` (or `TestApp::advance_frame`) call.
+    ///
+    /// Before the first frame, returns a [`FrameProfile::default()`] — every
+    /// field is zero / empty. After the first frame, fields reflect that
+    /// frame's measurements.
+    ///
+    /// Cheap (one `Copy` of ~32 bytes); safe to read on every frame. Detailed
+    /// per-phase `Duration` data lives on the flag-gated
+    /// [`Self::frame_profile_detailed`].
+    pub fn frame_profile(&self) -> &FrameProfile {
+        &self.frame_profile
+    }
+
+    /// K04 Task 27: returns the detailed per-phase telemetry if profiling is
+    /// enabled (default `cfg!(debug_assertions)`), otherwise `None`.
+    ///
+    /// Enable explicitly via [`Self::set_profiling_enabled(true)`](Self::set_profiling_enabled)
+    /// from a host that needs the full per-phase breakdown.
+    pub fn frame_profile_detailed(&self) -> Option<&FrameProfileDetailed> {
+        self.profiling_enabled
+            .then_some(&self.frame_profile_detailed)
+    }
+
+    /// K04 Task 27: toggles detailed per-phase profiling. Default
+    /// `cfg!(debug_assertions)` — debug builds collect timings, release builds
+    /// stay cold unless explicitly opted in.
+    ///
+    /// Flipping from `true` to `false` does NOT clear the most recently
+    /// recorded [`FrameProfileDetailed`]; subsequent `frame_profile_detailed()`
+    /// calls simply return `None` until profiling is re-enabled.
+    pub fn set_profiling_enabled(&mut self, enabled: bool) {
+        self.profiling_enabled = enabled;
+    }
+
+    /// K04 Task 27: returns whether detailed per-phase profiling is enabled.
+    pub fn profiling_enabled(&self) -> bool {
+        self.profiling_enabled
+    }
+
+    /// K04 Task 35: schedule an App-wide callback to run at the start of the
+    /// next [`Self::run_frame`]'s [`PreFrame`](crate::frame::FramePhase::PreFrame)
+    /// phase, AFTER per-window `Window::on_pre_frame` callbacks. Use this
+    /// for cross-window setup (input replay, telemetry seed, focus moves
+    /// across windows).
+    pub fn on_pre_frame(&mut self, callback: impl FnOnce(&mut App) + 'static) {
+        self.app_pre_frame_callbacks.push(Box::new(callback));
+    }
+
+    /// K04 Task 35: schedule an App-wide callback to run in the current
+    /// frame's [`PostFrame`](crate::frame::FramePhase::PostFrame) phase,
+    /// AFTER per-window `Window::on_post_frame` callbacks. Use for
+    /// cross-window post-paint work (telemetry export, observers that
+    /// span multiple windows).
+    ///
+    /// Per axiom P5, callbacks scheduled via this API MUST NOT mutate
+    /// elements directly. Queue mutations via
+    /// `cx.defer_to(DeferPlacement::NextFrameStart, ...)` instead.
+    pub fn on_post_frame(&mut self, callback: impl FnOnce(&mut App) + 'static) {
+        self.app_post_frame_callbacks.push(Box::new(callback));
+    }
+
+    /// K04 Task 23: seven-phase frame entry.
+    ///
+    /// Walks the K04 phase pipeline for a single frame on the given window:
+    ///
+    /// ```text
+    /// PreFrame → AnimationTick → Build (no-op) → Layout → Prepaint → Paint → PostFrame
+    /// ```
+    ///
+    /// Between every phase boundary the placement-aware effect drain
+    /// ([`App::flush_effects_at`] with [`FlushScope::Phase`]) drains any
+    /// `Effect::Defer` whose [`DeferPlacement`] matches the boundary. Other
+    /// effect variants (`Notify`, `Emit`, ...) drain regardless of placement.
+    ///
+    /// # Frame clock (axiom P3)
+    ///
+    /// Calls [`FrameClock::begin_frame()`](crate::frame::clock::FrameClock::begin_frame)
+    /// at the start of `PreFrame` and [`FrameClock::end_frame()`](crate::frame::clock::FrameClock::end_frame)
+    /// at the end of `PostFrame`. Every consumer that reads
+    /// `cx.frame_clock().now()` inside the seven phases sees the same
+    /// `Instant`. The `frame_index` increments on every successful call;
+    /// panicking phases call [`abort_frame_after_panic`](Self::abort_frame_after_panic)
+    /// which flips `in_frame()` back to `false` but leaves `frame_index`
+    /// and `last_sampled` "stuck dirty" (panic-safety contract D9).
+    ///
+    /// # K04 staged rollout
+    ///
+    /// As of K04 Phase 2 Task 23 this is invokable but NOT yet wired into the
+    /// platform `on_request_frame` callback at `window.rs:1257-1314`. The
+    /// production draw path still flows through `window.draw()` inline. The
+    /// only K04 consumer is [`TestApp::advance_frame`](crate::TestApp::advance_frame).
+    /// A follow-up spec migrates the platform callback to call `run_frame`
+    /// (deferred to avoid coupling the K04 contract to platform-side
+    /// thermal / input-rate machinery — see Task 14 design note).
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` only when the window handle is not found. Phase panics
+    /// are caught and reported via the returned [`FrameOutcome`]; the App
+    /// stays usable.
+    pub fn run_frame(&mut self, handle: AnyWindowHandle) -> Result<FrameOutcome> {
+        use std::panic::AssertUnwindSafe;
+
+        // Validate the window handle up front so a missing-window error is
+        // returned via `Result` rather than swallowed inside the `catch_unwind`
+        // body. This avoids the silent-failure shape flagged by the Copilot
+        // review: previously `update_window_id`'s `Err` was discarded inside
+        // the Paint phase and `run_frame` would still return `Ok` with
+        // `primitive_count: 0`.
+        if !self
+            .windows
+            .get(handle.id)
+            .map(|slot| slot.is_some())
+            .unwrap_or(false)
+        {
+            return Err(anyhow!("window not found"));
+        }
+
+        // Sanity: nested `run_frame` is forbidden — K04 axiom P5 routes
+        // re-entry through `cx.defer_to(...)`, not nested frame entry.
+        debug_assert_eq!(
+            self.current_phase,
+            FramePhase::Idle,
+            "App::run_frame called while a frame is already in flight"
+        );
+        // K04 review fix #7: `run_phase` brackets each phase with
+        // `flushing_effects = true` and restores the prior value at the
+        // end. If `run_frame` is entered with `flushing_effects = true`
+        // already (e.g. from a platform callback that itself sits inside
+        // `finish_update`), the `was_flushing` restore at the end of every
+        // phase would leak that pre-existing `true` past the frame —
+        // permanently breaking the legacy Legacy flush path for the rest
+        // of the App's lifetime. Assert the invariant in debug builds so
+        // the issue surfaces in tests rather than silently downstream.
+        debug_assert!(
+            !self.flushing_effects,
+            "App::run_frame entered with flushing_effects = true; that breaks the run_phase guard restoration"
+        );
+
+        // Sample the wall clock once for the whole frame measurement. Detailed
+        // per-phase durations are captured only when `profiling_enabled`; the
+        // always-on `FrameProfile` only records the total.
+        let frame_start = Instant::now();
+        self.frame_clock.begin_frame();
+
+        // Reset detailed profile at the start of the frame so per-phase
+        // durations from the previous frame don't bleed through.
+        if self.profiling_enabled {
+            self.frame_profile_detailed.reset();
+        }
+        // Reset `active_animations` so a frame with no active animations
+        // reports 0, not the previous frame's count. `drive_animation_tick`
+        // overwrites with the visited count if the set is non-empty.
+        self.frame_profile.active_animations = 0;
+
+        // Walk phases. We catch panics inside the body so a panicking phase
+        // does not poison the App. The `AssertUnwindSafe` is safe here because
+        // every borrowed field is `&mut self` (single-threaded), and
+        // `abort_frame_after_panic` restores the invariants downstream.
+        let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            // K04 Tasks 32/33/35: PreFrame body —
+            //   (1) drain `request_next_frame` flags (Task 32),
+            //   (2) drain per-window `Window::on_pre_frame` callbacks (Task 33),
+            //   (3) drain App-level `App::on_pre_frame` callbacks (Task 35).
+            self.run_phase(FramePhase::PreFrame, |app| {
+                app.drain_request_next_frame_flags();
+                app.drain_pre_frame_callbacks();
+            });
+
+            // K04 Task 30: walk the active animation set, tick each target
+            // with the per-frame `FrameClock::now()`, and emit notifications
+            // for continuing targets so dependent views re-render.
+            self.run_phase(FramePhase::AnimationTick, |app| {
+                app.drive_animation_tick();
+            });
+
+            // Build is reserved as a no-op slot for SF05 (`BuildOwner::flush_dirty()`).
+            // Enter and exit immediately; no effects drain because phase-boundary
+            // drains happen in `run_phase`.
+            self.run_phase(FramePhase::Build, |_app| { /* reserved */ });
+
+            self.run_phase(
+                FramePhase::Layout,
+                |_app| { /* layout body lands when K20 layout cache wires up */ },
+            );
+
+            // Prepaint + Paint: the legacy `Window::draw` body does both today.
+            // K04 Task 24 keeps `Window::DrawPhase` as a strict sub-state of
+            // these two phases; until SF06 splits the prepaint pass out, we
+            // call `window.draw()` inside the `Paint` phase and let the
+            // `Prepaint` phase run boundary-only effect drains.
+            self.run_phase(
+                FramePhase::Prepaint,
+                |_app| { /* prepaint body lands when DrawPhase split lands */ },
+            );
+
+            // Paint phase: run window.draw inside a `run_phase` body so the
+            // `flushing_effects = true` guard suppresses the nested Legacy
+            // flush that `update_window_id`'s `finish_update` would otherwise
+            // trigger. Without the guard, the Legacy flush would prematurely
+            // drain `DeferPlacement::PostFrame` / `Idle` callbacks at this
+            // boundary instead of carrying them to their phase.
+            let mut primitive_count: usize = 0;
+            self.run_phase(FramePhase::Paint, |app| {
+                let _ = app.update_window_id(handle.id, |_, window, cx| {
+                    let _arena_clear_needed = window.draw(cx);
+                    primitive_count = window.rendered_frame.scene.len();
+                });
+            });
+
+            // K04 Tasks 34/35: drain Window-level post-frame callbacks for
+            // every open window. App-level App::on_post_frame callbacks
+            // also drain here (added by Task 35 alongside the Window-level
+            // variant).
+            self.run_phase(FramePhase::PostFrame, |app| {
+                app.drain_post_frame_callbacks();
+            });
+
+            primitive_count
+        }));
+
+        // Restore Idle regardless of outcome.
+        let outcome = match result {
+            Ok(primitive_count) => {
+                self.current_phase = FramePhase::Idle;
+                self.frame_clock.end_frame();
+                // K04 review fix #11: drain `DeferPlacement::Idle` callbacks
+                // now that the frame is finished and we are back at the
+                // `Idle` phase. Without this, `defer_to(Idle, ...)` would
+                // never fire inside `run_frame` — it would accumulate
+                // silently until a Legacy flush ran. Suppress nested
+                // Legacy flushes for the duration of the Idle drain (a
+                // `defer_to(Idle, ...)` callback that calls `update_window`
+                // would otherwise trigger a same-scope Legacy flush).
+                let was_flushing = std::mem::replace(&mut self.flushing_effects, true);
+                self.flush_effects_at(FlushScope::Phase(FramePhase::Idle), None);
+                self.flushing_effects = was_flushing;
+                FrameOutcome {
+                    frame_index: self.frame_clock.frame_index(),
+                    panicked_phase: None,
+                    primitive_count: u32::try_from(primitive_count).unwrap_or(u32::MAX),
+                }
+            }
+            Err(_panic) => {
+                // K04 panic-safety contract (axiom P8): wind down the phase
+                // machine and clear in-flight scratch, but leave `frame_clock`
+                // and animation-set "stuck dirty" so the next frame can
+                // recover. `current_phase` at the moment of panic is recorded
+                // for the outcome — `abort_frame_after_panic` resets it to
+                // Idle.
+                let panicked_phase = self.current_phase;
+                self.abort_frame_after_panic(panicked_phase);
+                // Per Task 12 of the K04 plan, the in-flight scene-primitive
+                // buffer on the panicking window must be cleared so a partially
+                // populated `next_frame` from a panic mid-Paint does not bleed
+                // primitives into the next frame's `rendered_frame` after the
+                // `mem::swap` in `Window::draw`. The window-id-aware cleanup
+                // lives here (rather than inside `abort_frame_after_panic`)
+                // because the App-level helper has no window context — only
+                // `run_frame` knows which window was being driven.
+                let _ = self.update_window_id(handle.id, |_, window, _| {
+                    window.next_frame.clear();
+                });
+                FrameOutcome {
+                    frame_index: self.frame_clock.frame_index(),
+                    panicked_phase: Some(panicked_phase),
+                    primitive_count: 0,
+                }
+            }
+        };
+
+        // Populate the always-on profile. Heavy detailed measurements (per-phase
+        // Durations, overrun magnitudes) are populated by `run_phase` when
+        // `profiling_enabled`; here we only record the cheap fields.
+        self.frame_profile.frame_index = outcome.frame_index;
+        self.frame_profile.frame_duration_total = frame_start.elapsed();
+        self.frame_profile.primitive_count = outcome.primitive_count;
+        // `active_animations` is owned by `drive_animation_tick` (called from
+        // the `AnimationTick` phase body) — it sets the field to the visited
+        // count after the walk. Do NOT overwrite here; it would clobber a
+        // legitimate non-zero count with 0 for every frame.
+
+        Ok(outcome)
+    }
+
+    /// K04 Task 23 internal: run one phase body bracketed by phase-aware
+    /// effect drains and (when profiling is enabled) duration measurements.
+    ///
+    /// Called by [`Self::run_frame`] for every phase. Maintains the invariants
+    /// listed in the [`FramePhase`] discriminant docstrings:
+    ///
+    /// - `current_phase` is set to `phase` for the duration of `body`.
+    /// - Pre-phase boundary drain: admissible `DeferPlacement`s at this phase
+    ///   drain BEFORE `body` runs (so a `cx.defer_to(NextFrameStart, …)`
+    ///   queued during the previous frame's `PostFrame` fires at the start of
+    ///   `PreFrame`).
+    /// - Post-phase boundary drain: re-runs after `body` to catch effects the
+    ///   body itself queued at the same placement.
+    fn run_phase<F: FnOnce(&mut App)>(&mut self, phase: FramePhase, body: F) {
+        self.current_phase = phase;
+
+        // K04: suppress nested Legacy flushes inside the phase body so
+        // placement-aware drains are the only drains. `update_window` /
+        // `update_entity` within `body` bump `pending_updates` and call
+        // `finish_update`, which under pre-K04 semantics drained every
+        // placement via `FlushScope::Legacy`. With the phase pipeline
+        // owning the drains, that Legacy flush would prematurely consume
+        // `DeferPlacement::PostFrame` etc.
+        let was_flushing = std::mem::replace(&mut self.flushing_effects, true);
+
+        // Pre-phase boundary drain.
+        self.flush_effects_at(FlushScope::Phase(phase), None);
+
+        let phase_start = self.profiling_enabled.then(Instant::now);
+
+        body(self);
+
+        // Post-phase boundary drain captures effects queued by `body`.
+        // Uses `PhasePost` (admits only `EndOfUpdate`) so a defer queued
+        // by `body` with placement matching `phase` (e.g.
+        // `defer_to(NextFrameStart, ...)` queued inside `on_pre_frame`)
+        // is carried to the NEXT frame's matching phase entry, not fired
+        // same-frame.
+        self.flush_effects_at(FlushScope::PhasePost(phase), None);
+
+        self.flushing_effects = was_flushing;
+
+        if let Some(start) = phase_start {
+            // Record per-phase duration for `FrameProfileDetailed`. The
+            // slice index matches `FramePhase::as_index()`. `per_phase` is
+            // `Box<[Duration]>` sized at `reset()` time to `FramePhase::count()`;
+            // the bounds check guards against early-frame uninitialized state.
+            let dur = start.elapsed();
+            let idx = phase.as_index() as usize;
+            if let Some(slot) = self.frame_profile_detailed.per_phase.get_mut(idx) {
+                *slot = dur;
+            }
+        }
+    }
+
+    /// K04 Task 32 internal: drain every open window's `request_next_frame`
+    /// flag and mark the invalidator dirty for any window that had the flag
+    /// set. Called from the `PreFrame` phase body so the test-driven
+    /// `App::run_frame` path (which bypasses the platform `on_request_frame`
+    /// callback) still observes `request_animation_frame` requests.
+    ///
+    /// Idempotent: a window with the flag already cleared is a no-op.
+    fn drain_request_next_frame_flags(&mut self) {
+        // Collect window IDs to avoid borrowing `self.windows` while we
+        // mutate the invalidator. `windows` is `SlotMap` — small in practice.
+        let ids: Vec<WindowId> = self
+            .windows
+            .iter()
+            .filter_map(|(id, slot)| slot.as_ref().map(|_| id))
+            .collect();
+        for id in ids {
+            if let Some(Some(window)) = self.windows.get(id)
+                && window.request_next_frame.replace(false)
+            {
+                window.invalidator.set_dirty(true);
+            }
+        }
+    }
+
+    /// K04 Tasks 33/35 internal: drain per-window pre-frame callbacks
+    /// (`Window::on_pre_frame`) and then App-level pre-frame callbacks
+    /// (`App::on_pre_frame`). Per-window first so App-level callbacks can
+    /// observe the resolved per-window state.
+    fn drain_pre_frame_callbacks(&mut self) {
+        // Per-window pre-frame callbacks. Post-K04 (Task 36) the storage is
+        // `RefCell<SmallVec<[FrameCallback; 4]>>` directly on `Window`;
+        // drain into a local `SmallVec` so the typical 0-4 callback case
+        // never spills to the heap.
+        let ids: Vec<WindowId> = self
+            .windows
+            .iter()
+            .filter_map(|(id, slot)| slot.as_ref().map(|_| id))
+            .collect();
+        for id in ids {
+            let drained: SmallVec<[Box<dyn FnOnce(&mut Window, &mut App)>; 4]> =
+                match self.windows.get(id) {
+                    Some(Some(window)) => RefCell::borrow_mut(&window.next_frame_callbacks)
+                        .drain(..)
+                        .collect(),
+                    _ => continue,
+                };
+            if drained.is_empty() {
+                continue;
+            }
+            let _ = self.update_window_id(id, |_, window, cx| {
+                for callback in drained {
+                    callback(window, cx);
+                }
+            });
+        }
+
+        // App-level pre-frame callbacks. `mem::take` ensures callbacks that
+        // re-queue (push a new `on_pre_frame`) fire in the NEXT frame, not
+        // this one — avoids an unbounded same-frame loop.
+        let pending = std::mem::take(&mut self.app_pre_frame_callbacks);
+        for cb in pending {
+            cb(self);
+        }
+    }
+
+    /// K04 Tasks 34/35 internal: drain per-window post-frame callbacks
+    /// (`Window::on_post_frame`) followed by App-level post-frame callbacks
+    /// (`App::on_post_frame`).
+    fn drain_post_frame_callbacks(&mut self) {
+        let ids: Vec<WindowId> = self
+            .windows
+            .iter()
+            .filter_map(|(id, slot)| slot.as_ref().map(|_| id))
+            .collect();
+        for id in ids {
+            let drained: SmallVec<[_; 4]> = match self.windows.get(id) {
+                Some(Some(window)) => RefCell::borrow_mut(&window.post_frame_callbacks)
+                    .drain(..)
+                    .collect(),
+                _ => continue,
+            };
+            if drained.is_empty() {
+                continue;
+            }
+            let _ = self.update_window_id(id, |_, window, cx| {
+                for callback in drained {
+                    callback(window, cx);
+                }
+            });
+        }
+
+        let pending = std::mem::take(&mut self.app_post_frame_callbacks);
+        for cb in pending {
+            cb(self);
+        }
+    }
+
+    /// K04 Task 30 internal: walk [`Self::active_animations`], tick each
+    /// target with the per-frame [`FrameClock::now()`](crate::frame::clock::FrameClock::now),
+    /// emit `Effect::Notify` for continuing targets, and drop `Done` entries.
+    ///
+    /// Called only from [`Self::run_frame`] inside the `AnimationTick` phase.
+    /// Bypasses `update_entity` / `start_update` to avoid triggering a legacy
+    /// effect flush mid-phase — phase-aware drains are owned by `run_phase`.
+    ///
+    /// Updates [`FrameProfile::active_animations`] with the number of targets
+    /// visited (after dropping dead weaks).
+    fn drive_animation_tick(&mut self) {
+        // Early-out: most frames have no active animations, and we want this
+        // path to be cheap. `is_empty` is O(1) on `FxHashMap`.
+        if self.active_animations.is_empty() {
+            return;
+        }
+
+        let now = self.frame_clock.now();
+        let frame_index = self.frame_clock.frame_index();
+        // Take the map so we can lease individual entities (lease holds
+        // `&mut self.entities`, which conflicts with iterating
+        // `self.active_animations` borrowed from `self`). Re-insert at the
+        // end with only the continuing targets.
+        let active = std::mem::take(&mut self.active_animations);
+        let mut keep: FxHashMap<TickTargetId, WeakEntity<crate::AnimationController>> =
+            FxHashMap::default();
+        keep.reserve(active.len());
+
+        let mut visited: usize = 0;
+
+        for (id, weak) in active {
+            let Some(entity) = weak.upgrade() else {
+                // Entity dropped between frames — silently evict.
+                continue;
+            };
+            visited += 1;
+
+            let mut lease = self.entities.lease(&entity);
+            let outcome: TickOutcome = lease.tick(frame_index, now);
+            self.entities.end_lease(lease);
+
+            match outcome {
+                TickOutcome::Continue => {
+                    // Notify so observers (animated views, listener
+                    // subscriptions) re-render on the next phase boundary.
+                    // Effect::Notify is deduplicated on insert, so repeat
+                    // notifies in the same frame collapse to one observable
+                    // event per entity.
+                    let emitter = entity.entity_id();
+                    self.push_effect(Effect::Notify { emitter });
+                    keep.insert(id, entity.downgrade());
+                }
+                TickOutcome::Done => {
+                    // Drop the entry; the controller can re-register itself
+                    // when a new segment starts (forward / reverse / animate_*).
+                }
+            }
+        }
+
+        self.active_animations = keep;
+        self.frame_profile.active_animations = visited;
+    }
+
+    /// K04 Task 25: panic-safe phase wind-down.
+    ///
+    /// Mirrors [`App::abort_update_after_panic`]: restores App-level state so
+    /// the App stays usable after a panic inside a frame phase. Called from the
+    /// `catch_unwind` boundary in `App::run_frame` (Task 23) when a phase body
+    /// panics.
+    ///
+    /// What is restored (axiom P8):
+    ///
+    /// - `current_phase = FramePhase::Idle` — phase machine is reset.
+    /// - `flushing_effects = false` — drain-loop guard cleared.
+    /// - `pending_updates` decremented if positive (mirrors
+    ///   `abort_update_after_panic`).
+    /// - `frame_clock` marks the frame as ended via
+    ///   [`FrameClock::abort_frame()`](crate::frame::clock::FrameClock::abort_frame),
+    ///   preserving `last_sampled` and `frame_index` for post-mortem telemetry
+    ///   but flipping `in_frame()` back to `false`.
+    ///
+    /// What is left "stuck dirty" — drains naturally on the next frame:
+    ///
+    /// - Active animation set (controllers tick again next frame).
+    /// - `pending_effects` queue (drains at the next phase boundary).
+    /// - Window invalidator (already dirty → forces redraw).
+    ///
+    /// Window-level cleanup of `next_frame` (the in-flight scene buffer)
+    /// happens in [`Self::run_frame`]'s panic catch path, NOT in this method,
+    /// because only `run_frame` knows which `WindowId` was being driven.
+    /// `run_frame` calls `window.next_frame.clear()` immediately after
+    /// invoking this method so a panic mid-Paint cannot bleed
+    /// half-built primitives into the next frame's `rendered_frame` via the
+    /// `Window::draw` swap.
+    pub(crate) fn abort_frame_after_panic(&mut self, _phase: FramePhase) {
+        // Note: the `_phase` argument is informational for now — the cleanup
+        // is uniform across phases. Task 23 may use it for log context.
+        self.current_phase = FramePhase::Idle;
+        self.flushing_effects = false;
+        if self.pending_updates > 0 {
+            self.pending_updates -= 1;
+        }
+        self.frame_clock.abort_frame();
+    }
+
     /// Schedules the given function to be run at the end of the current effect cycle, allowing entities
     /// that are currently on the stack to be returned to the app.
+    ///
+    /// Observable behavior is preserved by routing through K04
+    /// [`DeferPlacement::EndOfUpdate`] — the placement that drains at every
+    /// phase boundary. Callers that want a specific later phase (next frame
+    /// start, post-frame, idle) should use [`App::defer_to`] instead.
     pub fn defer(&mut self, f: impl FnOnce(&mut App) + 'static) {
         self.push_effect(Effect::Defer {
+            placement: DeferPlacement::EndOfUpdate,
+            callback: Box::new(f),
+        });
+    }
+
+    /// K04 placement-aware deferred callback. Schedules `f` to run at the
+    /// matching phase boundary inside `App::run_frame`:
+    ///
+    /// - [`DeferPlacement::EndOfUpdate`] — drains at every phase boundary in
+    ///   the current frame (matches the pre-K04 `cx.defer(f)` behavior).
+    /// - [`DeferPlacement::NextFrameStart`] — drains at the next frame's
+    ///   `PreFrame` phase entry.
+    /// - [`DeferPlacement::PostFrame`] — drains in the current frame's
+    ///   `PostFrame` phase entry (if queued before `PostFrame` starts),
+    ///   otherwise the next frame's `PostFrame`.
+    /// - [`DeferPlacement::Idle`] — drains in the `Idle` drain that
+    ///   `App::run_frame` runs at the end of a successful frame.
+    ///
+    /// `flush_effects_at` filters [`Effect::Defer`] by `placement` via
+    /// [`FlushScope::admits`]; pre-body drains (`FlushScope::Phase`) admit
+    /// the matching placement, while post-body drains
+    /// (`FlushScope::PhasePost`) admit only `EndOfUpdate`. This guarantees
+    /// that a defer queued from inside the current phase carries to a
+    /// later phase entry rather than firing same-frame at the matching
+    /// post-drain.
+    ///
+    /// Defers queued from outside `App::run_frame` (e.g. inside
+    /// `cx.update`) drain via the legacy `FlushScope::Legacy` pathway,
+    /// which admits every placement to preserve pre-K04 observable
+    /// behavior.
+    pub fn defer_to(&mut self, placement: DeferPlacement, f: impl FnOnce(&mut App) + 'static) {
+        self.push_effect(Effect::Defer {
+            placement,
             callback: Box::new(f),
         });
     }
@@ -2559,6 +3400,99 @@ impl AppContext for App {
     }
 }
 
+/// K04 Task 23 return value from [`App::run_frame`]. Reports the index of the
+/// frame that was just run, the panicking phase (if any), and the scene
+/// primitive count produced by `Paint`.
+///
+/// # Stability
+///
+/// `#[non_exhaustive]` — future telemetry (e.g. dropped-frame estimate,
+/// vsync drift) lands additively as new fields.
+#[non_exhaustive]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub struct FrameOutcome {
+    /// Monotonic frame index — matches [`FrameClock::frame_index()`](crate::frame::clock::FrameClock::frame_index)
+    /// at the moment the frame finished (or panicked).
+    pub frame_index: u64,
+
+    /// `Some(phase)` if `App::run_frame` caught a panic inside `phase`'s body.
+    /// `None` for a normal frame.
+    pub panicked_phase: Option<FramePhase>,
+
+    /// Scene primitive count produced during `Paint`. `0` when the frame
+    /// panicked or the target window was missing.
+    pub primitive_count: u32,
+}
+
+/// K04 drain scope for [`App::flush_effects_at`]. Selects which [`DeferPlacement`]s
+/// drain at the current call.
+///
+/// Two flavors:
+/// - [`FlushScope::Legacy`] — drain every placement, no boundary filter. Used by
+///   pre-K04 callers (currently `App::finish_update` via [`App::flush_effects`]).
+///   Preserves pre-K04 observable behavior until Task 23 wires `App::run_frame`.
+/// - [`FlushScope::Phase`] — drain only placements admissible at the given
+///   [`FramePhase`] boundary. Used by [`App::run_frame`] (Task 23) to implement
+///   the per-phase drain table from K04 design decision D1.
+///
+/// Admission rules (per spec D1 / D5):
+///
+/// | Boundary | Drains placements |
+/// |---|---|
+/// | `Legacy` | every placement |
+/// | `Phase(_)` | `EndOfUpdate` always |
+/// | `Phase(PreFrame)` | + `NextFrameStart` |
+/// | `Phase(PostFrame)` | + `PostFrame` |
+/// | `Phase(Idle)` | + `Idle` |
+/// | other phases | only `EndOfUpdate` |
+#[derive(Copy, Clone, Debug)]
+pub(crate) enum FlushScope {
+    /// Pre-K04 legacy entry. Drains every placement, no deadline. Used by
+    /// `App::finish_update` until Task 23 wires `App::run_frame`.
+    Legacy,
+    /// Phase-entry drain. Runs at the START of a phase, BEFORE the phase
+    /// body executes. Admits the phase's "matching" placement (e.g.
+    /// `NextFrameStart` at `PreFrame`-entry, `PostFrame` at `PostFrame`-entry).
+    /// This is the boundary where a defer queued in a previous frame OR a
+    /// previous phase fires.
+    #[allow(dead_code)]
+    Phase(FramePhase),
+    /// Phase-exit drain. Runs at the END of a phase, AFTER the phase body
+    /// executes. Admits ONLY `EndOfUpdate` — defers queued during the body
+    /// (e.g. `defer_to(NextFrameStart, ...)`) MUST wait for their target
+    /// phase entry in a LATER frame, not fire same-frame.
+    ///
+    /// This guarantees the K04 axiom that `NextFrameStart` carries exactly
+    /// one frame, `PostFrame` carries to the current frame's `PostFrame`
+    /// (only if queued before `PostFrame` entry), and `Idle` carries until
+    /// the next `Idle`-entry boundary.
+    #[allow(dead_code)]
+    PhasePost(FramePhase),
+}
+
+impl FlushScope {
+    /// Returns `true` if `placement` should drain at this scope.
+    pub(crate) fn admits(self, placement: DeferPlacement) -> bool {
+        match self {
+            FlushScope::Legacy => true,
+            FlushScope::Phase(boundary) => match (boundary, placement) {
+                // EndOfUpdate drains at every phase boundary.
+                (_, DeferPlacement::EndOfUpdate) => true,
+                // NextFrameStart drains in PreFrame only.
+                (FramePhase::PreFrame, DeferPlacement::NextFrameStart) => true,
+                // PostFrame drains in PostFrame only.
+                (FramePhase::PostFrame, DeferPlacement::PostFrame) => true,
+                // Idle drains in Idle only.
+                (FramePhase::Idle, DeferPlacement::Idle) => true,
+                _ => false,
+            },
+            // Post-drain admits only `EndOfUpdate`, never the phase's
+            // "matching" placement — those defers must carry forward.
+            FlushScope::PhasePost(_) => matches!(placement, DeferPlacement::EndOfUpdate),
+        }
+    }
+}
+
 /// These effects are processed at the end of each application update cycle.
 pub(crate) enum Effect {
     Notify {
@@ -2573,7 +3507,18 @@ pub(crate) enum Effect {
     NotifyGlobalObservers {
         global_type: TypeId,
     },
+    /// K04 placement-aware deferred callback. `placement` selects which
+    /// phase boundary drains the callback; the default
+    /// `DeferPlacement::EndOfUpdate` preserves pre-K04 observable behavior
+    /// for every `App::defer(f)` callsite. `App::defer_to(placement, f)`
+    /// is the new placement-aware constructor.
+    ///
+    /// `flush_effects_at` filters this variant by `placement` via
+    /// [`FlushScope::admits`]: pre-body `Phase(_)` drains admit the
+    /// matching placement, post-body `PhasePost(_)` drains admit only
+    /// `EndOfUpdate`, and the legacy entry admits everything.
     Defer {
+        placement: DeferPlacement,
         callback: Box<dyn FnOnce(&mut App) + 'static>,
     },
     EntityCreated {
@@ -2592,7 +3537,7 @@ impl std::fmt::Debug for Effect {
             Effect::NotifyGlobalObservers { global_type } => {
                 write!(f, "NotifyGlobalObservers({:?})", global_type)
             }
-            Effect::Defer { .. } => write!(f, "Defer(..)"),
+            Effect::Defer { placement, .. } => write!(f, "Defer({:?}, ..)", placement),
             Effect::EntityCreated { entity, .. } => write!(f, "EntityCreated({:?})", entity),
         }
     }
