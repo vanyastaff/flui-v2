@@ -49,7 +49,7 @@ Once any trigger fires, a corresponding sub-track (A10, A11, …) opens with its
 
 ### Required structure
 
-```
+```text
 crates/<crate>/src/
 ├── X.rs                  (facade — top-level types + re-exports, no business logic)
 └── X/

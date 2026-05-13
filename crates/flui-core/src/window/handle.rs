@@ -5,7 +5,8 @@
 //!
 //! # What lives here
 //!
-//! - [`WindowId`] — slotmap-key newtype identifying a window inside [`App::windows`].
+//! - [`WindowId`] — slotmap-key newtype identifying a window inside the
+//!   crate-internal `App.windows: SlotMap<WindowId, Option<Box<Window>>>` field.
 //! - [`WindowHandle<V>`] — typed handle carrying the root-view type parameter so
 //!   `read` / `update` can `downcast` safely. Deref-projects to [`AnyWindowHandle`].
 //! - [`AnyWindowHandle`] — erased handle holding only the `WindowId` and a `TypeId`
@@ -16,7 +17,6 @@
 //!   project through `Window`'s `core.platform_window` field, which lives in
 //!   `WindowCore`.
 //!
-//! [`App::windows`]: crate::App
 //! [`crate::Window`]: crate::Window
 
 use crate::{AnyView, App, AppContext, Context, Entity, Render, Window};

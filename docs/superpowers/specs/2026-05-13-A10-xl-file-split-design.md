@@ -127,7 +127,7 @@ A2 (remaining globs audit) и A8 (`#[non_exhaustive]` audit) — паралле�
 
 ### A10a — `crates/flui-core/src/window.rs` (6036 → ~700 LoC фасад)
 
-```
+```text
 crates/flui-core/src/
 ├── window.rs                    (~700 LoC — фасад)
 │   ├── //! module-level rustdoc
@@ -162,7 +162,7 @@ crates/flui-core/src/
 
 ### A10b — `crates/flui-core/src/geometry.rs` (3802 → ~150 LoC фасад)
 
-```
+```text
 crates/flui-core/src/
 ├── geometry.rs              (~150 LoC — фасад с glob re-export)
 │   ├── //! module-level rustdoc
@@ -189,7 +189,7 @@ crates/flui-core/src/
 
 ### A10c — `crates/flui-core/src/elements/div.rs` (3673 → ~200 LoC фасад)
 
-```
+```text
 crates/flui-core/src/elements/
 ├── div.rs                  (~200 LoC — фасад)
 │   ├── //! module-level rustdoc
@@ -396,7 +396,7 @@ crates/flui-core/src/elements/
 - **Cross-track contracts**:
   - **K91**: crate-root visibility of `Key`/`ValueKey`/`GlobalKey`/`ElementId` from `flui_framework::key`. Этот spec не трогает `element.rs` → contract сохранён.
   - **K04**: `DrawPhase` enum остаётся в фасаде `window.rs` (D4).
-  - **A2**: synergy — закрываются 2 из ~29 globs (D2): `pub use window::*` + `pub use elements::*`. `pub use geometry::*` остаётся glob по Practice 4.
+  - **A2**: synergy — закрывается **1** из ~29 globs (D2): `pub use window::*`. `pub use elements::*` остаётся glob (D13 — полный inventory всех 14 element-модулей выходит за scope A10c). `pub use geometry::*` остаётся glob по Practice 4 (математические примитивы).
 - **Spec series**: `docs/superpowers/specs/2026-05-08..` (K-track). Этот spec — первый A-track design-документ.
 - **Roadmap entry**: `.ai-factory/ROADMAP.md` → `Architecture & API hygiene` → A10.
 

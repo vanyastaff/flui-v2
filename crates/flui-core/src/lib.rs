@@ -381,9 +381,12 @@ pub(crate) use window::{
 };
 // Test-only crate-internal symbols. The `#[allow(unused_imports)]` is scoped to
 // JUST these two so that a future drop of a real consumer above still warns.
+// Consumers live under `#[cfg(any(test, feature = "test-support"))]` gates
+// (e.g. `app/test_context.rs`), so `--no-default-features` builds rightly see
+// them as unused — that is the configuration the allow is silencing.
 #[allow(
     unused_imports,
-    reason = "DrawPhase / ElementArenaScope are referenced only from #[cfg(test)] modules"
+    reason = "DrawPhase / ElementArenaScope are referenced only from #[cfg(any(test, feature = \"test-support\"))] modules"
 )]
 pub(crate) use window::{DrawPhase, ElementArenaScope};
 
