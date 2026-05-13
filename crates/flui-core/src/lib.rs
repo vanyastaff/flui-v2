@@ -314,7 +314,78 @@ pub use test::*;
 pub use text_system::*;
 pub use util::arc_cow::ArcCow;
 pub use view::*;
-pub use window::*;
+// A10a PR 1.0 (Task #11) + A2 synergy: explicit per-symbol re-export.
+// Replaces `pub use window::*;`. Source-of-truth inventory:
+// `docs/superpowers/specs/2026-05-13-A10-xl-file-split-design.md` Appendix A.
+//
+// IMPORTANT: any new `pub` item in `window.rs` (or `window/<sub>.rs` in future PRs)
+// MUST be added here explicitly. Re-export drift is caught by Task #13's
+// `cargo public-api diff main..HEAD` gate and the A8 / R2 follow-up tracks.
+//
+// Intentionally NOT re-exported (stay `pub(crate)` per Decision D11):
+//   `DrawPhase`, `WindowInvalidator`, `Frame`, `PrepaintStateIndex`,
+//   `PaintIndex`, `ElementStateBox`, `WindowCore`. Submodules access these
+//   via `use super::...` / `use crate::window::...`.
+pub use window::{
+    // Constants
+    DEFAULT_ADDITIONAL_WINDOW_SIZE,
+    DEFAULT_WINDOW_SIZE,
+    // Dispatch / event-flow markers
+    DispatchPhase,
+    DispatchEventResult,
+    // Focus subsystem
+    Focusable,
+    FocusHandle,
+    FocusId,
+    FocusOutEvent,
+    ManagedView,
+    WeakFocusHandle,
+    DismissEvent,
+    // Hit-test / interaction primitives
+    Hitbox,
+    HitboxBehavior,
+    HitboxId,
+    TooltipId,
+    WindowControlArea,
+    // Window core types + handles
+    AnyWindowHandle,
+    ArenaClearNeeded,
+    ContentMask,
+    Window,
+    WindowHandle,
+    // Paint primitives
+    PaintQuad,
+    fill,
+    outline,
+    quad,
+};
+// WindowId (newtype from `slotmap::new_key_type!`, pub).
+pub use window::WindowId;
+// Prompts subsystem (originally re-exported transitively via `pub use window::*`
+// → `pub use prompts::*` inside window.rs).
+pub use window::{
+    FallbackPromptRenderer,
+    Prompt,
+    PromptHandle,
+    PromptResponse,
+    RenderablePromptHandle,
+    fallback_prompt_renderer,
+};
+
+// Crate-internal re-exports — items currently `pub(crate)` in window.rs but
+// reached via `use crate::<Name>` from other modules in flui-core. Promoting
+// these from `pub use window::*` (which forwarded pub(crate) at crate-root
+// pub(crate) visibility) preserves intra-crate access without exposing them
+// publicly.
+pub(crate) use window::{
+    DrawPhase,
+    ElementArenaScope,
+    FocusMap,
+    PaintIndex,
+    PrepaintStateIndex,
+    PromptBuilder,
+    WindowInvalidator,
+};
 
 /// The context trait, allows the different contexts in GPUI to be used
 /// interchangeably for certain operations.
