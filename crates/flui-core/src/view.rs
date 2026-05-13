@@ -219,7 +219,10 @@ impl Element for AnyView {
                                             );
                                             element
                                                 .layout_as_root(bounds.size.into(), &mut layout_cx);
-                                            window.core.element_id_stack.clone_from(&element_id_stack);
+                                            window
+                                                .core
+                                                .element_id_stack
+                                                .clone_from(&element_id_stack);
                                             let mut prepaint_cx = crate::PrepaintCx::new(
                                                 window,
                                                 cx,

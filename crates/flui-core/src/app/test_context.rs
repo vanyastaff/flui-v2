@@ -493,7 +493,8 @@ impl TestAppContext {
             .unwrap()
             .as_deref_mut()
             .unwrap()
-            .core.platform_window
+            .core
+            .platform_window
             .as_test()
             .unwrap()
             .clone()
@@ -833,7 +834,14 @@ impl VisualTestContext {
 
     /// debug_bounds returns the bounds of the element with the given selector.
     pub fn debug_bounds(&mut self, selector: &'static str) -> Option<Bounds<Pixels>> {
-        self.update(|window, _| window.core.rendered_frame.debug_bounds.get(selector).copied())
+        self.update(|window, _| {
+            window
+                .core
+                .rendered_frame
+                .debug_bounds
+                .get(selector)
+                .copied()
+        })
     }
 
     /// Draw an element to the window. Useful for simulating events or actions
@@ -899,7 +907,8 @@ impl VisualTestContext {
             .cx
             .update_window(self.window, |_, window, _| {
                 window
-                    .core.platform_window
+                    .core
+                    .platform_window
                     .as_test()
                     .unwrap()
                     .0

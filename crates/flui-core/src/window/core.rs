@@ -150,8 +150,7 @@ pub(crate) struct WindowCore {
     /// hitbox is not associated with an `Interactivity` (painted-only
     /// case). Cleared at the start of each frame (alongside
     /// `mouse_hit_test`).
-    pub(crate) hit_test_behaviors:
-        FxHashMap<HitboxId, crate::gesture::HitTestBehavior>,
+    pub(crate) hit_test_behaviors: FxHashMap<HitboxId, crate::gesture::HitTestBehavior>,
     /// Per-frame map of recognizers registered by
     /// `Interactivity::paint`, keyed by `HitboxId`. The dispatcher
     /// drains entries on `PointerPhase::Down`: for each hitbox in the
@@ -161,10 +160,8 @@ pub(crate) struct WindowCore {
     /// live both in this map (during paint→dispatch transit) and in
     /// the arena (during the in-flight gesture). Cleared at the start
     /// of each frame.
-    pub(crate) pending_recognizers: FxHashMap<
-        HitboxId,
-        SmallVec<[Rc<RefCell<Box<dyn crate::gesture::GestureRecognizer>>>; 4]>,
-    >,
+    pub(crate) pending_recognizers:
+        FxHashMap<HitboxId, SmallVec<[Rc<RefCell<Box<dyn crate::gesture::GestureRecognizer>>>; 4]>>,
     /// Per-`Window` gesture arena + settings + sanitizer + pointer-state
     /// cache. Single source of truth for the gesture subsystem (S07.5 T2
     /// consolidated the previously direct `gesture_sanitizer` and
@@ -204,7 +201,10 @@ pub(crate) struct WindowCore {
     /// logic in future PRs (S07-style throttling cluster). The field is dead
     /// code today (only the platform closure clone is read); allowed to stay
     /// until a future PR moves the throttle read into a sibling submodule.
-    #[allow(dead_code, reason = "reserved for sibling submodule thermal-throttle migration")]
+    #[allow(
+        dead_code,
+        reason = "reserved for sibling submodule thermal-throttle migration"
+    )]
     pub(crate) last_frame_time: Rc<Cell<Option<crate::scheduler::Instant>>>,
     pub(super) last_input_modality: InputModality,
     pub(crate) refreshing: bool,
@@ -238,9 +238,9 @@ mod tests {
     //! review of A10a PR 1.0.
 
     use super::InputRateTracker;
+    use crate::scheduler::Instant;
     use std::cell::{Cell, RefCell};
     use std::rc::Rc;
-    use crate::scheduler::Instant;
 
     /// Pattern used in `Window::new` to populate `WindowCore::active` while also
     /// handing a clone to the platform closure: the canonical Rc is allocated once,

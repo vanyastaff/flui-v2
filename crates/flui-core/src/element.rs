@@ -812,7 +812,11 @@ impl<E: Element> Drawable<E> {
         mut request_layout: E::RequestLayoutState,
         mut prepaint: E::PrepaintState,
     ) -> (E::RequestLayoutState, E::PrepaintState) {
-        window.core.next_frame.dispatch_tree.set_active_node(node_id);
+        window
+            .core
+            .next_frame
+            .dispatch_tree
+            .set_active_node(node_id);
         let mut element_cx = PaintCx::new(
             window,
             app,
@@ -1083,14 +1087,16 @@ impl AnyElement {
     /// Prepares the element to be painted by storing its bounds, giving it a chance to draw hitboxes and
     /// request autoscroll before the final paint pass is confirmed.
     pub fn prepaint(&mut self, cx: &mut PrepaintCx<'_>) -> Option<FocusHandle> {
-        let focus_assigned = cx.with_window_app(|window, _cx| window.core.next_frame.focus.is_some());
+        let focus_assigned =
+            cx.with_window_app(|window, _cx| window.core.next_frame.focus.is_some());
 
         self.0.prepaint(cx);
 
         if !focus_assigned
             && let Some(focus_handle) = cx.with_window_app(|window, cx| {
                 window
-                    .core.next_frame
+                    .core
+                    .next_frame
                     .focus
                     .and_then(|id| FocusHandle::for_id(id, &cx.focus_handles))
             })
@@ -1136,7 +1142,10 @@ impl AnyElement {
         let size = panic::catch_unwind(panic::AssertUnwindSafe(|| {
             self.layout_as_root(available_space, &mut cx)
         }));
-        cx.window.core.element_id_stack.clone_from(&element_id_stack);
+        cx.window
+            .core
+            .element_id_stack
+            .clone_from(&element_id_stack);
         match size {
             Ok(size) => size,
             Err(payload) => panic::resume_unwind(payload),

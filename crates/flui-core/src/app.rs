@@ -1659,7 +1659,11 @@ impl App {
                         .values()
                         .filter_map(|window| {
                             let window = window.as_deref()?;
-                            window.core.invalidator.is_dirty().then_some(window.core.handle)
+                            window
+                                .core
+                                .invalidator
+                                .is_dirty()
+                                .then_some(window.core.handle)
                         })
                         .collect::<Vec<_>>()
                     {
