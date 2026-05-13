@@ -39,6 +39,7 @@ xcuserdata/
 .serena/cache/
 .serena/project.local.yml
 .ai-factory/skill-context/
+.ai-factory/plans/artifacts/
 
 # Per-spec implementer-local baseline captures (e.g., K15)
 .k15-*.txt

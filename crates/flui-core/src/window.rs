@@ -61,6 +61,10 @@ use util::post_inc;
 use util::{ResultExt, measure};
 
 mod prompts;
+// A10a PR 1.0: private state container for `Window`. Sibling submodules added in PRs
+// 1.3-1.11 will reach `Window`'s ~140 fields through this module's `pub(super)` interface.
+// See `docs/superpowers/specs/2026-05-13-A10-xl-file-split-design.md` and ADR-021.
+mod core;
 
 use crate::local_util::atomic_incr_if_not_zero;
 pub use prompts::*;
@@ -3520,7 +3524,9 @@ impl Window {
         init: impl FnOnce(&mut Self, &mut Context<S>) -> S,
     ) -> Entity<S> {
         self.use_keyed_state(
-            ElementId::CodeLocation(*core::panic::Location::caller()),
+            // Absolute path: `mod core;` (A10a PR 1.0) shadows the stdlib `core` crate
+            // within this file's scope. Use `::core` to reach the standard library.
+            ElementId::CodeLocation(*::core::panic::Location::caller()),
             cx,
             init,
         )
