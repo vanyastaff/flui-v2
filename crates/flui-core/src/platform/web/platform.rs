@@ -1,8 +1,8 @@
+use super::window::WebWindow;
 use crate::dispatcher::WebDispatcher;
 use crate::display::WebDisplay;
 use crate::keyboard::WebKeyboardLayout;
 use crate::platform::wgpu::WgpuContext;
-use super::window::WebWindow;
 use anyhow::Result;
 use flui_core::{
     Action, AnyWindowHandle, BackgroundExecutor, ClipboardItem, CursorStyle, DummyKeyboardMapper,
