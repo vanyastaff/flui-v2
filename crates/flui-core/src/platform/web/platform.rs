@@ -1,7 +1,7 @@
+use super::dispatcher::WebDispatcher;
+use super::display::WebDisplay;
+use super::keyboard::WebKeyboardLayout;
 use super::window::WebWindow;
-use crate::dispatcher::WebDispatcher;
-use crate::display::WebDisplay;
-use crate::keyboard::WebKeyboardLayout;
 use crate::platform::wgpu::WgpuContext;
 use anyhow::Result;
 use flui_core::{
