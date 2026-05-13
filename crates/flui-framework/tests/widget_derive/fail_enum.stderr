@@ -1,0 +1,5 @@
+error: Widget derive only supports structs
+ --> tests/widget_derive/fail_enum.rs:6:6
+  |
+6 | enum NotAStruct {
+  |      ^^^^^^^^^^

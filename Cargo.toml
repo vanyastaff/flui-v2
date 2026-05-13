@@ -3,6 +3,7 @@ members = [
     "crates/flui-core",
     "crates/flui-platform",
     "crates/flui-macros",
+    "crates/flui-framework",
     "crates/flui-widgets",
     "crates/flui-navigator",
     "crates/flui-a11y",
@@ -11,6 +12,7 @@ members = [
     "examples/nav_demo",
     "examples/material_demo",
     "examples/animation_demo",
+    "examples/widget_surface_demo",
     "tooling/lock-checks",
 ]
 resolver = "3"

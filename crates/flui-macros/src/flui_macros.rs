@@ -3,6 +3,7 @@ mod derive_app_context;
 mod derive_into_element;
 mod derive_render;
 mod derive_visual_context;
+mod derive_widget;
 mod property_test;
 mod register_action;
 mod styles;
@@ -39,6 +40,39 @@ pub fn derive_into_element(input: TokenStream) -> TokenStream {
 #[doc(hidden)]
 pub fn derive_render(input: TokenStream) -> TokenStream {
     derive_render::derive_render(input)
+}
+
+/// `#[derive(Widget)]` — generates `impl flui_framework::Widget` for the
+/// annotated struct. See the SF01 design spec at
+/// `docs/superpowers/specs/2026-05-12-SF01-widget-key-trait-design.md`
+/// for the frozen contract.
+///
+/// Field attribute: `#[widget(key)]` marks an optional identity key
+/// field. The field type MUST be `Option<Key>`. At most one such field
+/// is permitted per struct.
+///
+/// ```ignore
+/// use flui_framework::Key;
+///
+/// #[derive(Widget)]
+/// struct Leaf;
+///
+/// #[derive(Widget)]
+/// struct WithKey {
+///     #[widget(key)]
+///     key: Option<Key>,
+/// }
+///
+/// // The attribute is field-name-agnostic:
+/// #[derive(Widget)]
+/// struct WithRenamedKey {
+///     #[widget(key)]
+///     id: Option<Key>,
+/// }
+/// ```
+#[proc_macro_derive(Widget, attributes(widget))]
+pub fn derive_widget(input: TokenStream) -> TokenStream {
+    derive_widget::derive_widget(input)
 }
 
 /// #[derive(AppContext)] is used to create a context out of anything that holds a `&mut App`

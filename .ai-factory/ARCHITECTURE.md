@@ -356,8 +356,10 @@ impl StatefulWidget for Counter {
 pub struct CounterState { value: i32 }
 
 impl WidgetState<Counter> for CounterState {
-    fn build(&mut self, cx: &mut BuildCx<'_>) -> impl Widget {
+    fn build(&mut self, cx: &mut BuildCx<'_>) -> impl IntoWidget {
         // ✅ build is allocation-free at framework level — only widget construction
+        // (return type `impl IntoWidget` matches the SF01 frozen Widget::build
+        // shape; SF04 adopts the same convention)
         Column::new()
             .child(Text::new(format!("Count: {}", self.value)))
             .child(Button::new("Increment").on_press(cx.handler(|s: &mut Self| {
@@ -383,7 +385,7 @@ impl WidgetState<Counter> for CounterState {
 use flui_framework::{BuildCx, Widget};
 
 impl WidgetState<MyWidget> for MyWidgetState {
-    fn build(&mut self, cx: &mut BuildCx<'_>) -> impl Widget {
+    fn build(&mut self, cx: &mut BuildCx<'_>) -> impl IntoWidget {
         // ✅ Subscribing read — this widget rebuilds when Theme changes
         let theme = cx.inherit::<Theme>().expect("Theme not provided");
 

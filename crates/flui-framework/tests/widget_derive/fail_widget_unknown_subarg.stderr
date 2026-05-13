@@ -1,0 +1,5 @@
+error: unknown #[widget(...)] argument; expected `key`
+  --> tests/widget_derive/fail_widget_unknown_subarg.rs:14:19
+   |
+14 |     #[widget(key, oops_typo)]
+   |                   ^^^^^^^^^

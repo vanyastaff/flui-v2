@@ -1,0 +1,32 @@
+[package]
+name = "flui-framework"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Framework tier for flui — Widget / Key / State / BuildCx / reconciliation"
+
+[features]
+# Reserved for future gates. SF01 ships feature-less.
+# Planned (subject to those specs' freeze):
+#   - "build-cx"   (SF03): exposes BuildCx and inherit / read APIs
+#   - "state"      (SF04): exposes WidgetState body + StateMap
+#   - "setstate"   (SF05): exposes setState + handler ergonomics
+#   - "inherited"  (SF06): InheritedWidget analog
+#   - "async"      (SF08): StreamBuilder / FutureBuilder
+
+[dependencies]
+flui-core = { path = "../flui-core" }
+flui-macros = { path = "../flui-macros" }
+
+[dev-dependencies]
+# Snapshot-based compile-pass / compile-fail tests for the derive(Widget)
+# proc-macro. SF01 design spec § "Decision — trybuild vs compile_fail
+# doctests" documents the rationale for introducing trybuild over the
+# existing compile_fail doctest precedent.
+trybuild = "1"
+
+[lints]
+workspace = true
