@@ -1200,7 +1200,7 @@ impl App {
                             Ok(root_view) => root_view,
                             Err(payload) => std::panic::resume_unwind(payload),
                         };
-                        window.root.replace(root_view.into());
+                        window.core.root.replace(root_view.into());
                         window.defer(cx, |window: &mut Window, cx| window.appearance_changed(cx));
 
                         // allow a window to draw at least once before returning
@@ -1210,7 +1210,7 @@ impl App {
                         let clear = window.draw(cx);
                         clear.clear();
 
-                        let window_handle = window.handle;
+                        let window_handle = window.core.handle;
                         cx.windows.get_mut(id).unwrap().replace(Box::new(window));
                         cx.window_handles.insert(id, window_handle);
                         Ok(handle)
@@ -1659,7 +1659,7 @@ impl App {
                         .values()
                         .filter_map(|window| {
                             let window = window.as_deref()?;
-                            window.invalidator.is_dirty().then_some(window.handle)
+                            window.core.invalidator.is_dirty().then_some(window.core.handle)
                         })
                         .collect::<Vec<_>>()
                     {
@@ -1741,7 +1741,7 @@ impl App {
                     for window_handle in self.windows() {
                         window_handle
                             .update(self, |_, window, _| {
-                                if window.focus == Some(handle_id) {
+                                if window.core.focus == Some(handle_id) {
                                     window.blur();
                                 }
                             })
@@ -1777,8 +1777,8 @@ impl App {
     fn apply_refresh_effect(&mut self) {
         for window in self.windows.values_mut() {
             if let Some(window) = window.as_deref_mut() {
-                window.refreshing = true;
-                window.invalidator.set_dirty(true);
+                window.core.refreshing = true;
+                window.core.invalidator.set_dirty(true);
             }
         }
     }
@@ -1831,8 +1831,8 @@ impl App {
         self.update(|cx| {
             let mut window = cx.windows.get_mut(id)?.take()?;
 
-            let root_view = window.root.clone().unwrap();
-            let window_id = window.handle.id;
+            let root_view = window.core.root.clone().unwrap();
+            let window_id = window.core.handle.id;
 
             let stack_len = cx.window_update_stack.len();
             cx.window_update_stack.push(window_id);
@@ -1855,7 +1855,7 @@ impl App {
                 }
             };
 
-            if window.removed {
+            if window.core.removed {
                 cx.window_handles.remove(&id);
                 cx.windows.remove(id);
 
@@ -2182,7 +2182,7 @@ impl App {
             self.run_phase(FramePhase::Paint, |app| {
                 let _ = app.update_window_id(handle.id, |_, window, cx| {
                     let _arena_clear_needed = window.draw(cx);
-                    primitive_count = window.rendered_frame.scene.len();
+                    primitive_count = window.core.rendered_frame.scene.len();
                 });
             });
 
@@ -2237,7 +2237,7 @@ impl App {
                 // because the App-level helper has no window context — only
                 // `run_frame` knows which window was being driven.
                 let _ = self.update_window_id(handle.id, |_, window, _| {
-                    window.next_frame.clear();
+                    window.core.next_frame.clear();
                 });
                 FrameOutcome {
                     frame_index: self.frame_clock.frame_index(),
@@ -2333,9 +2333,9 @@ impl App {
             .collect();
         for id in ids {
             if let Some(Some(window)) = self.windows.get(id)
-                && window.request_next_frame.replace(false)
+                && window.core.request_next_frame.replace(false)
             {
-                window.invalidator.set_dirty(true);
+                window.core.invalidator.set_dirty(true);
             }
         }
     }
@@ -2357,7 +2357,7 @@ impl App {
         for id in ids {
             let drained: SmallVec<[Box<dyn FnOnce(&mut Window, &mut App)>; 4]> =
                 match self.windows.get(id) {
-                    Some(Some(window)) => RefCell::borrow_mut(&window.next_frame_callbacks)
+                    Some(Some(window)) => RefCell::borrow_mut(&window.core.next_frame_callbacks)
                         .drain(..)
                         .collect(),
                     _ => continue,
@@ -2392,7 +2392,7 @@ impl App {
             .collect();
         for id in ids {
             let drained: SmallVec<[_; 4]> = match self.windows.get(id) {
-                Some(Some(window)) => RefCell::borrow_mut(&window.post_frame_callbacks)
+                Some(Some(window)) => RefCell::borrow_mut(&window.core.post_frame_callbacks)
                     .drain(..)
                     .collect(),
                 _ => continue,
@@ -2743,7 +2743,7 @@ impl App {
     where
         T: 'static,
     {
-        let window_handle = window.handle;
+        let window_handle = window.core.handle;
         self.observe_release(handle, move |entity, cx| {
             let _ = window_handle.update(cx, |_, window, cx| on_release(entity, window, cx));
         })
@@ -3392,7 +3392,7 @@ impl AppContext for App {
             .as_deref()
             .expect("attempted to read a window that is already on the stack");
 
-        let root_view = window.root.clone().unwrap();
+        let root_view = window.core.root.clone().unwrap();
         let view = root_view
             .downcast::<T>()
             .map_err(|_| anyhow!("root view's type has changed"))?;

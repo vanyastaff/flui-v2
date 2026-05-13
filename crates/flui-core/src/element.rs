@@ -741,7 +741,7 @@ impl<E: Element> Drawable<E> {
         {
             inspector_id = self.element.source_location().map(|source| {
                 let path = crate::InspectorElementPath {
-                    global_id: GlobalElementId(Arc::from(&*window.element_id_stack)),
+                    global_id: GlobalElementId(Arc::from(&*window.core.element_id_stack)),
                     source_location: source,
                 };
                 window.build_inspector_element_id(path)
@@ -774,7 +774,7 @@ impl<E: Element> Drawable<E> {
         mut request_layout: E::RequestLayoutState,
     ) {
         let bounds = window.layout_bounds(layout_id);
-        let node_id = window.next_frame.dispatch_tree.push_node();
+        let node_id = window.core.next_frame.dispatch_tree.push_node();
         let prepaint = panic::catch_unwind(panic::AssertUnwindSafe(|| {
             let mut element_cx = PrepaintCx::new(
                 window,
@@ -785,7 +785,7 @@ impl<E: Element> Drawable<E> {
             );
             self.element.prepaint(&mut element_cx, &mut request_layout)
         }));
-        window.next_frame.dispatch_tree.pop_node();
+        window.core.next_frame.dispatch_tree.pop_node();
         let prepaint = match prepaint {
             Ok(prepaint) => prepaint,
             Err(payload) => panic::resume_unwind(payload),
@@ -812,7 +812,7 @@ impl<E: Element> Drawable<E> {
         mut request_layout: E::RequestLayoutState,
         mut prepaint: E::PrepaintState,
     ) -> (E::RequestLayoutState, E::PrepaintState) {
-        window.next_frame.dispatch_tree.set_active_node(node_id);
+        window.core.next_frame.dispatch_tree.set_active_node(node_id);
         let mut element_cx = PaintCx::new(
             window,
             app,
@@ -863,7 +863,7 @@ impl<E: Element> Drawable<E> {
             } => cx.with_window_app(|window, app| {
                 if let Some(stored_global_id) = global_id.as_ref().cloned() {
                     window.with_resolved_element_id(&stored_global_id, |window| {
-                        debug_assert_eq!(&*stored_global_id.0, &*window.element_id_stack);
+                        debug_assert_eq!(&*stored_global_id.0, &*window.core.element_id_stack);
                         self.prepaint_in_current_identity(
                             window,
                             app,
@@ -904,7 +904,7 @@ impl<E: Element> Drawable<E> {
             } => cx.with_window_app(|window, app| {
                 if let Some(stored_global_id) = global_id.as_ref().cloned() {
                     window.with_resolved_element_id(&stored_global_id, |window| {
-                        debug_assert_eq!(&*stored_global_id.0, &*window.element_id_stack);
+                        debug_assert_eq!(&*stored_global_id.0, &*window.core.element_id_stack);
                         self.paint_in_current_identity(
                             window,
                             app,
@@ -1083,14 +1083,14 @@ impl AnyElement {
     /// Prepares the element to be painted by storing its bounds, giving it a chance to draw hitboxes and
     /// request autoscroll before the final paint pass is confirmed.
     pub fn prepaint(&mut self, cx: &mut PrepaintCx<'_>) -> Option<FocusHandle> {
-        let focus_assigned = cx.with_window_app(|window, _cx| window.next_frame.focus.is_some());
+        let focus_assigned = cx.with_window_app(|window, _cx| window.core.next_frame.focus.is_some());
 
         self.0.prepaint(cx);
 
         if !focus_assigned
             && let Some(focus_handle) = cx.with_window_app(|window, cx| {
                 window
-                    .next_frame
+                    .core.next_frame
                     .focus
                     .and_then(|id| FocusHandle::for_id(id, &cx.focus_handles))
             })
@@ -1111,7 +1111,7 @@ impl AnyElement {
     }
 
     pub(crate) fn paint_with_window(&mut self, window: &mut Window, cx: &mut App) {
-        window.element_id_stack.begin_pass();
+        window.core.element_id_stack.begin_pass();
         let mut cx = PaintCx::new(window, cx, None, None, Bounds::default());
         self.paint(&mut cx);
     }
@@ -1132,11 +1132,11 @@ impl AnyElement {
         cx: &mut App,
     ) -> Size<Pixels> {
         let mut cx = LayoutCx::new(window, cx, None, None);
-        let element_id_stack = cx.window.element_id_stack.clone();
+        let element_id_stack = cx.window.core.element_id_stack.clone();
         let size = panic::catch_unwind(panic::AssertUnwindSafe(|| {
             self.layout_as_root(available_space, &mut cx)
         }));
-        cx.window.element_id_stack.clone_from(&element_id_stack);
+        cx.window.core.element_id_stack.clone_from(&element_id_stack);
         match size {
             Ok(size) => size,
             Err(payload) => panic::resume_unwind(payload),
@@ -1176,8 +1176,8 @@ impl AnyElement {
         // This helper is used both for standalone overlay roots and for nested list children.
         // Root calls need a fresh lifecycle pass; nested calls must preserve the active parent
         // namespace so children replay the ids normalized during layout.
-        if window.element_id_stack.len() == 0 {
-            window.element_id_stack.begin_pass();
+        if window.core.element_id_stack.len() == 0 {
+            window.core.element_id_stack.begin_pass();
         }
         let mut cx = PrepaintCx::new(window, cx, None, None, Bounds::default());
         self.prepaint_at(origin, &mut cx)
@@ -1203,10 +1203,10 @@ impl AnyElement {
         window: &mut Window,
         cx: &mut App,
     ) -> Option<FocusHandle> {
-        window.element_id_stack.begin_pass();
+        window.core.element_id_stack.begin_pass();
         let mut layout_cx = LayoutCx::new(window, cx, None, None);
         self.layout_as_root(available_space, &mut layout_cx);
-        window.element_id_stack.begin_pass();
+        window.core.element_id_stack.begin_pass();
         let mut prepaint_cx = PrepaintCx::new(window, cx, None, None, Bounds::default());
         self.prepaint_at(origin, &mut prepaint_cx)
     }
@@ -1509,9 +1509,9 @@ mod tests {
             let _arena_scope = ElementArenaScope::enter(&cx.element_arena);
             let mut element = Drawable::new(IdentityPanicElement { phase });
 
-            window.invalidator.set_phase(DrawPhase::Prepaint);
+            window.core.invalidator.set_phase(DrawPhase::Prepaint);
             let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
-                window.element_id_stack.begin_pass();
+                window.core.element_id_stack.begin_pass();
                 {
                     let mut layout_cx = LayoutCx::new(window, cx, None, None);
                     element.layout_as_root(
@@ -1523,24 +1523,24 @@ mod tests {
                     );
                 }
 
-                window.element_id_stack.begin_pass();
+                window.core.element_id_stack.begin_pass();
                 {
                     let mut prepaint_cx =
                         PrepaintCx::new(window, cx, None, None, Bounds::default());
                     element.prepaint(&mut prepaint_cx);
                 }
 
-                window.invalidator.set_phase(DrawPhase::Paint);
-                window.element_id_stack.begin_pass();
+                window.core.invalidator.set_phase(DrawPhase::Paint);
+                window.core.element_id_stack.begin_pass();
                 {
                     let mut paint_cx = PaintCx::new(window, cx, None, None, Bounds::default());
                     let _ = element.paint(&mut paint_cx);
                 }
             }));
-            window.invalidator.set_phase(DrawPhase::None);
+            window.core.invalidator.set_phase(DrawPhase::None);
 
             assert!(result.is_err());
-            assert_eq!(window.element_id_stack.len(), 0);
+            assert_eq!(window.core.element_id_stack.len(), 0);
 
             drop(element);
             cx.element_arena.borrow_mut().clear();
@@ -1570,7 +1570,7 @@ mod tests {
                 window.with_id("panic-id", |_| panic!("with_id panic"));
             }));
             assert!(result.is_err());
-            assert_eq!(window.element_id_stack.len(), 0);
+            assert_eq!(window.core.element_id_stack.len(), 0);
 
             let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
                 window.with_element_namespace("panic-namespace", |_| {
@@ -1578,7 +1578,7 @@ mod tests {
                 });
             }));
             assert!(result.is_err());
-            assert_eq!(window.element_id_stack.len(), 0);
+            assert_eq!(window.core.element_id_stack.len(), 0);
         });
     }
 
@@ -1592,7 +1592,7 @@ mod tests {
             }
             .into_any_element();
 
-            window.invalidator.set_phase(DrawPhase::Prepaint);
+            window.core.invalidator.set_phase(DrawPhase::Prepaint);
             window.with_id("outer", |window| {
                 let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
                     element.layout_as_root_with_window(
@@ -1606,11 +1606,11 @@ mod tests {
                 }));
 
                 assert!(result.is_err());
-                assert_eq!(window.element_id_stack.len(), 1);
-                assert_eq!(window.element_id_stack[0], ElementId::from("outer"));
+                assert_eq!(window.core.element_id_stack.len(), 1);
+                assert_eq!(window.core.element_id_stack[0], ElementId::from("outer"));
             });
-            window.invalidator.set_phase(DrawPhase::None);
-            assert_eq!(window.element_id_stack.len(), 0);
+            window.core.invalidator.set_phase(DrawPhase::None);
+            assert_eq!(window.core.element_id_stack.len(), 0);
 
             drop(element);
             cx.element_arena.borrow_mut().clear();
@@ -1645,9 +1645,9 @@ mod tests {
 
         assert!(result.is_err());
         cx.update(|window, cx| {
-            assert_eq!(window.element_id_stack.len(), 0);
-            assert!(!window.refreshing);
-            window.invalidator.set_phase(DrawPhase::None);
+            assert_eq!(window.core.element_id_stack.len(), 0);
+            assert!(!window.core.refreshing);
+            window.core.invalidator.set_phase(DrawPhase::None);
             cx.element_arena.borrow_mut().clear();
         });
     }
@@ -1662,7 +1662,7 @@ mod tests {
             }
             .into_any_element();
 
-            window.invalidator.set_phase(DrawPhase::Prepaint);
+            window.core.invalidator.set_phase(DrawPhase::Prepaint);
             element.layout_as_root_with_window(
                 size(
                     AvailableSpace::Definite(px(123.)),
@@ -1672,7 +1672,7 @@ mod tests {
                 cx,
             );
             let metadata = element.lifecycle_metadata(window);
-            window.invalidator.set_phase(DrawPhase::None);
+            window.core.invalidator.set_phase(DrawPhase::None);
 
             assert!(metadata.global_id.is_some());
             #[cfg(any(feature = "inspector", debug_assertions))]
@@ -1750,7 +1750,7 @@ mod tests {
             .into_any_element();
 
             expected_focus.focus(window, cx);
-            window.invalidator.set_phase(DrawPhase::Prepaint);
+            window.core.invalidator.set_phase(DrawPhase::Prepaint);
             element.layout_as_root_with_window(
                 size(
                     AvailableSpace::Definite(px(10.)),
@@ -1760,7 +1760,7 @@ mod tests {
                 cx,
             );
             let assigned = element.prepaint_at_with_window(point(px(0.), px(0.)), window, cx);
-            window.invalidator.set_phase(DrawPhase::None);
+            window.core.invalidator.set_phase(DrawPhase::None);
 
             assert_eq!(assigned.map(|handle| handle.id), Some(expected_focus.id));
             drop(element);

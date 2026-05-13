@@ -172,8 +172,8 @@ impl Element for AnyView {
                             && element_state.cache_key.bounds == bounds
                             && element_state.cache_key.content_mask == content_mask
                             && element_state.cache_key.text_style == text_style
-                            && !window.dirty_views.contains(&self.entity_id())
-                            && !window.refreshing
+                            && !window.core.dirty_views.contains(&self.entity_id())
+                            && !window.core.refreshing
                         {
                             if window.validate_inherited_cache(
                                 &element_state.inherited_provider_accesses,
@@ -200,14 +200,14 @@ impl Element for AnyView {
                             }
                         }
 
-                        let refreshing = mem::replace(&mut window.refreshing, true);
+                        let refreshing = mem::replace(&mut window.core.refreshing, true);
                         let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
                             let prepaint_start = window.prepaint_index();
                             let inherited_provider_start = window.inherited_provider_access_index();
                             let inherited_dependency_start = window.inherited_dependency_index();
                             let (mut element, accessed_entities) =
                                 cx.detect_accessed_entities(|cx| {
-                                    let element_id_stack = window.element_id_stack.clone();
+                                    let element_id_stack = window.core.element_id_stack.clone();
                                     let element =
                                         panic::catch_unwind(panic::AssertUnwindSafe(|| {
                                             let mut element = (self.render)(self, window, cx);
@@ -219,7 +219,7 @@ impl Element for AnyView {
                                             );
                                             element
                                                 .layout_as_root(bounds.size.into(), &mut layout_cx);
-                                            window.element_id_stack.clone_from(&element_id_stack);
+                                            window.core.element_id_stack.clone_from(&element_id_stack);
                                             let mut prepaint_cx = crate::PrepaintCx::new(
                                                 window,
                                                 cx,
@@ -230,7 +230,7 @@ impl Element for AnyView {
                                             element.prepaint_at(bounds.origin, &mut prepaint_cx);
                                             element
                                         }));
-                                    window.element_id_stack.clone_from(&element_id_stack);
+                                    window.core.element_id_stack.clone_from(&element_id_stack);
                                     match element {
                                         Ok(element) => element,
                                         Err(payload) => panic::resume_unwind(payload),
@@ -259,7 +259,7 @@ impl Element for AnyView {
                                 },
                             )
                         }));
-                        window.refreshing = refreshing;
+                        window.core.refreshing = refreshing;
                         match result {
                             Ok(result) => result,
                             Err(payload) => panic::resume_unwind(payload),
@@ -294,7 +294,7 @@ impl Element for AnyView {
                             let painted_element = element.is_some();
 
                             if let Some(element) = element {
-                                let refreshing = mem::replace(&mut window.refreshing, true);
+                                let refreshing = mem::replace(&mut window.core.refreshing, true);
                                 let mut element_cx = crate::PaintCx::new(
                                     window,
                                     cx,
@@ -303,7 +303,7 @@ impl Element for AnyView {
                                     bounds,
                                 );
                                 element.paint(&mut element_cx);
-                                window.refreshing = refreshing;
+                                window.core.refreshing = refreshing;
                             } else {
                                 window.reuse_paint(element_state.paint_range.clone());
                             }

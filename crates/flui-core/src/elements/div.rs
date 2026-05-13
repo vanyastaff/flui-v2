@@ -2275,7 +2275,7 @@ impl Interactivity {
                 #[cfg(any(feature = "test-support", test))]
                 if let Some(debug_selector) = &self.debug_selector {
                     window
-                        .next_frame
+                        .core.next_frame
                         .debug_bounds
                         .insert(debug_selector.clone(), bounds);
                 }
@@ -2291,7 +2291,7 @@ impl Interactivity {
                     tab_group = self.tab_index;
                 }
                 if let Some(focus_handle) = &self.tracked_focus_handle {
-                    window.next_frame.tab_stops.insert(focus_handle);
+                    window.core.next_frame.tab_stops.insert(focus_handle);
                 }
 
                 window.with_element_opacity(style.opacity, |window| {
@@ -2316,7 +2316,7 @@ impl Interactivity {
                                             // the next render call and produce fresh
                                             // recognizer instances.
                                             window
-                                                .hit_test_behaviors
+                                                .core.hit_test_behaviors
                                                 .insert(hitbox.id, self.hit_test_behavior);
                                             let recs = std::mem::take(&mut self.gesture_recognizers);
                                             if !recs.is_empty() {
@@ -2337,7 +2337,7 @@ impl Interactivity {
                                                     })
                                                     .collect();
                                                 window
-                                                    .pending_recognizers
+                                                    .core.pending_recognizers
                                                     .entry(hitbox.id)
                                                     .or_default()
                                                     .extend(promoted);
@@ -3975,8 +3975,8 @@ mod tests {
         // Snapshot-and-clear the invalidator before the simulated event so
         // we attribute the post-event delta to the click alone.
         window.update(|_view, window, _cx| {
-            window.invalidator.take_views();
-            window.invalidator.set_dirty(false);
+            window.core.invalidator.take_views();
+            window.core.invalidator.set_dirty(false);
         });
 
         // Press the mouse inside the div bounds (the div is `size_full`, so
@@ -3985,7 +3985,7 @@ mod tests {
         // and `~2941` (`clicked_state`).
         window.simulate_mouse_down(point(px(10.0), px(10.0)), MouseButton::Left);
 
-        let dirty_views = window.update(|_view, window, _cx| window.invalidator.take_views());
+        let dirty_views = window.update(|_view, window, _cx| window.core.invalidator.take_views());
 
         assert!(
             dirty_views.contains(&view_id),
