@@ -359,7 +359,7 @@ impl<'a, T: 'static> Context<'a, T> {
     {
         let observed_id = observed.entity_id();
         let observed = observed.downgrade();
-        let window_handle = window.handle;
+        let window_handle = window.core.handle;
         let observer = self.weak_entity();
         self.new_observer(
             observed_id,
@@ -396,7 +396,7 @@ impl<'a, T: 'static> Context<'a, T> {
         Evt: 'static,
     {
         let emitter = emitter.downgrade();
-        let window_handle = window.handle;
+        let window_handle = window.core.handle;
         let subscriber = self.weak_entity();
         self.new_subscription(
             emitter.entity_id(),
@@ -465,7 +465,7 @@ impl<'a, T: 'static> Context<'a, T> {
         mut callback: impl FnMut(&mut T, &mut Window, &mut Context<T>) + 'static,
     ) -> Subscription {
         let view = self.weak_entity();
-        let (subscription, activate) = window.bounds_observers.insert(
+        let (subscription, activate) = window.core.bounds_observers.insert(
             (),
             Box::new(move |window, cx| {
                 view.update(cx, |view, cx| callback(view, window, cx))
@@ -483,7 +483,7 @@ impl<'a, T: 'static> Context<'a, T> {
         mut callback: impl FnMut(&mut T, &mut Window, &mut Context<T>) + 'static,
     ) -> Subscription {
         let view = self.weak_entity();
-        let (subscription, activate) = window.activation_observers.insert(
+        let (subscription, activate) = window.core.activation_observers.insert(
             (),
             Box::new(move |window, cx| {
                 view.update(cx, |view, cx| callback(view, window, cx))
@@ -501,7 +501,7 @@ impl<'a, T: 'static> Context<'a, T> {
         mut callback: impl FnMut(&mut T, &mut Window, &mut Context<T>) + 'static,
     ) -> Subscription {
         let view = self.weak_entity();
-        let (subscription, activate) = window.appearance_observers.insert(
+        let (subscription, activate) = window.core.appearance_observers.insert(
             (),
             Box::new(move |window, cx| {
                 view.update(cx, |view, cx| callback(view, window, cx))
@@ -549,7 +549,7 @@ impl<'a, T: 'static> Context<'a, T> {
         mut callback: impl FnMut(&mut T, &mut Window, &mut Context<T>) + 'static,
     ) -> Subscription {
         let view = self.weak_entity();
-        let (subscription, activate) = window.pending_input_observers.insert(
+        let (subscription, activate) = window.core.pending_input_observers.insert(
             (),
             Box::new(move |window, cx| {
                 view.update(cx, |view, cx| callback(view, window, cx))
@@ -644,7 +644,7 @@ impl<'a, T: 'static> Context<'a, T> {
         mut listener: impl FnMut(&mut T, &mut Window, &mut Context<T>) + 'static,
     ) -> Subscription {
         let view = self.weak_entity();
-        let (subscription, activate) = window.focus_lost_listeners.insert(
+        let (subscription, activate) = window.core.focus_lost_listeners.insert(
             (),
             Box::new(move |window, cx| {
                 view.update(cx, |view, cx| listener(view, window, cx))
@@ -725,7 +725,7 @@ impl<'a, T: 'static> Context<'a, T> {
         window: &Window,
         mut f: impl FnMut(&mut T, &mut Window, &mut Context<T>) + 'static,
     ) -> Subscription {
-        let window_handle = window.handle;
+        let window_handle = window.core.handle;
         let view = self.weak_entity();
         let (subscription, activate) = self.global_observers.insert(
             TypeId::of::<G>(),

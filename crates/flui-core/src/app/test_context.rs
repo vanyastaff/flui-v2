@@ -493,6 +493,7 @@ impl TestAppContext {
             .unwrap()
             .as_deref_mut()
             .unwrap()
+            .core
             .platform_window
             .as_test()
             .unwrap()
@@ -833,7 +834,14 @@ impl VisualTestContext {
 
     /// debug_bounds returns the bounds of the element with the given selector.
     pub fn debug_bounds(&mut self, selector: &'static str) -> Option<Bounds<Pixels>> {
-        self.update(|window, _| window.rendered_frame.debug_bounds.get(selector).copied())
+        self.update(|window, _| {
+            window
+                .core
+                .rendered_frame
+                .debug_bounds
+                .get(selector)
+                .copied()
+        })
     }
 
     /// Draw an element to the window. Useful for simulating events or actions
@@ -849,24 +857,24 @@ impl VisualTestContext {
         self.update(|window, cx| {
             let _arena_scope = ElementArenaScope::enter(&cx.element_arena);
 
-            window.invalidator.set_phase(DrawPhase::Prepaint);
+            window.core.invalidator.set_phase(DrawPhase::Prepaint);
             let mut element = Drawable::new(f(window, cx));
-            window.element_id_stack.begin_pass();
+            window.core.element_id_stack.begin_pass();
             let mut layout_cx = crate::LayoutCx::new(window, cx, None, None);
             element.layout_as_root(space.into(), &mut layout_cx);
             window.with_absolute_element_offset(origin, |window| {
-                window.element_id_stack.begin_pass();
+                window.core.element_id_stack.begin_pass();
                 let mut prepaint_cx =
                     crate::PrepaintCx::new(window, cx, None, None, Bounds::default());
                 element.prepaint(&mut prepaint_cx);
             });
 
-            window.invalidator.set_phase(DrawPhase::Paint);
-            window.element_id_stack.begin_pass();
+            window.core.invalidator.set_phase(DrawPhase::Paint);
+            window.core.element_id_stack.begin_pass();
             let mut paint_cx = crate::PaintCx::new(window, cx, None, None, Bounds::default());
             let (request_layout_state, prepaint_state) = element.paint(&mut paint_cx);
 
-            window.invalidator.set_phase(DrawPhase::None);
+            window.core.invalidator.set_phase(DrawPhase::None);
             window.refresh();
 
             drop(element);
@@ -899,6 +907,7 @@ impl VisualTestContext {
             .cx
             .update_window(self.window, |_, window, _| {
                 window
+                    .core
                     .platform_window
                     .as_test()
                     .unwrap()
@@ -912,7 +921,7 @@ impl VisualTestContext {
             let should_close = handler();
             self.cx
                 .update_window(self.window, |_, window, _| {
-                    window.platform_window.on_should_close(handler);
+                    window.core.platform_window.on_should_close(handler);
                 })
                 .unwrap();
             should_close

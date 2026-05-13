@@ -572,8 +572,11 @@ mod tests {
         assert!(result.is_err());
 
         cx.update(|window, _| {
-            assert_eq!(window.inherited_registry.active_scope_count::<i32>(), 0);
-            window.invalidator.set_phase(DrawPhase::None);
+            assert_eq!(
+                window.core.inherited_registry.active_scope_count::<i32>(),
+                0
+            );
+            window.core.invalidator.set_phase(DrawPhase::None);
         });
     }
 

@@ -314,7 +314,81 @@ pub use test::*;
 pub use text_system::*;
 pub use util::arc_cow::ArcCow;
 pub use view::*;
-pub use window::*;
+// A10a PR 1.0 (Task #11) + A2 synergy: explicit per-symbol re-export.
+// Replaces `pub use window::*;`. Source-of-truth inventory:
+// `docs/superpowers/specs/2026-05-13-A10-xl-file-split-design.md` Appendix A.
+//
+// IMPORTANT: any new `pub` item in `window.rs` (or `window/<sub>.rs` in future PRs)
+// MUST be added here explicitly. Re-export drift is caught by Task #13's
+// `cargo public-api diff main..HEAD` gate and the A8 / R2 follow-up tracks.
+//
+// Intentionally NOT re-exported (stay `pub(crate)` per Decision D11):
+//   `DrawPhase`, `WindowInvalidator`, `Frame`, `PrepaintStateIndex`,
+//   `PaintIndex`, `ElementStateBox`, `WindowCore`. Submodules access these
+//   via `use super::...` / `use crate::window::...`.
+pub use window::{
+    // Window core types + handles
+    AnyWindowHandle,
+    ArenaClearNeeded,
+    ContentMask,
+    // Constants
+    DEFAULT_ADDITIONAL_WINDOW_SIZE,
+    DEFAULT_WINDOW_SIZE,
+    DismissEvent,
+    DispatchEventResult,
+    // Dispatch / event-flow markers
+    DispatchPhase,
+    FocusHandle,
+    FocusId,
+    FocusOutEvent,
+    // Focus subsystem
+    Focusable,
+    // Hit-test / interaction primitives
+    Hitbox,
+    HitboxBehavior,
+    HitboxId,
+    ManagedView,
+    // Paint primitives
+    PaintQuad,
+    TooltipId,
+    WeakFocusHandle,
+    Window,
+    WindowControlArea,
+    WindowHandle,
+    fill,
+    outline,
+    quad,
+};
+// WindowId (newtype from `slotmap::new_key_type!`, pub).
+pub use window::WindowId;
+// Prompts subsystem (originally re-exported transitively via `pub use window::*`
+// → `pub use prompts::*` inside window.rs).
+pub use window::{
+    FallbackPromptRenderer, Prompt, PromptHandle, PromptResponse, RenderablePromptHandle,
+    fallback_prompt_renderer,
+};
+
+// Crate-internal re-exports — items currently `pub(crate)` in window.rs but
+// reached via `use crate::<Name>` from other modules in flui-core. Promoting
+// these from `pub use window::*` (which forwarded pub(crate) at crate-root
+// pub(crate) visibility) preserves intra-crate access without exposing them
+// publicly.
+// Non-test crate-internal symbols (used from app.rs, view.rs, element.rs, etc.).
+// Any future drop of these consumers must surface as an unused-import warning here —
+// do NOT bundle these with the `#[allow(unused_imports)]` block below.
+pub(crate) use window::{
+    FocusMap, PaintIndex, PrepaintStateIndex, PromptBuilder, WindowInvalidator,
+};
+// Test-only crate-internal symbols. The `#[allow(unused_imports)]` is scoped to
+// JUST these two so that a future drop of a real consumer above still warns.
+// Consumers live under `#[cfg(any(test, feature = "test-support"))]` gates
+// (e.g. `app/test_context.rs`), so `--no-default-features` builds rightly see
+// them as unused — that is the configuration the allow is silencing.
+#[allow(
+    unused_imports,
+    reason = "DrawPhase / ElementArenaScope are referenced only from #[cfg(any(test, feature = \"test-support\"))] modules"
+)]
+pub(crate) use window::{DrawPhase, ElementArenaScope};
 
 /// The context trait, allows the different contexts in GPUI to be used
 /// interchangeably for certain operations.

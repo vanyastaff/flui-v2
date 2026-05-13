@@ -309,7 +309,7 @@ impl Element for Img {
                         match self.source.use_data(
                             self.image_cache
                                 .clone()
-                                .or_else(|| window.image_cache_stack.last().cloned()),
+                                .or_else(|| window.core.image_cache_stack.last().cloned()),
                             window,
                             cx,
                         ) {
@@ -484,7 +484,7 @@ impl Element for Img {
                     if let Some(Ok(data)) = source.use_data(
                         self.image_cache
                             .clone()
-                            .or_else(|| window.image_cache_stack.last().cloned()),
+                            .or_else(|| window.core.image_cache_stack.last().cloned()),
                         window,
                         cx,
                     ) {
