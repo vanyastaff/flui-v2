@@ -46,12 +46,10 @@ use crate::Key;
 /// need a trivial body return the sealed [`Empty`] null widget, and
 /// `#[derive(Widget)]` generates this body automatically. Non-trivial
 /// `build` bodies require the SF02 reconciliation engine and the SF03
-/// [`BuildCx`] context. SF03 will widen the `build` signature to accept
+/// `BuildCx` context. SF03 will widen the `build` signature to accept
 /// a `&mut BuildCx<'_>` argument; SF01 widgets ported to SF03 require a
 /// one-line edit. SF04 fills the [`WidgetState`] body; SF05 lands
 /// `setState`. None of those land in SF01.
-///
-/// [`BuildCx`]: https://example.invalid/SF03  "lands in SF03"
 ///
 /// # Lifetime capture (edition 2024)
 ///

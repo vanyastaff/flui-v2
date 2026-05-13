@@ -36,15 +36,15 @@ pub fn derive_widget(input: TokenStream) -> TokenStream {
 
     // SF01 spec: only `struct` inputs are accepted. The
     // `get_simple_attribute_field` helper silently returns `None` for
-    // enum/union, so we do the explicit reject ourselves to produce a
-    // clean diagnostic with the correct span.
+    // enum/union, so we do the explicit reject ourselves and span the
+    // diagnostic at the input type identifier so the user's cursor
+    // lands on the enum/union name rather than the derive invocation.
     let fields = match &ast.data {
         Data::Struct(data_struct) => &data_struct.fields,
         Data::Enum(_) | Data::Union(_) => {
-            return quote! {
-                compile_error!("Widget derive only supports structs");
-            }
-            .into();
+            return syn::Error::new_spanned(&ast.ident, "Widget derive only supports structs")
+                .into_compile_error()
+                .into();
         }
     };
 
@@ -164,7 +164,11 @@ fn locate_key_field(fields: &syn::Fields) -> syn::Result<Option<syn::Ident>> {
 /// - `Ok(true)` — the attribute is exactly `#[widget(key)]` and marks
 ///   the field as the identity-key carrier.
 /// - `Err(...)` — the attribute IS a `#[widget(...)]` attribute but is
-///   malformed. Two cases produce errors:
+///   malformed. Cases producing errors:
+///   - `#[widget]` (bare path) or `#[widget = "..."]` (name-value):
+///     rejected with a targeted "expected #[widget(key)]" diagnostic
+///     so the user does not see an opaque `parse_nested_meta` parse
+///     error (Bug S3, fixed in response to PR #18 Copilot review).
 ///   - `#[widget()]` (empty meta list): rejected explicitly so a user
 ///     who forgot the `key` argument gets a clear diagnostic instead
 ///     of silently inheriting key behavior (Bug S1, fixed 2026-05-12).
@@ -174,6 +178,17 @@ fn locate_key_field(fields: &syn::Fields) -> syn::Result<Option<syn::Ident>> {
 fn check_widget_key_attribute(attr: &syn::Attribute) -> syn::Result<bool> {
     if !attr.path().is_ident("widget") {
         return Ok(false);
+    }
+
+    // The attribute MUST be in list form `#[widget(...)]`. Reject
+    // `#[widget]` (path) and `#[widget = ...]` (name-value) with a
+    // targeted diagnostic — `parse_nested_meta` on these forms would
+    // otherwise surface as a generic "expected `(`" parse error.
+    if !matches!(&attr.meta, syn::Meta::List(_)) {
+        return Err(syn::Error::new_spanned(
+            attr,
+            "expected #[widget(key)]; the `widget` attribute requires arguments in parentheses",
+        ));
     }
 
     let mut seen_key = false;

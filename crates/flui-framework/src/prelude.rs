@@ -36,7 +36,10 @@
 //! }
 //! ```
 //!
-//! (The example is `ignore`d in SF01 because `derive(Widget)` lands in
-//! T4.1 of the SF01 plan — currently a future commit.)
+//! (The example is `ignore`d because it is a surface snippet showing
+//! only the shape of a `#[derive(Widget)]` struct — there is no
+//! `Widget::build` body to execute, and the runnable end-to-end
+//! authoring path lands once SF05 wires reconciliation. See
+//! `examples/widget_surface_demo` for the compilable counterpart.)
 
 pub use crate::{Empty, GlobalKey, IntoWidget, Key, StatefulWidget, ValueKey, Widget};

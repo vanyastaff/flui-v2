@@ -454,7 +454,7 @@ Every `pub` item that lands in `flui-framework` in SF01. Reviewer T0.2 and T6.2 
 
 `crates/flui-framework/src/prelude.rs`:
 
-- `pub use crate::{Widget, StatefulWidget, WidgetState, IntoWidget, Key, ValueKey, GlobalKey};`
+- `pub use crate::{Empty, GlobalKey, IntoWidget, Key, StatefulWidget, ValueKey, Widget};`  (Amendment 1: `Empty` included so trivial `build` bodies do not require an extra import; `WidgetState` intentionally excluded per the stability rationale documented on the trait itself — see `widget.rs` rustdoc)
 
 `crates/flui-macros/src/derive_widget.rs`:
 

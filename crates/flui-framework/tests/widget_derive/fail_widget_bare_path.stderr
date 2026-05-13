@@ -1,0 +1,5 @@
+error: expected #[widget(key)]; the `widget` attribute requires arguments in parentheses
+ --> tests/widget_derive/fail_widget_bare_path.rs:9:5
+  |
+9 |     #[widget]
+  |     ^^^^^^^^^

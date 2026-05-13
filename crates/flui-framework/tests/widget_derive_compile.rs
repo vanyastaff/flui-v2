@@ -31,4 +31,7 @@ fn widget_derive() {
     // Bug fixes 2026-05-12 (S1, S2 from /aif-review):
     t.compile_fail("tests/widget_derive/fail_widget_empty_attr.rs");
     t.compile_fail("tests/widget_derive/fail_widget_unknown_subarg.rs");
+    // Bug fixes PR #18 (S3 from Copilot review — non-list meta forms):
+    t.compile_fail("tests/widget_derive/fail_widget_bare_path.rs");
+    t.compile_fail("tests/widget_derive/fail_widget_name_value.rs");
 }
