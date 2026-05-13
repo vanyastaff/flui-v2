@@ -14,7 +14,10 @@
 //!
 //! # Contract (binding — ADR-021 Practice 1)
 //!
-//! - **Visibility:** `pub(super) struct WindowCore`. Never `pub`, never `pub(crate)`.
+//! - **Visibility:** `pub(crate) struct WindowCore` (amended from spec D12's
+//!   `pub(super)` — see prose below for rationale and K06 deferral). Never `pub`.
+//!   Re-tightening to `pub(super)` is tracked under K06's `BuildOwner`/
+//!   `PipelineOwner`/`SemanticsOwner` redesign.
 //! - **Embedding:** [`Window`] holds `pub(super) core: WindowCore` as a **plain field**.
 //!   - `impl Deref<Target = WindowCore> for Window` is **prohibited** — auto-deref would
 //!     leak `WindowCore`'s method-resolution surface to any caller holding `&Window`
@@ -191,6 +194,18 @@ pub(crate) struct WindowCore {
     /// Tracks recent input event timestamps to determine if input is arriving at a high rate.
     /// Used to selectively enable VRR optimization only when input rate exceeds 60fps.
     pub(crate) input_rate_tracker: Rc<RefCell<InputRateTracker>>,
+    /// Thermal-throttle bookkeeping (per `on_request_frame`'s 16 667 µs gate).
+    /// Cloned into the platform `on_request_frame` closure at `Window::new` so
+    /// both ends see the same heap allocation — preserving the same `Rc::ptr_eq`
+    /// invariant that `active`/`needs_present`/`input_rate_tracker` rely on.
+    /// Added in A10a PR 1.0 review pass per `flui-arch-reviewer` IMP finding:
+    /// prior to this, `last_frame_time` lived only inside the platform closure
+    /// and was invisible to sibling submodules planning to take over thermal
+    /// logic in future PRs (S07-style throttling cluster). The field is dead
+    /// code today (only the platform closure clone is read); allowed to stay
+    /// until a future PR moves the throttle read into a sibling submodule.
+    #[allow(dead_code, reason = "reserved for sibling submodule thermal-throttle migration")]
+    pub(crate) last_frame_time: Rc<Cell<Option<crate::scheduler::Instant>>>,
     pub(super) last_input_modality: InputModality,
     pub(crate) refreshing: bool,
     pub(crate) activation_observers: SubscriberSet<(), AnyObserver>,

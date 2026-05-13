@@ -1014,7 +1014,7 @@ impl Default for InputRateTracker {
 }
 
 impl InputRateTracker {
-    pub fn record_input(&mut self) {
+    pub(crate) fn record_input(&mut self) {
         let now = Instant::now();
         self.timestamps.push(now);
         self.prune_old_timestamps(now);
@@ -1025,7 +1025,7 @@ impl InputRateTracker {
         }
     }
 
-    pub fn is_high_rate(&self) -> bool {
+    pub(crate) fn is_high_rate(&self) -> bool {
         Instant::now() < self.sustain_until
     }
 
@@ -1217,6 +1217,11 @@ impl Window {
             // reaches it via `handle.update(...)` rather than holding a
             // separate `Rc` clone.
             let input_rate_tracker = input_rate_tracker.clone();
+            // A10a PR 1.0 review pass (flui-arch-reviewer IMP): clone
+            // `last_frame_time` for the closure so the canonical `Rc`
+            // also lives on `WindowCore`. Both clones point at the same
+            // heap allocation — `Rc::ptr_eq` invariant preserved.
+            let last_frame_time = last_frame_time.clone();
             move |request_frame_options| {
                 let thermal_state = handle
                     .update(&mut cx, |_, _, cx| cx.thermal_state())
@@ -1527,6 +1532,7 @@ impl Window {
                 hovered,
                 needs_present,
                 input_rate_tracker,
+                last_frame_time,
                 last_input_modality: InputModality::Mouse,
                 refreshing: false,
                 activation_observers: SubscriberSet::new(),

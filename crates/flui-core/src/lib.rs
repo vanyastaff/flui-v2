@@ -377,6 +377,9 @@ pub use window::{
 // these from `pub use window::*` (which forwarded pub(crate) at crate-root
 // pub(crate) visibility) preserves intra-crate access without exposing them
 // publicly.
+// `DrawPhase` and `ElementArenaScope` are referenced only from `#[cfg(test)]`
+// modules; the build-time warning under default-features is expected.
+#[allow(unused_imports, reason = "DrawPhase / ElementArenaScope are test-only consumers in flui-core")]
 pub(crate) use window::{
     DrawPhase,
     ElementArenaScope,
