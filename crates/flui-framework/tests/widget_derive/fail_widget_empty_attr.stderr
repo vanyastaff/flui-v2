@@ -1,0 +1,5 @@
+error: #[widget(...)] requires the `key` argument; write `#[widget(key)]`
+  --> tests/widget_derive/fail_widget_empty_attr.rs:13:5
+   |
+13 |     #[widget()]
+   |     ^^^^^^^^^^^

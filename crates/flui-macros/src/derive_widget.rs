@@ -28,7 +28,7 @@
 
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{Data, DeriveInput, Field, GenericArgument, PathArguments, Type, parse_macro_input};
+use syn::{Data, DeriveInput, GenericArgument, PathArguments, Type, parse_macro_input};
 
 /// Entry point for `#[derive(Widget)]`.
 pub fn derive_widget(input: TokenStream) -> TokenStream {
@@ -111,7 +111,13 @@ fn locate_key_field(fields: &syn::Fields) -> syn::Result<Option<syn::Ident>> {
     let mut found: Option<syn::Ident> = None;
 
     for field in fields {
-        if !has_widget_key_attribute(field) {
+        let mut field_marks_key = false;
+        for attr in &field.attrs {
+            if check_widget_key_attribute(attr)? {
+                field_marks_key = true;
+            }
+        }
+        if !field_marks_key {
             continue;
         }
 
@@ -149,24 +155,45 @@ fn locate_key_field(fields: &syn::Fields) -> syn::Result<Option<syn::Ident>> {
     Ok(found)
 }
 
-/// True if the field carries an attribute path matching `widget(key)`.
-fn has_widget_key_attribute(field: &Field) -> bool {
-    field
-        .attrs
-        .iter()
-        .filter(|attr| attr.path().is_ident("widget"))
-        .any(|attr| {
-            // The attribute is a list-style call: `#[widget(key)]`.
-            // Parse the inner tokens and look for an `Ident` named `key`.
-            attr.parse_nested_meta(|meta| {
-                if meta.path.is_ident("key") {
-                    Ok(())
-                } else {
-                    Err(meta.error("expected `key`"))
-                }
-            })
-            .is_ok()
-        })
+/// Inspect a single attribute and decide whether it represents a
+/// well-formed `#[widget(key)]` marker.
+///
+/// Returns:
+/// - `Ok(false)` — the attribute is not a `#[widget(...)]` attribute at
+///   all; the caller should skip it.
+/// - `Ok(true)` — the attribute is exactly `#[widget(key)]` and marks
+///   the field as the identity-key carrier.
+/// - `Err(...)` — the attribute IS a `#[widget(...)]` attribute but is
+///   malformed. Two cases produce errors:
+///   - `#[widget()]` (empty meta list): rejected explicitly so a user
+///     who forgot the `key` argument gets a clear diagnostic instead
+///     of silently inheriting key behavior (Bug S1, fixed 2026-05-12).
+///   - `#[widget(<unknown>)]` or `#[widget(key, <unknown>)]`: rejected
+///     with a span pointing at the unknown sub-argument so the user
+///     sees the typo (Bug S2, fixed 2026-05-12).
+fn check_widget_key_attribute(attr: &syn::Attribute) -> syn::Result<bool> {
+    if !attr.path().is_ident("widget") {
+        return Ok(false);
+    }
+
+    let mut seen_key = false;
+    attr.parse_nested_meta(|meta| {
+        if meta.path.is_ident("key") {
+            seen_key = true;
+            Ok(())
+        } else {
+            Err(meta.error("unknown #[widget(...)] argument; expected `key`"))
+        }
+    })?;
+
+    if !seen_key {
+        return Err(syn::Error::new_spanned(
+            attr,
+            "#[widget(...)] requires the `key` argument; write `#[widget(key)]`",
+        ));
+    }
+
+    Ok(true)
 }
 
 /// True if the type is `Option<T>` whose `T`'s terminal path segment is

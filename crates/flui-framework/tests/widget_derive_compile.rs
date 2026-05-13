@@ -28,4 +28,7 @@ fn widget_derive() {
     t.compile_fail("tests/widget_derive/fail_enum.rs");
     t.compile_fail("tests/widget_derive/fail_multiple_keys.rs");
     t.compile_fail("tests/widget_derive/fail_wrong_key_type.rs");
+    // Bug fixes 2026-05-12 (S1, S2 from /aif-review):
+    t.compile_fail("tests/widget_derive/fail_widget_empty_attr.rs");
+    t.compile_fail("tests/widget_derive/fail_widget_unknown_subarg.rs");
 }
