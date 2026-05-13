@@ -168,6 +168,7 @@ The `#[derive(Widget)]` macro is tested via `trybuild` compile-fail fixtures. `.
 - `dyn IntoWidget` is permanently unsupported (associated type + by-value `self`).
 - `#[widget(key)]` field type must be a syntactic `Option<…Key>`. Type aliases (`type WidgetKey = Key; … #[widget(key)] k: Option<WidgetKey>`) are NOT supported — proc-macros run before name resolution.
 - `Empty` is a sealed SF01-internal placeholder. Tier C widget catalogue (SF02+) should use `Container`, `SizedBox`, `Spacer`, or domain-specific empty widgets instead.
+- `cargo-semver-checks` may emit noise for the trait/derive name collision at `flui_framework::Widget` (the trait and the proc-macro re-export share the identifier across the type and macro namespaces — Rust permits this, but the tool may not model the namespace distinction). The R2 roadmap item will decide whether to add a `semver-checks.toml` allowlist or rename one side. Tier C crates that run `cargo-semver-checks` against an SF01-vintage `flui-framework` dep should expect this warning to remain until R2 lands.
 
 ## Cross-references
 

@@ -153,12 +153,12 @@ Per user-memory feedback "Keep docs work separate from code work — ADR session
   **File:** `crates/flui-framework/tests/key_roundtrip.rs`. **Logging:** none. **Validation:** `cargo test -p flui-framework --test key_roundtrip` passes.
 
 - [x] **T2.4 — Minimal explicit `prelude` module.** Add `crates/flui-framework/src/prelude.rs`:
-  - `pub use crate::{Widget, StatefulWidget, IntoWidget, Key, ValueKey, GlobalKey};` — **6 items**. Per the FROZEN design spec, `WidgetState` is intentionally OMITTED from the prelude (stability rationale: unstable until SF04). `IntoWidget` IS included (needed for `impl IntoWidget` return type in user code). Reviewer T0.2 fixed an earlier inconsistency between this plan and the spec — spec wins.
+  - `pub use crate::{Empty, GlobalKey, IntoWidget, Key, StatefulWidget, ValueKey, Widget};` — **7 items** (Amendment 1, 2026-05-12, added `Empty` per the sealed null-widget addition). Per the FROZEN design spec, `WidgetState` is intentionally OMITTED from the prelude (stability rationale: unstable until SF04). `IntoWidget` IS included (needed for `impl IntoWidget` return type in user code). `Empty` IS included for `#[derive(Widget)]`-free widget impls that need to write `fn build(&self) -> impl IntoWidget { Empty }`. Reviewer T0.2 fixed an earlier inconsistency between this plan and the spec — spec wins.
   - Module-level rustdoc explaining that the prelude is an **opt-in convenience** for Tier C / app authors; consumers may always import items individually from the crate root (including `WidgetState`). Explicit-only, **no `pub use crate::*`** (per ARCHITECTURE.md principle 6).
   - Wire `pub mod prelude;` into `crates/flui-framework/src/lib.rs` — the `prelude` module itself is `pub`, not re-exported at the crate root (consumers write `use flui_framework::prelude::*;` exactly once when they want it).
   - Rationale for landing prelude in SF01, not later: prelude IS public-surface API. Adding it post-hoc invites consumers to write their own ad-hoc preludes and creates documentation drift. K94 already validates the precedent at the engine level.
 
-  **Files:** `crates/flui-framework/src/prelude.rs`, `crates/flui-framework/src/lib.rs`. **Logging:** none. **Validation:** `cargo check -p flui-framework` succeeds; rustdoc shows `flui_framework::prelude` with all six items listed.
+  **Files:** `crates/flui-framework/src/prelude.rs`, `crates/flui-framework/src/lib.rs`. **Logging:** none. **Validation:** `cargo check -p flui-framework` succeeds; rustdoc shows `flui_framework::prelude` with all seven items listed (Amendment 1).
 
 ### Phase 3 — Widget + StatefulWidget trait surface
 
