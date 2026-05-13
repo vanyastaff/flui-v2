@@ -19,8 +19,11 @@
 //!  Tier A — Engine       flui-core, flui-platform, flui-macros
 //! ```
 //!
-//! Dependencies flow strictly downward. `flui-framework` depends on
-//! `flui-core` only; consumers in Tier C depend on `flui-framework`.
+//! Dependencies flow strictly downward. `flui-framework` depends on the
+//! Tier A crates `flui-core` (for the engine substrate and the `Key`
+//! family) and `flui-macros` (whose `#[derive(Widget)]` is re-exported
+//! from this crate's root); consumers in Tier C depend on
+//! `flui-framework`.
 //!
 //! ## "2 structures + 1 cache" model
 //!
