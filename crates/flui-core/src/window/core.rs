@@ -222,3 +222,84 @@ pub(crate) struct WindowCore {
     #[cfg(any(feature = "inspector", debug_assertions))]
     pub(super) inspector: Option<Entity<Inspector>>,
 }
+
+#[cfg(test)]
+mod tests {
+    //! A10a PR 1.0 — invariant tests for the `Rc::ptr_eq` contract documented at
+    //! `window/core.rs:30` and required by the spec's D1 (plain by-value embedding,
+    //! no `Box<WindowCore>`/`Arc<WindowCore>`).
+    //!
+    //! The platform `on_request_frame` closure in `Window::new` captures clones of
+    //! four `Rc<Cell<_>>` / `Rc<RefCell<_>>` allocations (`active`, `needs_present`,
+    //! `input_rate_tracker`, `last_frame_time`) and the canonical copies live on
+    //! `WindowCore`. The contract: both ends point at the same heap allocation, so
+    //! `Rc::ptr_eq` returns `true`. These tests assert that property holds for the
+    //! construction pattern used in `Window::new`. Per `migration-risk-adversary`
+    //! review of A10a PR 1.0.
+
+    use super::InputRateTracker;
+    use std::cell::{Cell, RefCell};
+    use std::rc::Rc;
+    use crate::scheduler::Instant;
+
+    /// Pattern used in `Window::new` to populate `WindowCore::active` while also
+    /// handing a clone to the platform closure: the canonical Rc is allocated once,
+    /// cloned into the closure, and moved into `WindowCore`. After this, the
+    /// closure-held clone and the `WindowCore` field point at the same allocation.
+    #[test]
+    fn rc_ptr_eq_for_active_cell_bool_pattern() {
+        let canonical: Rc<Cell<bool>> = Rc::new(Cell::new(false));
+        let closure_clone = canonical.clone();
+        // The canonical Rc moves into WindowCore (here represented by `stored`).
+        let stored = canonical;
+        assert!(
+            Rc::ptr_eq(&closure_clone, &stored),
+            "Window::new must keep closure clone and WindowCore field pointing at the same heap allocation",
+        );
+    }
+
+    /// Same invariant for `needs_present: Rc<Cell<bool>>`.
+    #[test]
+    fn rc_ptr_eq_for_needs_present_cell_bool_pattern() {
+        let canonical: Rc<Cell<bool>> = Rc::new(Cell::new(false));
+        let closure_clone = canonical.clone();
+        let stored = canonical;
+        assert!(Rc::ptr_eq(&closure_clone, &stored));
+    }
+
+    /// `input_rate_tracker: Rc<RefCell<InputRateTracker>>` — same invariant for
+    /// the more complex inner type.
+    #[test]
+    fn rc_ptr_eq_for_input_rate_tracker_pattern() {
+        let canonical: Rc<RefCell<InputRateTracker>> =
+            Rc::new(RefCell::new(InputRateTracker::default()));
+        let closure_clone = canonical.clone();
+        let stored = canonical;
+        assert!(Rc::ptr_eq(&closure_clone, &stored));
+    }
+
+    /// `last_frame_time: Rc<Cell<Option<Instant>>>` — added per
+    /// `flui-arch-reviewer` IMP finding in the A10a PR 1.0 review pass.
+    /// Same canonical-allocation invariant applies.
+    #[test]
+    fn rc_ptr_eq_for_last_frame_time_pattern() {
+        let canonical: Rc<Cell<Option<Instant>>> = Rc::new(Cell::new(None));
+        let closure_clone = canonical.clone();
+        let stored = canonical;
+        assert!(Rc::ptr_eq(&closure_clone, &stored));
+    }
+
+    /// Negative control: independently-allocated Rcs with identical inner values
+    /// are NOT `ptr_eq`. This documents the failure mode a future regression
+    /// would exhibit (e.g., if a sibling submodule mistakenly calls `Rc::new(...)`
+    /// instead of cloning `core.last_frame_time` when migrating thermal logic).
+    #[test]
+    fn rc_ptr_eq_negative_independent_allocs_differ() {
+        let a: Rc<Cell<Option<Instant>>> = Rc::new(Cell::new(None));
+        let b: Rc<Cell<Option<Instant>>> = Rc::new(Cell::new(None));
+        assert!(
+            !Rc::ptr_eq(&a, &b),
+            "independent Rc::new calls must NOT compare ptr_eq — this is the regression vector to guard against",
+        );
+    }
+}

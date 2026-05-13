@@ -377,18 +377,20 @@ pub use window::{
 // these from `pub use window::*` (which forwarded pub(crate) at crate-root
 // pub(crate) visibility) preserves intra-crate access without exposing them
 // publicly.
-// `DrawPhase` and `ElementArenaScope` are referenced only from `#[cfg(test)]`
-// modules; the build-time warning under default-features is expected.
-#[allow(unused_imports, reason = "DrawPhase / ElementArenaScope are test-only consumers in flui-core")]
+// Non-test crate-internal symbols (used from app.rs, view.rs, element.rs, etc.).
+// Any future drop of these consumers must surface as an unused-import warning here —
+// do NOT bundle these with the `#[allow(unused_imports)]` block below.
 pub(crate) use window::{
-    DrawPhase,
-    ElementArenaScope,
     FocusMap,
     PaintIndex,
     PrepaintStateIndex,
     PromptBuilder,
     WindowInvalidator,
 };
+// Test-only crate-internal symbols. The `#[allow(unused_imports)]` is scoped to
+// JUST these two so that a future drop of a real consumer above still warns.
+#[allow(unused_imports, reason = "DrawPhase / ElementArenaScope are referenced only from #[cfg(test)] modules")]
+pub(crate) use window::{DrawPhase, ElementArenaScope};
 
 /// The context trait, allows the different contexts in GPUI to be used
 /// interchangeably for certain operations.
