@@ -4,7 +4,7 @@
 
 **Purpose:** Classify each v1 module (across `flui-foundation`, `flui-types`, `flui-cli`, `flui-hot-reload`, `flui-devtools`) by port effort. Subsequent units' "mechanical port" framing depends on this audit's findings.
 
-**Method:** Source-level audit via inspection of v1 `Cargo.toml` deps + ripgrep counts of `flui_engine` / `flui_rendering` / `flui_layer` / `flui_view` / `flui_painting` / `flui_log` / `flui_build` substrate references in each module. Plus per-file LoC and external-dep survey. No `cargo check` run on v1 (would need to repoint workspace; not necessary to validate classification).
+**Method:** Source-level audit via inspection of v1 `Cargo.toml` deps + ripgrep counts of v1 substrate references and v2-incompatible patterns in each module: `flui_engine` / `flui_rendering` / `flui_layer` / `flui_view` / `flui_painting` / `flui_log` / `flui_build` (v1 crate substrates that don't exist in v2) AND `std::process::Command` / `pollster::` (v2-incompatible patterns — workspace clippy enforces `smol::process::Command`; workspace runtime is `smol`, not `pollster`/`tokio`). Plus per-file LoC and external-dep survey. No `cargo check` run on v1 (would need to repoint workspace; not necessary to validate classification).
 
 **v1 source:** `<v1-root>/crates/`, where `<v1-root>` is your local checkout of the v1 flui repository. Maintainer's example: `C:\Users\vanya\RustroverProjects\flui`. Read-only reference — never write into v1 from this workspace. To obtain the v1 source: clone (or symlink from a prior checkout) the v1 repo to any local path; export `FLUI_V1_ROOT` or substitute `<v1-root>` accordingly when following audit steps below.
 
@@ -150,7 +150,7 @@
 - `driver.rs` (1 real ref at `:35`: `use flui_layer::Scene;`) — **REWRITE**. mtime-poll loop shape is reusable; Scene-dep needs rework.
 - `host.rs` (1 real ref at `:20`: `use flui_layer::Scene;`) — **REWRITE**. Same.
 - `lib.rs` (refs at `:14`, `:29` are doc comments only) — **REPAIR**. Macros `scene_plugin!`/`app_plugin!` need adapter per U11 outcome.
-- `plugin.rs` (4 substrate refs) — **REWRITE**. FFI export macros tied to v1 `build_scene -> Scene` shape; rework к U11 mechanism's plugin shape.
+- `plugin.rs` (4 substrate refs) — **REWRITE**. FFI export macros tied to v1 `build_scene -> Scene` shape; rework to U11 mechanism's plugin shape.
 - `pipeline.rs` (4 substrate refs) — **DROP**. Uses `flui_rendering::pipeline::PipelineOwner`; v2 has no equivalent.
 
 **All hot-reload work is contingent on U11 research outcome** (subsecond / hot-lib-reloader / custom dynlib). If `subsecond` selected: most v1 files become reference-only because semantic-patching has no FFI boundary. If `hot-lib-reloader`: only dynlib.rs survives as reference. If custom dynlib: dynlib.rs is the highest-reuse candidate.
@@ -168,7 +168,7 @@
 | `network.rs` | 183 | **MECHANICAL** | HTTP request/response tracking; std deps only. NOT stubbed — full impl. |
 | `profiler.rs` | 609 | **REPAIR** | Replace v1 `FramePhase` 3-variants with v2's 8-variant via `flui_core::frame::FramePhase`; subscribe to v2 `FrameProfile`. |
 | `remote.rs` | 123 | **REPAIR** | WebSocket server skeleton; expand to full Flutter VM Service per origin R19. NOT a stub but minimal — needs U9 protocol layer wrapping it. |
-| `timeline.rs` | 610 | **REPAIR** | Chrome trace JSON export; `EventCategory` mapped к v2 `FramePhase`. |
+| `timeline.rs` | 610 | **REPAIR** | Chrome trace JSON export; `EventCategory` mapped to v2 `FramePhase`. |
 
 **Correction vs initial table:** `memory.rs`, `network.rs`, `remote.rs` are NOT stubs as initially classified — they're real impls. The "v1 `memory.rs`/`network.rs`/`remote.rs` were stubs" line in `crates/flui-devtools/src/lib.rs` was inaccurate and should be corrected in U9.
 
