@@ -1,0 +1,22 @@
+[package]
+name = "flui-cli"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Command-line interface for flui — project creation, build, test, doctor (Track 2 DX tooling, ported from v1 flui-cli)"
+keywords = ["cli", "flui", "ui", "build-tool", "dx"]
+categories = ["command-line-utilities", "development-tools", "gui"]
+
+[[bin]]
+name = "flui"
+path = "src/main.rs"
+
+# Skeleton — implementation lands in U5/U6/U7 per docs/plans/2026-05-19-001-feat-v1-port-track-2-egui-easy-plan.md.
+# Real deps (clap, clap_complete, cliclack, console, which, dirs, notify-debouncer-mini, toml,
+# serde, serde_json, thiserror, tracing, tracing-subscriber, smol, flui-foundation) land in U5.
+
+[lints]
+workspace = true

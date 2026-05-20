@@ -1658,6 +1658,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "flui-cli"
+version = "0.1.0"
+
+[[package]]
 name = "flui-core"
 version = "0.1.0"
 dependencies = [
@@ -1768,6 +1772,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "flui-devtools"
+version = "0.1.0"
+
+[[package]]
+name = "flui-foundation"
+version = "0.1.0"
+
+[[package]]
 name = "flui-framework"
 version = "0.1.0"
 dependencies = [
@@ -1775,6 +1787,10 @@ dependencies = [
  "flui-macros",
  "trybuild",
 ]
+
+[[package]]
+name = "flui-hot-reload"
+version = "0.1.0"
 
 [[package]]
 name = "flui-macros"
@@ -1818,6 +1834,10 @@ version = "0.1.0"
 dependencies = [
  "flui-core",
 ]
+
+[[package]]
+name = "flui-types"
+version = "0.1.0"
 
 [[package]]
 name = "flui-widgets"

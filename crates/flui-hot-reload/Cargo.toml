@@ -1,0 +1,18 @@
+[package]
+name = "flui-hot-reload"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Dynamic reload for flui — active research, ship gated on U11 mechanism decision (Track 2 DX)"
+keywords = ["flui", "hot-reload", "dx", "tooling"]
+categories = ["development-tools"]
+
+# Skeleton — active research per docs/plans/2026-05-19-001-feat-v1-port-track-2-egui-easy-plan.md.
+# Mechanism (subsecond / hot-lib-reloader / libloading-based custom) decided in U11; real implementation
+# lands in U12 (redesign over gpui-ce — v1's Scene-FFI shape is structurally incompatible) → U13 (K04 integration).
+
+[lints]
+workspace = true

@@ -1,0 +1,17 @@
+[package]
+name = "flui-foundation"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Utility primitives for flui — assert, callbacks, observer, notifier, id, key (Track 2 DX foundation, ported from v1 flui-foundation)"
+keywords = ["flui", "foundation", "utilities", "dx"]
+categories = ["rust-patterns", "data-structures"]
+
+# Skeleton — implementation lands in U3 per docs/plans/2026-05-19-001-feat-v1-port-track-2-egui-easy-plan.md.
+# Real deps (bitflags, dashmap, parking_lot, thiserror, tracing) land in U3 with per-module port.
+
+[lints]
+workspace = true

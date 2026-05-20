@@ -1,0 +1,18 @@
+[package]
+name = "flui-types"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Net-new geometry + styling types for flui (Bezier, Rect, RRect, Matrix4, Color32, Decoration, Gradient, etc), ported from v1 flui-types"
+keywords = ["flui", "types", "geometry", "color", "dx"]
+categories = ["graphics", "data-structures"]
+
+# Skeleton — implementation lands in U4 per docs/plans/2026-05-19-001-feat-v1-port-track-2-egui-easy-plan.md.
+# Real deps (bitflags, parking_lot, serde optional, tracing) land in U4 with per-module port.
+# Net-new only — types already in flui-core (Point, Size, Edges, Pixels, Hsla, Rgba, etc) NOT duplicated.
+
+[lints]
+workspace = true
