@@ -275,7 +275,7 @@ Independent audit pass added 9 categories not in user's list:
 5. Test harness too heavy — no `WidgetTester`-style lightweight harness; unit-testing widgets requires `Application::test()` + event loop. Will hurt Framework tier test coverage.
 6. Inspector / DevTools surface absent — no read-only tree-traversal API. Cheap to reserve now, expensive to retrofit.
 7. Drop order + Entity cycle detection — cross-Entity Weak refs can form cycles via `cx.observe`; no detection.
-8. Hot-reload strategically absent — Flutter has it as load-bearing DX; not in roadmap. Should at minimum reserve as future R-track.
+8. Hot-reload strategically absent — Flutter has it as load-bearing DX; not in roadmap initially. **Superseded 2026-05-19:** Track 2 ("DX & low-ceremony onboarding") in `STRATEGY.md` promotes hot-reload as active commitment. See `docs/plans/2026-05-19-001-feat-v1-port-track-2-egui-easy-plan.md` U11-U13. Status = "active research, ship gated on U11 mechanism decision".
 9. Window's monolithic borrow domain — splitting `window.rs` into files is necessary but not sufficient; Flutter splits ownership into `BuildOwner` / `PipelineOwner` / `SemanticsOwner` (independent borrow domains). K06 must address this, not just file decomposition.
 
 **Sequencing decision:**
@@ -318,7 +318,7 @@ After Phase 0-K, Framework tier (SF01-SF08) becomes substantially cheaper becaus
 - K17 (test harness) is gating on Framework tier velocity — without it, SF specs ship with weak test coverage.
 - K22 (inspector intro) is cheap insurance — read-only traversal trait now, real DevTools later.
 - S09 Canvas facade currently in Phase II is effectively a Framework prereq for `CustomPainter` widgets — consider promoting into K-track.
-- Hot-reload (audit-finding 8) is NOT a K-track concern; reserved as future Phase IV / R-track item.
+- Hot-reload (audit-finding 8) is NOT a K-track concern. **Superseded 2026-05-19:** promoted к Track 2 active research per STRATEGY.md. See `docs/plans/2026-05-19-001-feat-v1-port-track-2-egui-easy-plan.md` U11 (research decision doc) → U12 (re-architect over gpui-ce primitives) → U13 (K04 integration + demo).
 
 **Links (paths):**
 

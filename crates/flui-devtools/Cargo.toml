@@ -1,0 +1,18 @@
+[package]
+name = "flui-devtools"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Headless DevTools substrate for flui — VM Service protocol, profiler, timeline (Track 2 DX, ported from v1 flui-devtools)"
+keywords = ["flui", "devtools", "profiler", "timeline", "dx"]
+categories = ["development-tools::profiling"]
+
+# Skeleton — implementation lands in U9/U10 per docs/plans/2026-05-19-001-feat-v1-port-track-2-egui-easy-plan.md.
+# Real deps (serde, serde_json, tracing, smol, parking_lot, web-time) land in U9.
+# UI frontend is out of scope; this crate ships headless protocol substrate + profiler only.
+
+[lints]
+workspace = true

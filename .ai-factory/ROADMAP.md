@@ -182,14 +182,24 @@ Numbering convention:
 - [ ] **R9 mdbook user guide** — hosted on GitHub Pages: getting started, widget catalogue, navigator routing, theming, examples gallery
 - [ ] **R10 One-way port guide from `gpui-ce`** — formalize the `extern crate flui_core as gpui;` pattern shown in `README.md` as a **one-way migration aid** for porting Zed-style code to flui, NOT a sync mechanism. Document the divergence: API differences, removed APIs, the hard-fork posture. Selected upstream fixes may be cherry-picked but flui-v2 makes no upstream-sync commitment.
 
+### Track 2 — DX & low-ceremony onboarding (active, per `STRATEGY.md`)
+
+Active Track 2 work — promoted from "Out of scope" 2026-05-19 per plan `docs/plans/2026-05-19-001-feat-v1-port-track-2-egui-easy-plan.md` (origin: `docs/brainstorms/2026-05-19-track-2-egui-easy-v1-port-requirements.md`). Track 2 reified STRATEGY.md commitment to "Flutter-class API ergonomics с egui-class простотой старта".
+
+- [ ] **flui-cli** — `flui create`/`run`/`build`/`test`/`clean`/`doctor`/`completions`/`format`/`analyze`/`upgrade`/`create-interactive`. Port subset of v1 CLI; mobile/web commands deferred к Phase III.
+- [ ] **flui-foundation** — port v1 utility primitives (assert/binding/callbacks/debug/error/id/key/notifier/observer) as new crate. Parallel-impl, не fold into flui-core (fold deferred к future K-track audit).
+- [ ] **flui-types** — port v1 net-new types (Bezier, Rect, RRect, Matrix4, Color32, Decoration, Gradient, etc) absent from v2 geometry/color. Parallel-impl, не fold.
+- [ ] **flui-devtools** — VM Service protocol substrate (TCP + JSON-RPC), profiler subscribing to K04 FrameProfile, timeline export. UI deferred.
+- [ ] **flui-hot-reload** — **active research, ship gated on U11 outcome.** Rust ecosystem mechanism selection (`subsecond` / `hot-lib-reloader` / custom dynlib) requires research decision doc before implementation. If no production-ready mechanism for Windows+Linux+macOS, may defer к follow-up PR.
+
 ### Out of scope (gated on roadmap completion)
 
 - **Tier C ecosystem populating** (`flui-widgets`, `flui-material`, `flui-cupertino`, `flui-theme` build-out beyond skeletons) — gated on Phase II-F (Framework tier) reaching SF05 minimum, since widgets need Widget+State+setState to be implementable.
-- `flui-cli`, `flui-build`, `flui-test`, `flui-golden`, `flui-devtools`
+- `flui-build`, `flui-test`, `flui-golden` (build/test/golden tooling) — gated on roadmap completion. `flui-cli` build/run/analyze shell out к cargo locally, не depend on these crates.
 - Dart VM / platform channels (we are native-only)
 - Replicating Flutter's internal 4-tree model (Widget/Element/RenderObject/Layer) — Framework tier uses "2 structures + 1 cache" instead. See `.ai-factory/ARCHITECTURE.md`.
 - Tracking-fork relationship with `gpui-ce` (we are a hard fork)
-- DevTools / inspector / performance overlay (P1 instrumentation is a prerequisite, not a substitute)
+- DevTools UI frontend (web app / native viewer) — gated on Tier C ecosystem brainstorm. `flui-devtools` Track 2 entry above ships only headless protocol substrate.
 
 ## Completed
 
@@ -249,4 +259,4 @@ Numbering convention:
 - ❌ Do not implement Framework tier (Phase II-F) inside `flui-core`. It lives in `flui-framework` (new crate). Engine and Framework are separate crates by design — see `.ai-factory/ARCHITECTURE.md`.
 - ❌ Do not start populating Tier C widget crates (Container, Row, Stack, Material widgets) before SF05 (`setState` + dirty-list) lands. Widgets without rebuild semantics are dead-ends.
 - ❌ Do not preserve `gpui-ce` API for backwards compatibility. flui-v2 is a hard fork — divergence is the design goal, not a regression.
-- ❌ Do not re-introduce v1's multi-crate engine split (`flui-foundation` / `flui-engine` / `flui-rendering` / …). Engine stays single-crate (`flui-core`).
+- ❌ Do not re-introduce v1's multi-crate **engine** split (`flui-engine` / `flui-rendering` / `flui-layer` / `flui-painting` / `flui-tree` / `flui-view`). Engine stays single-crate (`flui-core`). **Exception (2026-05-19):** DX-tier crates from v1 (`flui-foundation`, `flui-types`, `flui-cli`, `flui-devtools`, `flui-hot-reload`) are explicitly OUT of this anti-goal — they serve developer ergonomics + tooling (Track 2 DX commitment per STRATEGY.md), не engine partition. Engine consolidation rationale (avoid v1's runtime tree-split) does not apply to runtime-agnostic DX/tooling crates. See `docs/plans/2026-05-19-001-feat-v1-port-track-2-egui-easy-plan.md` для full reasoning.
