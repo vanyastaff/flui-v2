@@ -4,7 +4,7 @@
 
 **Purpose:** Classify each v1 module (across `flui-foundation`, `flui-types`, `flui-cli`, `flui-hot-reload`, `flui-devtools`) by port effort. Subsequent units' "mechanical port" framing depends on this audit's findings.
 
-**v1 source:** `C:\Users\vanya\RustroverProjects\flui\crates\` (maintainer's machine; read-only reference).
+**v1 source:** `<v1-root>/crates/`, where `<v1-root>` is your local checkout of the v1 flui repository. Maintainer's example: `C:\Users\vanya\RustroverProjects\flui`. Read-only reference — never write into v1 from this workspace. To obtain the v1 source: clone (or symlink from a prior checkout) the v1 repo to any local path; export `FLUI_V1_ROOT` or substitute `<v1-root>` accordingly when following audit steps below.
 
 ## Classification
 
@@ -125,7 +125,7 @@ To fill during audit:
 
 ## Conducting the audit
 
-1. Clone or symlink v1 source: `C:\Users\vanya\RustroverProjects\flui\crates\`.
+1. Clone or symlink v1 source to a local path of your choice (e.g., `~/flui-v1` on Linux/macOS, `C:\flui-v1` on Windows; maintainer's path is `C:\Users\vanya\RustroverProjects\flui`). Export `FLUI_V1_ROOT` to that path and substitute for `<v1-root>` in commands below.
 2. For each module: `cd <v1-crate> && cargo check --offline` against Rust 1.95 (override `rust-toolchain.toml` locally).
 3. Record compile errors + dep failures per module.
 4. Cross-check each module against v2 `flui-core` for overlap (use ripgrep).

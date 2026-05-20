@@ -11,7 +11,5 @@
 //!
 //! Parallel-impl with `flui-core` — fold deferred к future K-track audit.
 
-#![allow(dead_code)]
-
 // Real modules land in U4. Per-module compile-status audit
 // (`docs/research/v1-compile-status-audit.md`) precedes U4.

@@ -17,6 +17,4 @@
 //! - U12 — port + re-arch over gpui-ce primitives (dynlib, driver, host, plugin, pipeline modules).
 //! - U13 — K04 integration via `App::defer_to(NextFrameStart, ...)`; demo proving AE3 latency.
 
-#![allow(dead_code)]
-
 // Real modules land in U12. Mechanism choice driven by U11 research outcome.

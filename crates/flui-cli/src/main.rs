@@ -5,8 +5,13 @@
 //!
 //! Implementation lands in U5 (scaffolding) → U6 (commands) → U7 (templates).
 
-fn main() {
+use std::process::ExitCode;
+
+fn main() -> ExitCode {
     // Real entry point lands in U5 — clap-derive `Cli` struct + Subcommand dispatch.
     eprintln!("flui-cli skeleton — U5/U6/U7 implementation pending");
-    std::process::exit(0);
+    // Non-zero exit so CI / scripts treat skeleton invocation as "not yet implemented",
+    // not "no-op success". Falling back to ExitCode::FAILURE preserves normal drop order
+    // (vs `std::process::exit`, which bypasses destructors / stdio flush).
+    ExitCode::FAILURE
 }

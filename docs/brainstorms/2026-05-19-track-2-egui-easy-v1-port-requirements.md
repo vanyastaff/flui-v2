@@ -7,7 +7,7 @@ topic: track-2-egui-easy-v1-port
 
 ## Summary
 
-Port subset из v1 (`C:\Users\vanya\RustroverProjects\flui\crates`) в v2 — 5 крейтов реализуют track 2 "DX & low-ceremony onboarding" из `STRATEGY.md` целиком: `flui-cli` (CLI tooling, subset 10+ commands), `flui-foundation` (utility primitives), `flui-types` (base types), `flui-hot-reload` (dynamic reload), `flui-devtools` (profiler/memory/network/timeline). Каждый крейт kept as separate workspace member; не folding в flui-core.
+Port subset из v1 (`<v1-root>/crates`, where `<v1-root>` is the v1 flui source repository — maintainer's machine: `C:\Users\vanya\RustroverProjects\flui`) в v2 — 5 крейтов реализуют track 2 "DX & low-ceremony onboarding" из `STRATEGY.md` целиком: `flui-cli` (CLI tooling, subset 10+ commands), `flui-foundation` (utility primitives), `flui-types` (base types), `flui-hot-reload` (dynamic reload), `flui-devtools` (profiler/memory/network/timeline). Каждый крейт kept as separate workspace member; не folding в flui-core.
 
 ---
 
@@ -15,7 +15,7 @@ Port subset из v1 (`C:\Users\vanya\RustroverProjects\flui\crates`) в v2 — 5
 
 flui v1 имеет реальный код под "Flutter dev experience" — `flui-cli` (18 commands clone `flutter`), `flui-devtools` (Flutter DevTools clone), `flui-hot-reload` (custom dynlib + driver pipeline), `flui-foundation`/`flui-types` (Flutter-shaped primitives). v1 был abandoned после того как RenderObject pipeline сломался; основная работа шла в render-layer, остальные крейты "частично работали" но не доводились/не проверялись.
 
-v2 hard-fork`gpui-ce` обошёл render wall (используя готовый gpui Engine substrate), но всё ещё пустой по DX-tooling — нет `flui` CLI binary, нет hot-reload story, нет DevTools, нет ergonomic prelude для базовых типов. Primary user (Rust dev, который пишет UI любого размера без выхода из Rust toolchain — see `STRATEGY.md`) сегодня:
+v2 hard-fork `gpui-ce` обошёл render wall (используя готовый gpui Engine substrate), но всё ещё пустой по DX-tooling — нет `flui` CLI binary, нет hot-reload story, нет DevTools, нет ergonomic prelude для базовых типов. Primary user (Rust dev, который пишет UI любого размера без выхода из Rust toolchain — see `STRATEGY.md`) сегодня:
 - генерит проект через `cargo new` + копипасту из examples
 - запускает через `cargo run --example`
 - не имеет hot-reload — каждое изменение = ~10s compile cycle
@@ -121,7 +121,7 @@ v2 hard-fork`gpui-ce` обошёл render wall (используя готовы�
 
 ## Dependencies / Assumptions
 
-- v1 source tree доступен по `C:\Users\vanya\RustroverProjects\flui\crates` (verified during brainstorm).
+- v1 source tree accessible at `<v1-root>/crates` (verified during brainstorm; maintainer's example path: `C:\Users\vanya\RustroverProjects\flui`).
 - v1 крейты "частично работали" но не верифицированы compile'ом против актуального Rust 1.95 — likely потребуется fix-and-port pass (verified user statement).
 - v2's `K22 InspectableElement` substrate ещё не landed (см. roadmap `K-independent K22`). flui-devtools R18 требует K22 как prerequisite, ИЛИ принимает что K22 substrate приходит параллельно с devtools work.
 - v2's `K04 FramePhase` / `FrameProfile` substrate landed (per ROADMAP.md, K04 complete).

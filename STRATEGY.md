@@ -7,11 +7,11 @@ last_updated: 2026-05-19
 
 ## Target problem
 
-Rust-разработчики, которым нужен Flutter-style декларативный UI, упираются в две стены: реализация многотрассовой Flutter-pipeline (Element/RenderObject/Layer/Widget/Semantic) и порт Dart-кода в Rust без наследования. Существующие Rust UI-фреймворки уходят в HTML/CSS-стиль, immediate-mode или мосты через FFI/wasm/Tauri — Flutter-class DX остаётся незакрытым.
+Rust-разработчики, которым нужен Flutter-style декларативный UI, упираются в две стены: реализация многотрассовой Flutter-pipeline (Element/RenderObject/Layer/Widget/Semantics) и порт Dart-кода в Rust без наследования. Существующие Rust UI-фреймворки уходят в HTML/CSS-стиль, immediate-mode или мосты через FFI/wasm/Tauri — Flutter-class DX остаётся незакрытым.
 
 ## Our approach
 
-Full Flutter parity в Rust — копируем shape целиком (Widget DX, multi-platform desktop+mobile+web, hot-reload, inspector), а не cherry-pick. `gpui-ce` взят как production-grade Engine substrate, чтобы не строить рендер с 0; Framework-тir (`flui-framework`) воспроизводит Flutter API поверх. Альтернативы НЕ выбираем: HTML/CSS-style (Dioxus/Leptos), immediate-mode (egui), single-platform, abstraction через FFI/wasm/Tauri/Electron.
+Full Flutter parity в Rust — копируем shape целиком (Widget DX, multi-platform desktop+mobile+web, hot-reload, inspector), а не cherry-pick. `gpui-ce` взят как production-grade Engine substrate, чтобы не строить рендер с 0; Framework-tier (`flui-framework`) воспроизводит Flutter API поверх. Альтернативы НЕ выбираем: HTML/CSS-style (Dioxus/Leptos), immediate-mode (egui), single-platform, abstraction через FFI/wasm/Tauri/Electron.
 
 ## Who it's for
 

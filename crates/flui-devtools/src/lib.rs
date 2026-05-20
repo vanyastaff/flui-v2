@@ -12,6 +12,4 @@
 //! v1's `memory.rs` / `network.rs` / `remote.rs` modules were stubs — replaced by the
 //! `protocol/` subtree implementing Flutter VM Service protocol clone (subset).
 
-#![allow(dead_code)]
-
 // Real modules land in U9/U10.

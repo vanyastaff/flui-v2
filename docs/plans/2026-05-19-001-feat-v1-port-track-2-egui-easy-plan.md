@@ -8,7 +8,7 @@ origin: docs/brainstorms/2026-05-19-track-2-egui-easy-v1-port-requirements.md
 
 # feat: Track 2 egui-easy — v1 port
 
-> **v1 source repo:** `C:\Users\vanya\RustroverProjects\flui\crates\` (read-only reference, not a v2 path). v2 paths below use repo-relative form.
+> **v1 source repo:** `<v1-root>/crates/`, where `<v1-root>` is your local checkout of the v1 flui repository (read-only reference, not a v2 path). Maintainer's example: `C:\Users\vanya\RustroverProjects\flui`. v2 paths below use repo-relative form.
 
 ## Summary
 
@@ -18,7 +18,7 @@ Port subset из v1 в v2 — 5 крейтов реализуют track 2 "DX & 
 
 ## Problem Frame
 
-См. origin doc — v1 имел реальный код под "Flutter dev experience", abandoned mid-development после RenderObject pipeline break. v2 hard-fork`gpui-ce` обошёл render wall, но пустой по DX-tooling. Этот план — execution path для перетаскивания DX-tooling из v1 в v2 workspace.
+См. origin doc — v1 имел реальный код под "Flutter dev experience", abandoned mid-development после RenderObject pipeline break. v2 hard-fork `gpui-ce` обошёл render wall, но пустой по DX-tooling. Этот план — execution path для перетаскивания DX-tooling из v1 в v2 workspace.
 
 ---
 
@@ -1213,7 +1213,7 @@ DevTools runtime:
 
 - Rust 1.95+ toolchain (workspace MSRV).
 - `cargo`, `git` available on PATH for cli runner.
-- v1 source tree accessible at `C:\Users\vanya\RustroverProjects\flui\crates\` (read-only).
+- v1 source tree accessible at `<v1-root>/crates/` (read-only; maintainer's example: `C:\Users\vanya\RustroverProjects\flui`).
 - CI environment supporting Windows + Linux + macOS workspace builds.
 - Workspace `Cargo.lock` FREEZE policy honored (no opportunistic updates).
 
@@ -1256,4 +1256,4 @@ DevTools runtime:
 - **Pre-PR review process:** user memory `feedback_pre_pr_review_agents.md`.
 - **Docs-vs-code separation:** user memory `feedback_docs_vs_code.md`.
 - **Verify-don't-be-complacent:** user memory `feedback_verify_dont_be_complacent.md`.
-- v1 source root: `C:\Users\vanya\RustroverProjects\flui\crates\` (external reference).
+- v1 source root: `<v1-root>/crates/` (external reference; maintainer's example: `C:\Users\vanya\RustroverProjects\flui`).
